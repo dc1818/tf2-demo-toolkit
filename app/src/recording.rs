@@ -3404,7 +3404,7 @@ fn manual_seek_control_cfg(candidate: &Candidate, target_tick: i64) -> Vec<Strin
         ));
     }
     lines.push(format!(
-        "alias tf2frag_manual_ready_do \"alias tf2frag_manual_ready tf2frag_manual_seek_noop; demo_pause; echo TF2FRAG_MANUAL_PAUSED_AT_START; {focus}thirdperson; r_drawviewmodel 0; mirv_cmd enabled 1; tf2frag_manual_sync_keyframes; tf2frag_director_wait_probe\""
+        "alias tf2frag_manual_ready_do \"alias tf2frag_manual_ready tf2frag_manual_seek_noop; demo_pause; echo TF2FRAG_MANUAL_PAUSED_AT_START; {focus}thirdperson; r_drawviewmodel 0; tf2frag_manual_hud_off; mirv_cmd enabled 1; tf2frag_manual_sync_keyframes; tf2frag_director_wait_probe\""
     ));
     lines.push("alias tf2frag_manual_ready tf2frag_manual_seek_noop".into());
     for index in 0..targets.len() {
@@ -3477,7 +3477,7 @@ fn manual_hotkey_cfg(
             shortcuts.print_keyframes, shortcuts.save_campath, shortcuts.load_campath,
             shortcuts.execute_director_action,
         ),
-        format!("alias tf2frag_manual_clip_start \"demo_pause; mirv_input end; mirv_campath enabled 0; mirv_campath draw enabled 0; mirv_cmd enabled 0; alias tf2frag_director_poll tf2frag_director_poll_stop; tf2frag_manual_seek_arm; echo TF2FRAG_MANUAL_SAFE_RESTART_FROM_ZERO TARGET {target_tick}; playdemo {staged_demo}\""),
+        format!("alias tf2frag_manual_clip_start \"demo_pause; mirv_input end; mirv_campath enabled 0; mirv_campath draw enabled 0; mirv_cmd enabled 0; tf2frag_manual_hud_off; alias tf2frag_director_poll tf2frag_director_poll_stop; tf2frag_manual_seek_arm; echo TF2FRAG_MANUAL_SAFE_RESTART_FROM_ZERO TARGET {target_tick}; playdemo {staged_demo}\""),
     ];
     lines.extend(manual_seek_control_cfg(candidate, target_tick));
     for slot in 0..DIRECTOR_ACTION_SLOTS {
@@ -3532,6 +3532,7 @@ fn manual_hotkey_cfg(
         format!("bind \"{}\" \"tf2frag_manual_save\"", shortcuts.save_campath),
         format!("bind \"{}\" \"echo {DIRECTOR_LOAD_CAMPATH_REQUEST_MARKER}\"", shortcuts.load_campath),
         format!("bind \"{}\" \"tf2frag_director_execute\"", shortcuts.execute_director_action),
+        "tf2frag_manual_hud_off".into(),
         "echo TF2FRAG_MANUAL_READY".into(),
         "tf2frag_manual_sync_keyframes".into(),
         "tf2frag_manual_help".into(),
@@ -6166,6 +6167,39 @@ mod recording_tests {
     }
 
     #[test]
+    fn manual_hlae_defaults_hud_off_on_launch_ready_and_safe_restart() {
+        let cfg = manual_hotkey_cfg(
+            &Candidate::default(),
+            500,
+            "demos/tf2fragdemohelper_manual/session/candidate.dem",
+            &AppSettings::default(),
+        );
+        let lines = cfg.lines().collect::<Vec<_>>();
+        let initial_hud_off = lines
+            .iter()
+            .position(|line| *line == "tf2frag_manual_hud_off")
+            .expect("manual session explicitly applies the HUD-off default");
+        let ready_marker = lines
+            .iter()
+            .position(|line| *line == "echo TF2FRAG_MANUAL_READY")
+            .expect("manual session publishes its ready marker");
+
+        assert!(initial_hud_off < ready_marker);
+        assert!(cfg.contains(
+            "alias tf2frag_manual_hud_off \"cl_drawhud 0; alias tf2frag_manual_toggle_hud tf2frag_manual_hud_on"
+        ));
+        assert!(cfg.contains(
+            "TF2FRAG_MANUAL_PAUSED_AT_START; thirdperson; r_drawviewmodel 0; tf2frag_manual_hud_off; mirv_cmd enabled 1"
+        ));
+        assert!(cfg.contains(
+            "mirv_campath draw enabled 0; mirv_cmd enabled 0; tf2frag_manual_hud_off; alias tf2frag_director_poll"
+        ));
+        assert!(cfg.contains(
+            "alias tf2frag_manual_hud_on \"cl_drawhud 1; alias tf2frag_manual_toggle_hud tf2frag_manual_hud_off"
+        ));
+    }
+
+    #[test]
     fn manual_hotkeys_use_saved_custom_keys_and_never_bind_arrows() {
         let mut settings = AppSettings::default();
         settings.mirv_shortcuts.advance_time = "q".into();
@@ -6337,7 +6371,7 @@ mod recording_tests {
             "alias tf2frag_manual_seek_001_do \"alias tf2frag_manual_seek_001 tf2frag_manual_seek_noop; demo_gototick 500\""
         ));
         assert!(cfg.contains(
-            "alias tf2frag_manual_ready_do \"alias tf2frag_manual_ready tf2frag_manual_seek_noop; demo_pause; echo TF2FRAG_MANUAL_PAUSED_AT_START; thirdperson; r_drawviewmodel 0; mirv_cmd enabled 1; tf2frag_manual_sync_keyframes; tf2frag_director_wait_probe\""
+            "alias tf2frag_manual_ready_do \"alias tf2frag_manual_ready tf2frag_manual_seek_noop; demo_pause; echo TF2FRAG_MANUAL_PAUSED_AT_START; thirdperson; r_drawviewmodel 0; tf2frag_manual_hud_off; mirv_cmd enabled 1; tf2frag_manual_sync_keyframes; tf2frag_director_wait_probe\""
         ));
         assert!(cfg.contains(
             "alias tf2frag_manual_seek_arm_001 \"alias tf2frag_manual_seek_001 tf2frag_manual_seek_001_do; tf2frag_manual_seek_arm_ready\""
