@@ -3522,7 +3522,7 @@ fn manual_hotkey_cfg(
         format!("bind \"{}\" \"tf2frag_manual_clip_start\"", shortcuts.safe_restart),
         format!("bind \"{}\" \"tf2frag_manual_next_kill\"", shortcuts.next_kill_tick),
         format!("bind \"{}\" \"demo_togglepause\"", shortcuts.pause_resume),
-        format!("bind \"{}\" \"sv_cheats 1; thirdperson; r_drawviewmodel 0; spec_autodirector 0; mirv_input camera\"", shortcuts.enter_camera),
+        format!("bind \"{}\" \"sv_cheats 1; thirdperson; r_drawviewmodel 0; spec_autodirector 0; mirv_input camera; mirv_input fov {}\"", shortcuts.enter_camera, settings.viewmodel_fov.clamp(1, 179)),
         format!("bind \"{}\" \"mirv_campath add; echo TF2FRAG_MANUAL_KEYFRAME_ADDED; echo {DIRECTOR_KEYFRAME_DIRTY_MARKER}; tf2frag_manual_sync_keyframes\"", shortcuts.add_keyframe),
         format!("bind \"{}\" \"mirv_input end; thirdperson; r_drawviewmodel 0; mirv_campath enabled 1; echo TF2FRAG_MANUAL_CAMPATH_ENABLED_THIRDPERSON\"", shortcuts.play_campath),
         format!("bind \"{}\" \"tf2frag_manual_toggle_draw\"", shortcuts.draw_campath),
@@ -6109,7 +6109,7 @@ mod recording_tests {
         assert!(cfg.contains("cl_drawhud 0"));
         assert!(cfg.contains("cl_drawhud 1"));
         assert!(cfg.contains("bind \"6\""));
-        assert!(cfg.contains("mirv_input camera"));
+        assert!(cfg.contains("mirv_input camera; mirv_input fov 70"));
         assert!(cfg.contains(
             "mirv_input end; thirdperson; r_drawviewmodel 0; mirv_campath enabled 1"
         ));

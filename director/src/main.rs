@@ -20,9 +20,10 @@ use std::{
 };
 use tf2_mirv_director::{
     DirectorControl, DirectorSession, DIRECTOR_ACTION_ACK_PREFIX, DIRECTOR_ACTION_FILE_PREFIX,
-    DIRECTOR_ACTION_SLOTS, DIRECTOR_KEYFRAME_BEGIN_PREFIX, DIRECTOR_KEYFRAME_DIRTY_MARKER,
-    DIRECTOR_KEYFRAME_END_PREFIX, DIRECTOR_LOAD_CAMPATH_REQUEST_MARKER,
-    DIRECTOR_POLL_READY_MARKER, DIRECTOR_POLL_UNAVAILABLE_MARKER, DIRECTOR_TICK_OFFSET_PREFIX,
+    DIRECTOR_ACTION_SLOTS, DIRECTOR_KEYFRAME_ALLOW_EMPTY_MARKER,
+    DIRECTOR_KEYFRAME_BEGIN_PREFIX, DIRECTOR_KEYFRAME_DIRTY_MARKER, DIRECTOR_KEYFRAME_END_PREFIX,
+    DIRECTOR_LOAD_CAMPATH_REQUEST_MARKER, DIRECTOR_POLL_READY_MARKER,
+    DIRECTOR_POLL_UNAVAILABLE_MARKER, DIRECTOR_TICK_OFFSET_PREFIX,
 };
 
 const ONE_SECOND_TICKS: i64 = 67;
@@ -357,9 +358,19 @@ fn main() -> Result<()> {
                 session.start_tick,
             ) {
                 Ok((mut command, label)) => {
-                    if action.as_str() == "Delete keyframe"
-                        || action.as_str() == "Edit keyframe"
+                    if action.as_str() == "Delete keyframe" {
+                        // A complete empty print is authoritative only after an
+                        // operation that can really remove the final keyframe.
+                        command.push_str(&format!(
+                            "; echo {DIRECTOR_KEYFRAME_ALLOW_EMPTY_MARKER}; echo {DIRECTOR_KEYFRAME_DIRTY_MARKER}"
+                        ));
+                    } else if action.as_str() == "Edit keyframe"
+                        || action.as_str() == "Go to keyframe"
+                        || action.as_str() == "Go to 1 sec before"
                     {
+                        // Seeking can make HLAE briefly print an empty table even
+                        // though its campath is still intact. Re-query once the
+                        // seek has settled and keep the verified model meanwhile.
                         command.push_str(&format!("; echo {DIRECTOR_KEYFRAME_DIRTY_MARKER}"));
                     }
                     dispatch_director_action(
@@ -574,6 +585,8 @@ fn main() -> Result<()> {
         let mut reported_first_tick = false;
         let mut reported_error = false;
         let mut keyframe_refresh_due = None::<Instant>;
+        let mut keyframe_snapshot_gate = KeyframeSnapshotGate::default();
+        let mut transient_empty_retries = 0_u8;
         telemetry_timer.start(TimerMode::Repeated, Duration::from_millis(15), move || {
             let (Some(strip), Some(card)) = (weak_strip.upgrade(), weak_card.upgrade()) else {
                 return;
@@ -641,6 +654,7 @@ fn main() -> Result<()> {
                         );
                     }
                     if poll.keyframes_refreshing {
+                        transient_empty_retries = 0;
                         // Keep the last complete HLAE table visible while the next
                         // print is still arriving. Clearing it here caused every
                         // mutation/seek to flash an empty timeline.
@@ -653,41 +667,63 @@ fn main() -> Result<()> {
                         // the mutation has settled, including while paused.
                         keyframe_refresh_due = Some(Instant::now() + Duration::from_millis(150));
                     }
+                    if poll.keyframe_empty_snapshot_authorized {
+                        keyframe_snapshot_gate.authorize_empty_snapshot();
+                    }
                     if let Some(keys) = poll.keyframe_snapshot {
-                        let rows = keys
-                            .iter()
-                            .filter(|key| {
-                                key.tick >= session.start_tick && key.tick <= session.end_tick
-                            })
-                            .map(|key| KeyframeRow {
-                                // HLAE prints and consumes this exact signed-int index.
-                                // Do not replace it with an overlay-generated identifier.
-                                id: key.id,
-                                tick: to_ui_tick(key.tick),
-                                position: session.cue_position(key.tick),
-                            })
-                            .collect::<Vec<_>>();
-                        append_telemetry_diagnostic(
-                            &telemetry_diagnostic,
-                            &format!("status=KEYFRAMES_SYNCED visible_count={}", rows.len()),
-                        );
-                        let model = ModelRc::new(VecModel::from(rows));
-                        strip.set_keyframes(model.clone());
-                        card.set_keyframes(model);
-                        if let Some((selected_id, _)) = selected_keyframe.get() {
-                            if let Some(key) = keys.iter().find(|key| key.id == selected_id) {
-                                set_selected_keyframe(
-                                    &strip,
-                                    &card,
-                                    &selected_keyframe,
-                                    key.id,
-                                    key.tick,
-                                );
-                            } else {
-                                clear_selected_keyframe(&strip, &card, &selected_keyframe);
+                        if keyframe_snapshot_gate.accept(keys.len()) {
+                            transient_empty_retries = 0;
+                            let rows = keys
+                                .iter()
+                                .filter(|key| {
+                                    key.tick >= session.start_tick && key.tick <= session.end_tick
+                                })
+                                .map(|key| KeyframeRow {
+                                    // HLAE prints and consumes this exact signed-int index.
+                                    // Do not replace it with an overlay-generated identifier.
+                                    id: key.id,
+                                    tick: to_ui_tick(key.tick),
+                                    position: session.cue_position(key.tick),
+                                })
+                                .collect::<Vec<_>>();
+                            append_telemetry_diagnostic(
+                                &telemetry_diagnostic,
+                                &format!("status=KEYFRAMES_SYNCED visible_count={}", rows.len()),
+                            );
+                            let model = ModelRc::new(VecModel::from(rows));
+                            strip.set_keyframes(model.clone());
+                            card.set_keyframes(model);
+                            if let Some((selected_id, _)) = selected_keyframe.get() {
+                                if let Some(key) = keys.iter().find(|key| key.id == selected_id) {
+                                    set_selected_keyframe(
+                                        &strip,
+                                        &card,
+                                        &selected_keyframe,
+                                        key.id,
+                                        key.tick,
+                                    );
+                                } else {
+                                    clear_selected_keyframe(&strip, &card, &selected_keyframe);
+                                }
+                            }
+                            card.set_command_status("AUTHORITATIVE HLAE IDS REFRESHED".into());
+                        } else {
+                            append_telemetry_diagnostic(
+                                &telemetry_diagnostic,
+                                "status=TRANSIENT_EMPTY_KEYFRAME_SNAPSHOT_REJECTED",
+                            );
+                            card.set_command_status(
+                                "SEEK SETTLING — KEEPING LAST VERIFIED KEYFRAMES".into(),
+                            );
+                            // Retry a bounded number of times. The markers stay
+                            // visible even if HLAE continues returning a transient
+                            // empty table, and the timer cannot become a busy loop.
+                            if transient_empty_retries < 2 {
+                                transient_empty_retries += 1;
+                                keyframe_refresh_due =
+                                    Some(Instant::now() + Duration::from_millis(300));
                             }
                         }
-                        card.set_command_status("AUTHORITATIVE HLAE IDS REFRESHED".into());
                     }
                     for sequence in poll.action_acks {
                         let status = action_queue.borrow_mut().acknowledge(sequence);
@@ -1973,6 +2009,11 @@ impl TickLogTail {
         if line.contains(DIRECTOR_LOAD_CAMPATH_REQUEST_MARKER) {
             poll.load_campath_requested = true;
         }
+        if line.contains(DIRECTOR_KEYFRAME_ALLOW_EMPTY_MARKER)
+            || is_campath_clear_command(line)
+        {
+            poll.keyframe_empty_snapshot_authorized = true;
+        }
         if line.contains(DIRECTOR_KEYFRAME_BEGIN_PREFIX) {
             self.keyframe_capture = Some(Vec::new());
             self.keyframe_capture_invalid = false;
@@ -2050,10 +2091,32 @@ struct TelemetryPoll {
     tick_updates: Vec<TickUpdate>,
     keyframe_snapshot: Option<Vec<ParsedCampathKey>>,
     keyframes_refreshing: bool,
+    keyframe_empty_snapshot_authorized: bool,
     action_acks: Vec<u64>,
     director_poll_ready: bool,
     director_poll_unavailable: bool,
     load_campath_requested: bool,
+}
+
+#[derive(Default)]
+struct KeyframeSnapshotGate {
+    has_verified_keyframes: bool,
+    empty_snapshot_authorized: bool,
+}
+
+impl KeyframeSnapshotGate {
+    fn authorize_empty_snapshot(&mut self) {
+        self.empty_snapshot_authorized = true;
+    }
+
+    fn accept(&mut self, key_count: usize) -> bool {
+        if key_count == 0 && self.has_verified_keyframes && !self.empty_snapshot_authorized {
+            return false;
+        }
+        self.has_verified_keyframes = key_count > 0;
+        self.empty_snapshot_authorized = false;
+        true
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -2076,6 +2139,13 @@ fn is_campath_identity_mutation(line: &str) -> bool {
         || lower.starts_with("mirv_campath edit start")
         || lower.starts_with("mirv_campath edit duration ")
         || lower.starts_with("mirv_campath offset ")
+}
+
+fn is_campath_clear_command(line: &str) -> bool {
+    let Some((_, command)) = line.split_once("] ") else {
+        return false;
+    };
+    command.trim().eq_ignore_ascii_case("mirv_campath clear")
 }
 
 fn parse_action_ack(line: &str) -> Option<u64> {
@@ -2683,6 +2753,48 @@ mod tests {
         );
         assert!(poll.keyframes_refreshing);
         assert!(poll.keyframe_snapshot.is_none());
+    }
+
+    #[test]
+    fn only_an_explicit_destructive_action_authorizes_an_empty_snapshot() {
+        let mut tail = TickLogTail::new(PathBuf::new());
+
+        let mut seek = TelemetryPoll::default();
+        tail.consume_line(
+            DIRECTOR_KEYFRAME_DIRTY_MARKER,
+            "TF2FRAG_DIRECTOR_TICK",
+            &mut seek,
+        );
+        assert!(!seek.keyframe_empty_snapshot_authorized);
+
+        let mut delete = TelemetryPoll::default();
+        tail.consume_line(
+            DIRECTOR_KEYFRAME_ALLOW_EMPTY_MARKER,
+            "TF2FRAG_DIRECTOR_TICK",
+            &mut delete,
+        );
+        assert!(delete.keyframe_empty_snapshot_authorized);
+
+        let mut clear = TelemetryPoll::default();
+        tail.consume_line(
+            "08/30 12:30:22 ] mirv_campath clear",
+            "TF2FRAG_DIRECTOR_TICK",
+            &mut clear,
+        );
+        assert!(clear.keyframe_empty_snapshot_authorized);
+    }
+
+    #[test]
+    fn transient_empty_snapshot_cannot_erase_verified_keyframes() {
+        let mut gate = KeyframeSnapshotGate::default();
+        assert!(gate.accept(3));
+        assert!(!gate.accept(0));
+        assert!(!gate.accept(0));
+        assert!(gate.accept(4));
+
+        gate.authorize_empty_snapshot();
+        assert!(gate.accept(0));
+        assert!(gate.accept(0));
     }
 
     #[test]
