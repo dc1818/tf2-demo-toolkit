@@ -18,11 +18,12 @@ if errorlevel 1 (
 )
 
 if not exist dist mkdir dist
-copy /y target\release\tf2-frag-helper.exe dist\TF2_Frag_Demo_Helper.exe >nul
+copy /y target\release\tf2-demo-toolkit.exe dist\TF2_Demo_Toolkit.exe >nul
+copy /y target\release\tf2-demo-director.exe dist\TF2_Demo_Director.exe >nul
 copy /y target\release\export_all.exe dist\export_all.exe >nul
 if exist dist\recording_resources_archive rmdir /s /q dist\recording_resources_archive
 xcopy /e /i /y recording_resources_archive dist\recording_resources_archive >nul
 echo.
-echo Built dist\TF2_Frag_Demo_Helper.exe, dist\export_all.exe, and recording resources
-echo Open dist\TF2_Frag_Demo_Helper.exe to start the program.
+echo Built TF2 Demo Toolkit, TF2 Demo Director, the parser, and recording resources in dist\
+echo Open dist\TF2_Demo_Toolkit.exe to start the program.
 pause

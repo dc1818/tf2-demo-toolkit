@@ -106,7 +106,7 @@ component DirectorButton inherits Rectangle {
 
 // Option C: this narrow timeline remains visible even when the cue card is hidden.
 export component DirectorStripWindow inherits Window {
-    title: "TF2 MIRV Director Timeline";
+    title: "TF2 Demo Director Timeline";
     preferred-width: 1500px;
     preferred-height: 108px;
     min-height: 96px;
@@ -153,7 +153,7 @@ export component DirectorStripWindow inherits Window {
                 width: root.narrow-layout ? 140px : (root.compact-layout ? 210px : 300px);
                 spacing: 8px;
                 Text {
-                    text: "TF2 MIRV DIRECTOR";
+                    text: "TF2 DEMO DIRECTOR";
                     color: Colors.cream;
                     font-family: "Bebas Neue";
                     font-size: root.narrow-layout ? 15px : (root.compact-layout ? 19px : 25px);
@@ -264,7 +264,7 @@ export component DirectorStripWindow inherits Window {
 
 // Only this card accepts mouse input. The rest of TF2 remains directly usable.
 export component DirectorCardWindow inherits Window {
-    title: "TF2 MIRV Director Cue Card";
+    title: "TF2 Demo Director Cue Card";
     preferred-width: 360px;
     preferred-height: 650px;
     min-width: 300px;

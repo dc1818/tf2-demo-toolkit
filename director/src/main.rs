@@ -41,14 +41,14 @@ slint::include_modules!();
 fn main() -> Result<()> {
     let path = env::args_os()
         .nth(1)
-        .context("usage: tf2-mirv-director <director_session.json>")?;
+        .context("usage: tf2-demo-director <director_session.json>")?;
     let session_path = PathBuf::from(path);
     let session = Rc::new(load_session(&session_path)?);
     let telemetry_diagnostic = session_path.with_file_name("director_telemetry.log");
     let _ = fs::write(
         &telemetry_diagnostic,
         format!(
-            "TF2 MIRV Director telemetry diagnostic\nsession={}\nconsole_log={}\nmarker={}\ncontrol={:?}\nstatus=WAITING_FOR_TF2_LOG\n",
+            "TF2 Demo Director telemetry diagnostic\nsession={}\nconsole_log={}\nmarker={}\ncontrol={:?}\nstatus=WAITING_FOR_TF2_LOG\n",
             session_path.display(),
             session.telemetry_log.display(),
             session.telemetry_marker_prefix,

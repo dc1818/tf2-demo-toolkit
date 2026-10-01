@@ -1,94 +1,207 @@
-# TF2 Frag Demo Helper
+# TF2 Demo Toolkit
 
-Rust desktop application for parsing TF2 `.dem` files, ranking clip candidates, and launching offline HLAE recording sessions. The GUI is built with Slint. Python, .NET, and Windows Forms are not required.
+A desktop tool for finding and recording clips from Team Fortress 2 demos. It parses `.dem` files, ranks possible highlights, and lets you preview or record the clips you want to keep.
 
-## Build
+I built this for working through demo collections without having to scrub through every match by hand. For shots that need a different angle, the manual MIRV workflow includes a Director overlay for placing and editing camera keyframes.
 
-Install [Rust 1.88 or newer](https://rustup.rs/), then run:
+The application is written in Rust with a Slint interface. Parsing and candidate browsing work on Windows, Linux, and macOS. HLAE recording and manual MIRV sessions are Windows-only.
 
-- Windows: `BUILD_RUST_APP.bat`
-- Linux/macOS: `./build_rust_app.sh`
+## Features
 
-The release package is created under `dist/` with:
+- Batch parsing with progress, time estimates, and a disk-space check before starting.
+- Ranked candidates with kill ticks, player and map information, and tags for individual kills.
+- Filters for class, map, server type, tags, score, and recorded status.
+- Support for POV and STV demos, including bookmarks from `ds_mark`.
+- Preview a selected clip in TF2 or record a batch with HLAE.
+- MP4, MOV/DNxHR, AVI, TGA, and JPG output, with 60/120/240/480 FPS options.
+- Manual camera paths with a keyframe timeline, editing controls, and XML save/load.
+- Recording tracking to help avoid duplicate clips.
+- Temporary recording profiles, TF2 configuration backups, and interrupted-session recovery.
 
-- `TF2_Frag_Demo_Helper` — Slint GUI and Rust application logic.
-- `export_all` — Rust TF2 demo decoder used by the GUI.
-- `recording_resources_archive/` — required VPKs, recording HUDs, and skyboxes.
+Scores and tags are a way to narrow down the footage, not a substitute for watching it. Airshot detection and server-type classification use demo evidence and can still get things wrong.
 
-Keep those three items together. On Windows the binaries have `.exe` extensions.
+## Getting started
 
-## Runtime notes
+### Windows package
 
-- Parsing, analysis, filtering, candidate browsing, adaptive concurrency, and recording identification are implemented in Rust.
-- Batch work keeps the original two-phase barrier (parse every demo, then analyze every export), schedules larger demos first, and offers Low, Medium, and High computer-specific performance ceilings. A live whole-system CPU/RAM governor can throttle below the chosen ceiling when a game, video, or other foreground workload starts; Windows batch work also runs below normal process priority.
-- Before parsing starts, the GUI shows estimated parser, analyzer, and total time plus conservative parsed-export size, 20% safety headroom, destination volume, and currently available space. The run is blocked before an export folder is created when the destination lacks the required free space. Successful same-machine timings are retained locally to calibrate later estimates for each performance profile.
-- Phase-two state scanning stores compact change-only histories and targeted frag snapshots instead of repeated full state copies. Rayon thread count is sized independently from the number of demos allowed in RAM, so one remaining demo can still use the safe CPU budget.
-- Candidate scoring includes the legacy frag identifiers plus bookmark identifiers. The analyzer merges embedded bookmark commands with TF2 Demo Support's same-name `.json` sidecar `events`, so every `ds_mark` creates a candidate, adds its bookmark score, and inherits nearby frag identifiers when present.
-- Candidate exports retain tags per distinct kill tick and keep sequence-wide tags separate. The Candidates table and Details dialog show `Tick <number>` groups plus a `Whole candidate` group, while the original flattened tag list remains available for filtering and older integrations. Older multi-kill exports are labeled as legacy until they are reparsed because their lost tick-to-tag association cannot be reconstructed reliably.
-- Airshot scoring requires sustained airborne motion before projectile impact. Stationary elevation alone is rejected, and Loose Cannon kills use the victim state before the first cannon collision so the cannon cannot create the airborne state used to score its own double donk or ordinary cannon kill as an airshot.
-- Demo context reports POV or STV and classifies RGL/competitive 6v6, Highlander, Valve public, community public, or uncertain modes from config signatures and sustained roster evidence.
-- Candidate filtering retains the legacy same-field OR / different-field AND syntax, quoted terms, negation, score threshold, drag selection, Select/Deselect All, details, and recorded/bookmark/mode/type fields.
-- HLAE recording is Windows-only. Parsing and candidate browsing are intended to work on Windows, Linux, and macOS.
-- Recording launches TF2 with `-insecure` and `+sv_lan 1` for offline demo playback.
-- Each recording capture closes the console/GameUI and active selection panels, and suppresses normal, server, and STV chat so menus and messages are not burned into the clip.
-- Preview stages a temporary demo and VDM seek script. Automatic recording uses the original POV view, or the established attacker in-eye spectator focus for STV candidates.
-- The experimental automatic cinematic-camera selector and planner have been removed. Select exactly one candidate and use `Launch TF2 with HLAE` for a manual MIRV camera session instead.
-- Manual HLAE launch stages the selected demo, starts at tick 0, seeks to the current `Before first tick` time in forward jumps capped at 15,000 ticks, automatically pauses there, retains the `After last tick` boundary for naming/reference, and installs temporary number-row/bracket camera, kill-tick, campath, and recording hotkeys. Key `3` uses the same staged restart instead of one large backward `demo_gototick`; `[` advances demo time by 0.25 seconds, `]` toggles the HUD, and `4` cycles through every distinct kill tick, including multi-tick candidates. The arrow keys remain available to MIRV.
-- Manual camera shortcuts `6` and `8` request third-person playback and hide the POV viewmodel, and the safe-restart VDM reapplies that state after reloading the demo. Because TF2 can still return a POV demo to first person after manual input ends, explicitly entering `thirdperson` after `8` remains the reliable playback check. The confirmed recording order is `5` to resume, `9` to start, and `0` to stop.
-- Manual captures are written under `Manual HLAE/<Primary Tag>/` in the selected recording directory. `9` and `0` start and stop recording with the selected format, FPS, encoder, and image quality. `=` saves the current campath as `camera_path.xml` in that capture folder.
-- The Windows package also includes `TF2_MIRV_Director.exe`. A manual session opens it beside TF2 with the selected clip window, exact cue ticks, per-tick tags, available victim names, whole-candidate tags, and output/campath paths. Director clicks are executed by TF2's own guarded CFG polling queue while paused and are marked complete only after a console-log acknowledgement. Press the configurable focus shortcut (`F11` by default) to release TF2's captured mouse and click the timeline or side panel; press it again to return focus to TF2. The non-activating overlay and dedicated key remain the fallback when `wait` is unavailable. It is a separate companion process and closes with the TF2 session. See [TF2 MIRV Director game plan](docs/TF2_MIRV_DIRECTOR_GAMEPLAN.md) for the researched HOT-inspired architecture and live-control roadmap.
-- Manual sessions use the same isolated recording profile and recovery marker as automatic recording. When TF2 closes, the helper restores the complete original `tf/cfg` folder (including binds and overrides), custom content, HUD, hitsounds, `config.cfg`, `video.txt`, and DX setting. Closing the helper while TF2 is open also closes that launched TF2 process and restores the profile.
-- See [MANUAL_HLAE_CAMERA_GUIDE.md](MANUAL_HLAE_CAMERA_GUIDE.md) for the controls, multi-kill framing workflow, keyframes, and recording steps.
-- The Candidates page reports recording recovery, the active candidate and batch count, finalization, interrupted-batch consolidation, log archival, and TF2-file restoration in the top header. Record with HLAE remains disabled until that background work finishes.
-- Candidates whose recording windows overlap are assigned to separate playback passes of the same demo. Their exact lead-in, kill ticks, outro, identity, and individual output are preserved; the scheduler never shifts a later clip past its frag to force it into one forward-only VDM pass.
-- The recorder temporarily installs selected bundled resources and restores the original `tf/custom` content, custom hitsounds, complete `tf/cfg` folder (including `cfg/overrides`), `config.cfg`, `video.txt`, and DX settings after TF2 exits.
-- Recording completion uses explicit per-clip and final-batch markers. Process monitoring tolerates transient Windows query failures, confirms TF2 exit across repeated polls, waits for HLAE to flush, then finalizes and indexes every usable capture even when TF2 was closed before the batch finished.
-- If recording is interrupted, the manifest marks the batch and unfinished clips as interrupted, completed outputs remain indexed, and the next launch uses the saved recovery marker to restore the original TF2 files.
-- Closing the helper while recording, muxing, moving outputs, or recovering an interrupted session requires an additional confirmation. Confirmed shutdowns preserve the session manifest and raw HLAE artifacts for the next launch.
-- At startup, retained session manifests are scanned clip-by-clip. Existing finalized outputs are indexed, recoverable HLAE video/audio is muxed and moved into `Videos/`, and recoverable image captures are moved into `Image Sequences/`; unresolved sessions remain available through the Logs page instead of being discarded.
-- `MP4 - Standard` is the default recording format and uses H.264 High, 8-bit `yuv420p`, and AAC for DaVinci Resolve and broad editor compatibility. The collapsed Advanced Encoding Options panel is format-aware: MP4 exposes compatibility, chroma/profile, CRF, x264 preset, and AAC controls; AVI preserves the original raw preset while offering FFV1/HuffYUV lossless codecs and valid pixel formats; MOV DNxHR exposes LB/SQ/HQ/HQX/444 profiles with FFmpeg-enforced bit depth/chroma; JPG quality appears only for JPG output. Fixed lossless MP4 and TGA modes keep their existing pipelines.
-- Parser/analyzer and HLAE/finalizer logs are kept separately for troubleshooting without opening extra terminal windows.
-- A hidden Rust panic is appended to `%LOCALAPPDATA%\TF2FragDemoHelper\crash.log` on Windows with its location and backtrace; adaptive CPU/RAM statistics are included in each export's benchmark summary and batch log.
-- Final videos are written to `Videos/<Primary Tag>/`. The primary tag is selected from the candidate's strongest positive score evidence with deterministic generic matching, so future scored tag types can become categories without changing the folder planner. Native TGA/JPG captures are written to `Image Sequences/<clip>/Frames/` with WAV audio under `Audio/`. Recording manifests, queues, working captures, and finalizer logs stay in `%LOCALAPPDATA%\TF2FragDemoHelper\Recording Sessions\tf2fragdemohelper_batch_<timestamp>/`; a fully successful session is removed automatically after output finalization and TF2 restoration, while failed or interrupted sessions remain available for diagnostics and recovery.
-- Format-specific output folders are created only when that format produces a finalized output; unused video or image-sequence folders are not created.
-- HLAE pre-flight estimates use the selected candidates' exact clip windows, FPS, resolution, output method, and JPG quality. They include finalized output, the largest simultaneous encoded working capture, audio, metadata, and safety headroom; recording is blocked when the selected output volume cannot safely hold the batch.
-- Completed recordings use a demo-content SHA-256 candidate key, a full output fingerprint, and candidate/tick filename fallback. The recorded state therefore survives ordinary video renames and moves after the output has been indexed.
-- Choosing to re-record an already completed candidate keeps its original output until the replacement has finalized and been indexed. The old video or image-sequence folder is then removed, leaving the new output as the recorded candidate.
+Open [Actions → Rust workspace](https://github.com/dc1818/tf2fragdemohelper/actions/workflows/build.yml), select a successful run for `main`, and download the **TF2-Demo-Toolkit-Windows** artifact. GitHub may require you to sign in to download it.
 
-## Figma-to-Slint interface
+Extract the entire ZIP and keep these items together:
 
-The Slint interface mirrors the approved TF2-themed Figma frames for Parse Demos,
-Candidates, Recording Settings, Logs, and Candidate Details. It uses one shared
-component system for the muted gunmetal palette, warm borders, TF2 Build control
-labels, hover/pressed/disabled states, fields, checkboxes, tabs, panels, and class
-filters.
+- `TF2_Demo_Toolkit.exe` — the main application.
+- `TF2_Demo_Director.exe` — the manual camera overlay.
+- `export_all.exe` — the demo parser.
+- `recording_resources_archive/` — bundled recording resources.
 
-- The full desktop composition is used above 1050 logical pixels wide.
-- At 1050 pixels and below, every page switches to its dedicated compact frame.
-- The supported minimum window size is 900x520; compact screens reflow instead of
-  scaling the desktop canvas.
-- The compact header's Menu control exposes every page without consuming the
-  limited-height layout with a permanent tab row.
-- Parse accepts individual demo selection, recursive folder selection, and native
-  operating-system file/folder drops.
-- The Candidates page retains advanced query syntax while exposing direct map,
-  class, server-type, recorded-state, and minimum-score controls. Official TF2
-  leaderboard class icons use the canonical Scout, Soldier, Pyro, Demoman, Heavy,
-  Engineer, Medic, Sniper, and Spy order.
-- Select All and Deselect All are two states of one control. RED identifies record
-  and parse actions, BLU identifies preview/estimate actions, and gold identifies
-  selection or file-location utilities.
+Run `TF2_Demo_Toolkit.exe`. Python and .NET are not required.
 
-The responsive visual source is the project Figma file:
-https://www.figma.com/design/Yr10mYuw4jcnQCMKuTPCH3
+### Recording requirements
+
+To preview or record demos, you need an installed copy of TF2 and the demo's map. HLAE recording also needs:
+
+- [HLAE](https://www.advancedfx.org/download/) extracted with its hook files intact.
+- [FFmpeg](https://ffmpeg.org/download.html) for encoded video output.
+- Enough free space for the working captures as well as the finished clips.
+
+Set the TF2 executable, HLAE executable, FFmpeg executable, and recording output folder in **Recording Settings**. For current 64-bit TF2 installations, select `tf_win64.exe`.
+
+**Recording sessions are for offline demo playback only.** The helper launches TF2 with `-insecure` and `+sv_lan 1`. Do not join matchmaking or community servers from that instance. HLAE uses its normal game hook; the Director does not add another injected DLL.
+
+## Find clips
+
+1. On **Parse Demos**, choose your demos or a folder, or drag them into the window.
+2. Choose an export folder and performance profile. Review the time and space estimate before starting.
+3. Open **Candidates** when analysis finishes.
+4. Filter the list and use **View Details** to inspect a candidate's kills, tags, and score breakdown.
+5. Select one candidate and use **Preview Selected in TF2** to check the footage.
+
+You can reopen an export with **Load Previously Parsed Export** instead of parsing the same demos again. Keep the original `.dem` files available: exports contain analysis, not a replacement for the footage.
+
+POV demos only contain what was available to the recording player. STV demos can provide candidates from multiple players. Neither format guarantees that every player or event has enough data for every analysis rule.
+
+## Record clips
+
+Choose the format, resolution, FPS, and lead-in/outro in **Recording Settings**, then select candidates and use **Record with HLAE**.
+
+The default is **MP4 - Standard**, using H.264 and AAC. Advanced encoding options include lossless AVI codecs, MP4 quality and compatibility controls, and DNxHR profiles. JPG quality is available when JPG output is selected.
+
+Automatic recording uses the original POV camera, or the candidate's attacker in-eye view for STV demos. For a custom camera angle, use a manual MIRV session instead.
+
+The helper checks recording space before starting, tracks completed outputs, and asks how to handle candidates that have already been recorded. If you choose to re-record, the old output is kept until its replacement finishes successfully.
+
+### Output folders
+
+Within the selected recording folder:
+
+| Capture | Location |
+| --- | --- |
+| Automatic video | `Videos/<Primary Tag>/` |
+| Automatic TGA/JPG sequence | `Image Sequences/<clip>/Frames/`, with WAV audio under `Audio/` |
+| Manual MIRV capture | `Videos/Manual HLAE/<Primary Tag>/` |
+
+Temporary captures and recovery files are kept separately from finished outputs. Successful batch sessions are cleaned up after finalization and TF2 restoration; interrupted sessions are retained for recovery.
+
+## Manual MIRV and Director
+
+Select exactly one candidate and click **Launch Manual MIRV Session**. TF2 loads the demo from tick 0, seeks forward in stages, and pauses at your selected lead-in. The HUD starts off.
+
+Director opens a timeline above TF2 and a panel on the right. Use them to navigate frags, inspect keyframes, edit a selected keyframe, load a saved campath, or close TF2.
+
+Default shortcuts:
+
+| Key | Action |
+| --- | --- |
+| `[` | Advance about 0.25 seconds |
+| `]` | Toggle HUD |
+| `1` | Show shortcut help in the console |
+| `2` | Go back about one second |
+| `3` | Restart safely and return to the lead-in |
+| `4` | Next frag, one second early; wraps to the first frag |
+| `5` | Pause/resume |
+| `6` | Enter MIRV camera and reset live FOV to the recording setting |
+| `7` | Add keyframe |
+| `8` | End manual input and enable campath playback |
+| `9` / `0` | Start / stop recording |
+| `-` | Print keyframes |
+| `=` | Save campath XML |
+| `F8` | Choose and load campath XML |
+| `C` | Hide/show Director panel |
+| `F11` | Switch focus between Director and TF2 |
+
+Shortcuts can be changed in settings. Arrow keys are left available for MIRV camera movement.
+
+A basic workflow is:
+
+1. Press `6`, position the camera, and press `7`.
+2. Advance the demo and repeat for the important moments.
+3. Press `8`, then `3` to return to the lead-in, and `5` to preview.
+4. Save the path with `=` when you are happy with it.
+5. For recording, return to the lead-in with `3`, enable the path with `8`, then use **`5` → `9` → `0`**: resume, start recording, stop recording.
+6. Close TF2 and let the helper finish processing the capture.
+
+Editing a keyframe's FOV targets that keyframe's HLAE ID, not the whole path. Pressing `6` resets the live camera FOV without changing existing keyframes.
+
+Same-session safe restarts keep the campath in memory. Saving creates an XML file; it does not automatically load that path in a future session. Use `F8` or the panel's load button to bring it back.
+
+For detailed camera controls and POV troubleshooting, see the [manual HLAE camera guide](MANUAL_HLAE_CAMERA_GUIDE.md). Director's command delivery is described in [director/README.md](director/README.md).
+
+### Manual launch options
+
+**Manual Launch Options** accepts extra Source launch parameters such as `-high -nojoy` or `+mat_queue_mode 2`. The format checker rejects malformed input and options that conflict with the helper's offline settings, demo loading, or session controls.
+
+A valid format does not mean an option is useful or supported by TF2. Leave this field empty unless you need a particular option.
+
+## TF2 settings and recovery
+
+Recording temporarily changes TF2's configuration and selected custom resources. The helper backs up the original CFG folder, binds, HUD/custom content, hitsounds, video settings, and DX setting, then restores them after its TF2 session closes.
+
+Keep the helper open while recording and finalizing. If TF2 crashes or a batch is interrupted, the helper tries to finalize usable captures and preserve unfinished work. Reopening the helper runs recovery for retained sessions.
+
+Do not manually delete session backups while restoration or recovery is pending. Check the **Logs** page if recording, finalization, or restoration fails.
+
+## Build from source
+
+Install [Rust](https://rustup.rs/). The workspace requires Rust 1.88 or newer; GitHub Actions uses 1.88.0.
+
+On Windows, the MSVC toolchain also needs Visual Studio Build Tools or Visual Studio Community with **Desktop development with C++** and a Windows SDK installed. VS Code alone does not provide `link.exe`.
+
+```sh
+git clone https://github.com/dc1818/tf2fragdemohelper.git tf2-demo-toolkit
+cd tf2-demo-toolkit
+```
+
+### Windows
+
+Run `BUILD_RUST_APP.bat`. The script builds the workspace and packages TF2 Demo Toolkit, TF2 Demo Director, the parser, and recording resources in `dist/`.
+
+### Linux and macOS
+
+Run:
+
+```sh
+sh build_rust_app.sh
+```
+
+On Debian/Ubuntu, install the GUI dependency first:
+
+```sh
+sudo apt-get install libfontconfig1-dev
+```
+
+The desktop application builds on these platforms, but TF2/HLAE recording integration is Windows-only.
+
+Existing installations keep their settings, recording history, and recovery data. The internal settings and backup folders retain their original names for compatibility.
+
+### Checks
+
+```sh
+cargo check --workspace --all-targets
+cargo test --workspace
+```
+
+GitHub Actions runs workspace checks and tests on Windows, Ubuntu, and macOS, and builds the Windows release package.
 
 ## Source layout
 
-- `app/` — Slint UI plus Rust analysis, filtering, scheduling, recording, and settings code.
-- `app/ui/tf2-theme.slint` — shared Figma-derived palette and interactive TF2 controls.
-- `app/ui/assets/` — bundled typography and canonical TF2 class-filter images.
-- `parser/` — Rust demo-parser library and the single `export_all` helper binary.
-- `recording_resources_archive/` — split resource archive retained beside the built GUI.
-- `.github/workflows/build.yml` — Windows, Linux, and macOS checks plus the Windows release artifact.
+| Directory | Contents |
+| --- | --- |
+| `app/` | Desktop UI, analysis, filtering, recording, settings, and recovery |
+| `parser/` | TF2 demo parser library and `export_all` binary |
+| `director/` | MIRV Director companion and overlay UI |
+| `app/ui/` | Slint components, theme, fonts, and class icons |
+| `recording_resources_archive/` | Bundled recording resources |
+| `.github/workflows/` | Cross-platform checks and Windows packaging |
 
-The parser library is derived from `demostf/parser` and remains MIT OR Apache-2.0 licensed. Bundled recording assets retain their upstream terms; see `THIRD_PARTY_NOTICES.md`.
+The interface uses a TF2-inspired theme with full and compact layouts. The [Figma design](https://www.figma.com/design/Yr10mYuw4jcnQCMKuTPCH3) is available as a visual reference.
+
+## Reporting issues
+
+Use [GitHub Issues](https://github.com/dc1818/tf2fragdemohelper/issues). Include the build or commit you used, the steps to reproduce the problem, the demo type (POV/STV), and any relevant logs. For recording problems, include your format, FPS, and HLAE version.
+
+When possible, include a small demo that reproduces the issue. Remove private paths, player information, or anything else you do not want to share before uploading logs or demos.
+
+## Credits and third-party assets
+
+The parser is based on [demostf/parser](https://codeberg.org/demostf/parser) and is licensed under MIT or Apache-2.0. Recording assets come from the [Lawena Recording Tool](https://github.com/quanticc/lawena-recording-tool), with additional fonts and Valve class artwork used in the interface.
+
+See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for asset credits and licensing details. HLAE and FFmpeg are separate downloads and are not bundled. This is a fan-made utility, not an official Valve tool.

@@ -10,7 +10,7 @@ name = "tf2_mirv_director"
 path = "src/lib.rs"
 
 [[bin]]
-name = "tf2-mirv-director"
+name = "tf2-demo-director"
 path = "src/main.rs"
 
 [dependencies]

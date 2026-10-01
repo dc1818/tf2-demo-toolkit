@@ -61,8 +61,8 @@ component AppHeader inherits Rectangle {
         spacing: 6px;
         HorizontalLayout {
             height: 48px;
-            Text { text: "TF2 UTILITIES"; color: Tf2Colors.cream; font-family: "Bebas Neue"; font-size: 31px; vertical-alignment: center; }
-            Text { text: "  /  FRAG DEMO HELPER"; color: Tf2Colors.muted; font-family: "Bebas Neue"; font-size: 25px; vertical-alignment: center; }
+            Text { text: "TF2"; color: Tf2Colors.cream; font-family: "Bebas Neue"; font-size: 31px; vertical-alignment: center; }
+            Text { text: "  /  DEMO TOOLKIT"; color: Tf2Colors.muted; font-family: "Bebas Neue"; font-size: 25px; vertical-alignment: center; }
             Rectangle { horizontal-stretch: 1; }
         }
         HorizontalLayout {
@@ -80,7 +80,7 @@ component AppHeader inherits Rectangle {
         spacing: 12px;
         VerticalLayout {
             spacing: -2px;
-            Text { text: "TF2 UTILITIES"; color: Tf2Colors.cream; font-family: "Bebas Neue"; font-size: 23px; }
+            Text { text: "TF2 DEMO TOOLKIT"; color: Tf2Colors.cream; font-family: "Bebas Neue"; font-size: 23px; }
             Text {
                 text: root.page == 0 ? "PARSE DEMOS" : root.page == 1 ? "CANDIDATES" : root.page == 2 ? "RECORDING SETTINGS" : root.page == 3 ? "LOGS" : "CANDIDATE DETAILS";
                 color: #8ab3cd; font-family: "TF2 Build"; font-size: 12px;
@@ -598,7 +598,7 @@ component CandidateDetailSection inherits Rectangle {
 }
 
 export component AppWindow inherits Window {
-    title: "TF2 Frag Demo Helper";
+    title: "TF2 Demo Toolkit";
     preferred-width: 1480px; preferred-height: 860px;
     min-width: 900px; min-height: 520px;
     background: Tf2Colors.app;
