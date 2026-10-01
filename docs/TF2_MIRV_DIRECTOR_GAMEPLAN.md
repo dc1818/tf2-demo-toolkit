@@ -1,15 +1,15 @@
-# TF2 MIRV Director: implementation and recording game plan
+# TF2 Demo Director: implementation and recording game plan
 
 ## Decision
 
-Build TF2 MIRV Director as a separate executable in this repository, launched by TF2 Frag Demo Helper for one selected candidate. Do not embed it in the main helper window and do not inject its UI into the recorded game frame.
+Build TF2 Demo Director as a separate executable in this repository, launched by TF2 Demo Toolkit for one selected candidate. Do not embed it in the main helper window and do not inject its UI into the recorded game frame.
 
 This keeps the responsibilities clean:
 
 | Component | Owns |
 |---|---|
-| TF2 Frag Demo Helper | Candidate selection, clip window, safe staged seeking, recording profile, capture output, recovery, and restoration |
-| TF2 MIRV Director | Candidate timeline, shot cues, campath key list/editor, preview controls, and warnings |
+| TF2 Demo Toolkit | Candidate selection, clip window, safe staged seeking, recording profile, capture output, recovery, and restoration |
+| TF2 Demo Director | Candidate timeline, shot cues, campath key list/editor, preview controls, and warnings |
 | HLAE + CFG polling queue | Demo/campath telemetry and acknowledged local commands |
 | TF2 | Demo playback and final rendered camera |
 
@@ -30,7 +30,7 @@ Official HLAE already confirms that Source 1 supports smooth campaths and paused
 
 ## Recording workflow
 
-1. Select one candidate and set the before/after window in TF2 Frag Demo Helper.
+1. Select one candidate and set the before/after window in TF2 Demo Toolkit.
 2. Launch the manual MIRV session.
 3. The helper stages the demo, writes `director_session.json`, starts HLAE, safely seeks in steps no larger than 15,000 ticks, pauses, and opens Director.
 4. Director opens in Option C: a live timeline strip docked across the monitor's top edge plus an interactive cue card docked beneath it at the right edge. The windows normally do not activate, so TF2 keeps keyboard focus. The saved `F11` shortcut temporarily focuses Director and releases TF2's captured mouse for timeline and side-panel clicks; pressing it again restores TF2 focus. One HLAE `mirv_cmd` curve follows the engine's real demo-playback tick and drives the current-tick playhead. The saved `C` shortcut hides or restores only the right card.
@@ -43,7 +43,7 @@ Official HLAE already confirms that Source 1 supports smooth campaths and paused
 
 ## Implemented in the first branch
 
-- Separate `TF2_MIRV_Director.exe` built and packaged with the helper.
+- Separate `TF2_Demo_Director.exe` built and packaged with the helper.
 - Versioned JSON session contract shared by the helper and Director.
 - Candidate-aware cue timeline with per-tick tags and optional victims.
 - Whole-candidate tags and exact campath/output locations.

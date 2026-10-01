@@ -1,4 +1,4 @@
-TF2 Frag Demo Helper - Manual HLAE Camera Build
+TF2 Demo Toolkit - Manual HLAE Camera Build
 Source build ID: manual-hlae-camera-v1
 Prepared: 2026-08-28 UTC
 
