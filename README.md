@@ -6,6 +6,14 @@ I built this for working through demo collections without having to scrub throug
 
 The application is written in Rust with a Slint interface. Parsing and candidate browsing work on Windows, Linux, and macOS. HLAE recording and manual MIRV sessions are Windows-only.
 
+## What is Team Fortress 2?
+
+[Team Fortress 2 (TF2)](https://store.steampowered.com/app/440/Team_Fortress_2/) is Valve's multiplayer first-person shooter. Players choose from nine character classes with different weapons and roles, then work together on objectives such as capturing control points or escorting a payload. Its movement, combat, and teamwork give players plenty of moments worth saving or reviewing.
+
+TF2 can record matches as `.dem` files, usually called **demos**. These store game data that TF2 replays, rather than finished video. A **POV** demo records one player's perspective; a **SourceTV (STV)** demo records a spectator view of the match and can include multiple players. Demos use **ticks**, the game's simulation steps, to identify when events happened.
+
+Turning a collection of demos into a highlight video usually means replaying matches, finding the right moments, and capturing each clip. TF2 Demo Toolkit reads those files, lists potential highlights such as sequences of kills, and helps you preview and record your selections. The Director adds controls for custom camera paths, so you can set up cinematic shots before recording footage for a video editor.
+
 ## Features
 
 - Batch parsing with progress, time estimates, and a disk-space check before starting.
@@ -24,7 +32,7 @@ Scores and tags are a way to narrow down the footage, not a substitute for watch
 
 ### Windows package
 
-Open [Actions → Rust workspace](https://github.com/dc1818/tf2fragdemohelper/actions/workflows/build.yml), select a successful run for `main`, and download the **TF2-Demo-Toolkit-Windows** artifact. GitHub may require you to sign in to download it.
+Open [Actions → Rust workspace](https://github.com/dc1818/tf2-demo-toolkit/actions/workflows/build.yml), select a successful run for `main`, and download the **TF2-Demo-Toolkit-Windows** artifact. GitHub may require you to sign in to download it.
 
 Extract the entire ZIP and keep these items together:
 
@@ -146,7 +154,7 @@ Install [Rust](https://rustup.rs/). The workspace requires Rust 1.88 or newer; G
 On Windows, the MSVC toolchain also needs Visual Studio Build Tools or Visual Studio Community with **Desktop development with C++** and a Windows SDK installed. VS Code alone does not provide `link.exe`.
 
 ```sh
-git clone https://github.com/dc1818/tf2fragdemohelper.git tf2-demo-toolkit
+git clone https://github.com/dc1818/tf2-demo-toolkit.git tf2-demo-toolkit
 cd tf2-demo-toolkit
 ```
 
@@ -196,7 +204,7 @@ The interface uses a TF2-inspired theme with full and compact layouts. The [Figm
 
 ## Reporting issues
 
-Use [GitHub Issues](https://github.com/dc1818/tf2fragdemohelper/issues). Include the build or commit you used, the steps to reproduce the problem, the demo type (POV/STV), and any relevant logs. For recording problems, include your format, FPS, and HLAE version.
+Use [GitHub Issues](https://github.com/dc1818/tf2-demo-toolkit/issues). Include the build or commit you used, the steps to reproduce the problem, the demo type (POV/STV), and any relevant logs. For recording problems, include your format, FPS, and HLAE version.
 
 When possible, include a small demo that reproduces the issue. Remove private paths, player information, or anything else you do not want to share before uploading logs or demos.
 
