@@ -962,7 +962,14 @@ fn matching_projectile(death: &Death, scan: &StateScan) -> Option<Value> {
     best.map(|(_, value)| value)
 }
 
+/// Classify reskin log names without changing the original weapon in exports.
+/// The Original reports `quake_rl`, but uses the stock rocket-launcher rules.
+fn canonical_projectile_weapon(weapon: &str) -> &str {
+    if weapon.eq_ignore_ascii_case("quake_rl") { "rocketlauncher" } else { weapon }
+}
+
 fn projectile_matches_weapon(projectile: &str, weapon: &str) -> bool {
+    let weapon = canonical_projectile_weapon(weapon);
     (projectile.contains("rocket") && ["rocket", "directhit", "blackbox", "liberty", "airstrike"].iter().any(|name| weapon.contains(name)))
         || (projectile.contains("pipe") && ["grenade", "loch", "iron_bomber"].iter().any(|name| weapon.contains(name)))
         || (projectile.contains("cannon") && weapon.contains("loose_cannon"))
@@ -1356,7 +1363,7 @@ fn tick_tag_groups(group: &[Death]) -> Vec<TickTagGroup> {
 
 fn kill_tags(kill: &Death) -> BTreeSet<String> {
     let mut tags = BTreeSet::new();
-    let weapon = kill.weapon.to_ascii_lowercase();
+    let weapon = canonical_projectile_weapon(&kill.weapon).to_ascii_lowercase();
     if matches!(weapon.as_str(), "rocketlauncher" | "directhit" | "blackbox" | "liberty_launcher" | "airstrike" | "grenadelauncher" | "loch_n_load" | "iron_bomber" | "stickybomb_launcher" | "quickiebomb_launcher" | "flaregun" | "detonator" | "scorch_shot" | "compound_bow" | "crusaders_crossbow" | "syringegun_medic" | "rescue_ranger" | "righteous_bison" | "loose_cannon" | "loose_cannon_impact" | "loose_cannon_explosion") {
         tags.insert("projectile_kill".into());
     }
@@ -1451,7 +1458,7 @@ fn score_group(group: &[Death], round: &Round, buildings: &[BuildingEvent], obje
     let mut medic_kills = 0usize;
     let mut demoman_kills = 0usize;
     for kill in group {
-        let weapon = kill.weapon.to_lowercase();
+        let weapon = canonical_projectile_weapon(&kill.weapon).to_lowercase();
         if matches!(weapon.as_str(), "rocketlauncher" | "directhit" | "blackbox" | "liberty_launcher" | "airstrike" | "grenadelauncher" | "loch_n_load" | "iron_bomber" | "stickybomb_launcher" | "quickiebomb_launcher" | "flaregun" | "detonator" | "scorch_shot" | "compound_bow" | "crusaders_crossbow" | "syringegun_medic" | "rescue_ranger" | "righteous_bison" | "loose_cannon" | "loose_cannon_impact" | "loose_cannon_explosion") {
             tags.insert("projectile_kill".into());
         }
@@ -1579,7 +1586,7 @@ fn score_group(group: &[Death], round: &Round, buildings: &[BuildingEvent], obje
     if sack { score += 16.0; tags.insert("sack_uber_recovery".into()); breakdown.push(json!({"reason":"sack_uber_recovery_after_losses","points":16.0,"recent_friendly_deaths":first.state.recent_friendly_deaths,"player_disadvantage_before":first.state.player_disadvantage_before,"window_seconds":10.0,"death_ticks":first.state.recent_friendly_death_ticks,"friendly_medic_charge":first.state.friendly_medic_charge,"enemy_medic_charge":first.state.enemy_medic_charge})); if medic_kills > 0 { score += 12.0; tags.insert("sack_uber_medic_equalizer".into()); breakdown.push(json!({"reason":"sack_uber_medic_equalizer","points":12.0})); } }
     let duration = (last.event_tick-first.event_tick).max(0) as f64/TICKS_PER_SECOND;
     if unique_victims >= 2 && duration <= 2.0 { score += 12.0; tags.insert("rapid_sequence".into()); breakdown.push(json!({"reason":"rapid_sequence","points":12.0})); }
-    if group.iter().any(|kill| ["rocket", "grenade", "flare", "huntsman", "crossbow", "loose_cannon"].iter().any(|name| kill.weapon.contains(name))) { score += 8.0; breakdown.push(json!({"reason":"projectile_sequence","points":8.0})); }
+    if group.iter().any(|kill| ["rocket", "grenade", "flare", "huntsman", "crossbow", "loose_cannon"].iter().any(|name| canonical_projectile_weapon(&kill.weapon).contains(name))) { score += 8.0; breakdown.push(json!({"reason":"projectile_sequence","points":8.0})); }
     if round.end-last.event_tick <= (TICKS_PER_SECOND*8.0) as i64 { score += 8.0; tags.insert("late_round".into()); breakdown.push(json!({"reason":"late_round","points":8.0})); }
     let attacker_team_id = if first.attacker_team == "red" { 2 } else if first.attacker_team == "blu" { 3 } else { 0 };
     if attacker_team_id > 0 && attacker_team_id == round.winning_team && round.end-last.event_tick <= ROUND_CLINCH_TICKS { score += 12.0; tags.insert("round_clinch".into()); breakdown.push(json!({"reason":"team_won_immediately_after_sequence","points":12.0,"event_tick":round.end})); }
@@ -1609,7 +1616,7 @@ fn score_group(group: &[Death], round: &Round, buildings: &[BuildingEvent], obje
     let raw_score = score;
     let score = (score.max(0.0)*100.0).round()/100.0;
     let unique_weapons = group.iter().filter_map(|kill| (!kill.weapon.is_empty()).then(|| kill.weapon.clone())).collect::<BTreeSet<_>>();
-    let projectile_kills = group.iter().filter(|kill| ["rocket", "grenade", "loch", "iron_bomber", "loose_cannon", "flare", "huntsman", "crossbow"].iter().any(|name| kill.weapon.contains(name))).count();
+    let projectile_kills = group.iter().filter(|kill| ["rocket", "grenade", "loch", "iron_bomber", "loose_cannon", "flare", "huntsman", "crossbow"].iter().any(|name| canonical_projectile_weapon(&kill.weapon).contains(name))).count();
     let metrics = json!({
         "kills":group.len(), "unique_victims":unique_victims, "duration_seconds":duration,
         "unique_weapons":unique_weapons, "projectile_kills":projectile_kills,
@@ -1631,7 +1638,7 @@ fn score_group(group: &[Death], round: &Round, buildings: &[BuildingEvent], obje
         }).count(),
         "airborne_projectile_kills":group.iter().filter(|kill| {
             kill.state.victim_airborne_before_projectile_impact
-                && matches!(kill.weapon.as_str(), "rocketlauncher" | "directhit" | "blackbox" | "liberty_launcher" | "airstrike" | "grenadelauncher" | "loch_n_load" | "iron_bomber" | "loose_cannon" | "loose_cannon_impact" | "loose_cannon_explosion" | "flaregun" | "detonator" | "scorch_shot" | "compound_bow" | "huntsman")
+                && matches!(canonical_projectile_weapon(&kill.weapon), "rocketlauncher" | "directhit" | "blackbox" | "liberty_launcher" | "airstrike" | "grenadelauncher" | "loch_n_load" | "iron_bomber" | "loose_cannon" | "loose_cannon_impact" | "loose_cannon_explosion" | "flaregun" | "detonator" | "scorch_shot" | "compound_bow" | "huntsman")
         }).count(),
         "confirmed_uber_drops":group.iter().filter(|kill| kill.state.confirmed_uber_drop).count(),
         "friendly_alive_before":first.state.friendly_alive_before,"enemy_alive_before":first.state.enemy_alive_before,"enemy_alive_after_sequence":enemy_after,
@@ -1964,6 +1971,84 @@ mod tests {
             "tf2-frag-helper-bookmark-{name}-{}-{nonce}",
             std::process::id()
         ))
+    }
+
+    #[test]
+    fn original_rocket_uses_stock_matching_tags_and_scores() {
+        // Reproduce the export's quake_rl / weapon 22 / item 513 combination.
+        let mut original = Death {
+            event_tick: 1_000,
+            demo_tick: 1_000,
+            attacker: 21,
+            victim: 25,
+            weapon: "quake_rl".into(),
+            weapon_id: 22,
+            weapon_def_index: 513,
+            attacker_class: "soldier".into(),
+            victim_class: "scout".into(),
+            ..Death::default()
+        };
+        original.state.attacker = position_state(0.0, 0.0, 128.0);
+        original.state.attacker.insert("weapon_handles".into(), json!([123]));
+        original.state.victim = position_state(100.0, 0.0, 128.0);
+        let mut scan = StateScan::default();
+        scan.projectile_tracks.insert(598, vec![
+            (980, Map::from_iter([
+                ("launcher_handle".into(), json!(123)),
+                ("projectile_type".into(), json!("rocket")),
+                ("position".into(), json!([0.0, 0.0, 128.0])),
+            ])),
+            (999, Map::from_iter([
+                ("launcher_handle".into(), json!(123)),
+                ("projectile_type".into(), json!("rocket")),
+                ("position".into(), json!([100.0, 0.0, 128.0])),
+            ])),
+        ]);
+        scan.projectile_removals.insert(598, vec![1_000]);
+        let projectile = matching_projectile(&original, &scan).expect("Original must match its rocket");
+        assert_eq!(projectile["airshot_eligible"], json!(true));
+        assert!(!projectile_matches_weapon("pipe", "quake_rl"));
+        assert!(!projectile_matches_weapon("arrow", "quake_rl"));
+
+        let rounds = build_rounds(&[
+            EventRecord { tick: 1, event_type: "teamplay_round_start".into(), ..EventRecord::default() },
+            EventRecord { tick: 2, event_type: "teamplay_round_active".into(), ..EventRecord::default() },
+        ], 2_000);
+        let round = &rounds[0];
+        // Airborne evidence is still required. A missing projectile can only
+        // produce the weaker airborne tag; grounded rocket kills stay ordinary.
+        for (airborne, matched, expected_score) in [
+            (true, true, 44.0),
+            (true, false, 26.0),
+            (false, true, 18.0),
+        ] {
+            original.state.victim_airborne_before_projectile_impact = airborne;
+            original.state.projectile = matched.then(|| projectile.clone());
+            let mut stock = original.clone();
+            stock.weapon = "rocketlauncher".into();
+            stock.weapon_def_index = 18;
+            assert_eq!(matching_projectile(&original, &scan), matching_projectile(&stock, &scan));
+            let tags = kill_tags(&original);
+            assert_eq!(tags, kill_tags(&stock));
+            assert!(tags.contains("rocket"));
+            assert!(tags.contains("projectile_kill"));
+            assert_eq!(tags.contains("confirmed_airshot"), airborne && matched);
+            assert_eq!(tags.contains("airborne_projectile_kill"), airborne && !matched);
+
+            let scored = score_group(&[original.clone()], round, &[], &[]);
+            let stock_scored = score_group(&[stock], round, &[], &[]);
+            assert_eq!(scored.score, expected_score);
+            assert_eq!(scored.score, stock_scored.score);
+            assert_eq!(scored.tags, stock_scored.tags);
+            assert_eq!(scored.metrics["projectile_kills"], json!(1));
+            assert_eq!(scored.metrics["airborne_projectile_kills"], json!(if airborne { 1 } else { 0 }));
+            assert_eq!(scored.metrics["confirmed_airshots"], json!(if airborne && matched { 1 } else { 0 }));
+            assert_eq!(scored.metrics["direct_airshots"], json!(if airborne && matched { 1 } else { 0 }));
+            // Both airborne cases now clear the single-kill cutoff of 25.
+            assert_eq!(scored.score >= 25.0, airborne);
+            assert_eq!(death_json(&original)["weapon"], json!("quake_rl"));
+            assert_eq!(scored.metrics["unique_weapons"], json!(["quake_rl"]));
+        }
     }
 
     #[test]
