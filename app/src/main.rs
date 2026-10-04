@@ -174,6 +174,7 @@ fn humanize_weapon(value: &str) -> String {
         "iron_bomber" => "Iron Bomber".into(),
         "loose_cannon" | "loose_cannon_impact" | "loose_cannon_explosion" => "Loose Cannon".into(),
         "rocketlauncher" => "Rocket Launcher".into(),
+        "quake_rl" => "The Original".into(),
         "directhit" => "Direct Hit".into(),
         "blackbox" => "Black Box".into(),
         "liberty_launcher" => "Liberty Launcher".into(),
