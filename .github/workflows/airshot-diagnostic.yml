@@ -1,0 +1,20 @@
+name: Airshot diagnostic parser
+on:
+  push:
+    branches: [diagnostic/townze-airshot]
+permissions:
+  contents: read
+jobs:
+  parser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.88.0
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build -p tf-demo-parser --bin export_all --release
+      - run: strip target/release/export_all
+      - uses: actions/upload-artifact@v4
+        with:
+          name: airshot-diagnostic-parser-linux
+          path: target/release/export_all
+          retention-days: 7
