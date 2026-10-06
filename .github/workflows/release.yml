@@ -12,11 +12,14 @@ permissions:
   contents: read
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ github.ref }}-${{ github.sha }}
   cancel-in-progress: false
 
 jobs:
   package:
+    concurrency:
+      group: package-${{ github.ref }}-${{ matrix.target }}
+      cancel-in-progress: true
     strategy:
       fail-fast: false
       matrix:
@@ -106,6 +109,10 @@ jobs:
           COMMIT: ${{ github.sha }}
         shell: bash
         run: |
+          if [ "$REF_TYPE" != tag ] && [ "$COMMIT" != "$(gh api "repos/$REPOSITORY/git/ref/heads/$REF_NAME" --jq .object.sha)" ]; then
+            echo "A newer commit is available; skipping this superseded beta."
+            exit 0
+          fi
           cd release-assets
           sha256sum * > SHA256SUMS.txt
           if [ "$REF_TYPE" = tag ]; then
