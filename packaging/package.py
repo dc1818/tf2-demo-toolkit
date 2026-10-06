@@ -1,6 +1,5 @@
 """Build runtime packages from release binaries. Run from the repository root."""
 import argparse
-import hashlib
 import os
 from pathlib import Path
 import plistlib
@@ -8,11 +7,16 @@ import re
 import shutil
 import subprocess
 import tarfile
+import tomllib
 import zipfile
 
 p = argparse.ArgumentParser()
 p.add_argument('--target', required=True)
 a = p.parse_args()
+version = tomllib.loads(Path('app/Cargo.toml').read_text())['package']['version']
+if os.environ.get('GITHUB_OUTPUT'):
+    with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
+        output.write(f'version={version}\n')
 source = Path('target') / a.target / 'release'
 dist = Path('dist')
 assets = Path('release-assets')
@@ -38,7 +42,7 @@ for file in ['README.md', 'THIRD_PARTY_NOTICES.md']:
 if mac:
     contents = root.parent
     with (contents / 'Info.plist').open('wb') as f:
-        plistlib.dump({'CFBundleExecutable': 'TF2_Demo_Toolkit', 'CFBundleIdentifier': 'com.dc1818.tf2-demo-toolkit', 'CFBundleName': 'TF2 Demo Toolkit', 'CFBundlePackageType': 'APPL', 'CFBundleShortVersionString': '34.0.0', 'CFBundleVersion': os.environ.get('GITHUB_RUN_NUMBER', '1'), 'NSHighResolutionCapable': True, 'LSMinimumSystemVersion': '11.0'}, f)
+        plistlib.dump({'CFBundleExecutable': 'TF2_Demo_Toolkit', 'CFBundleIdentifier': 'com.dc1818.tf2-demo-toolkit', 'CFBundleName': 'TF2 Demo Toolkit', 'CFBundlePackageType': 'APPL', 'CFBundleShortVersionString': version, 'CFBundleVersion': os.environ.get('GITHUB_RUN_NUMBER', '1'), 'NSHighResolutionCapable': True, 'LSMinimumSystemVersion': '11.0'}, f)
     for _, name in names:
         output = subprocess.check_output(['otool', '-L', str(root / name)], text=True)
         for line in output.splitlines()[1:]:

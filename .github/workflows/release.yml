@@ -51,6 +51,7 @@ jobs:
       - name: Build release binaries
         run: cargo build --locked --workspace --release --target ${{ matrix.target }}
       - name: Assemble complete runtime package
+        id: package
         run: python packaging/package.py --target ${{ matrix.target }}
       - name: Install Windows dependency inspector
         if: runner.os == 'Windows'
@@ -67,7 +68,7 @@ jobs:
         run: |
           $compiler = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
           if (!(Test-Path $compiler)) { throw "Inno Setup compiler not found" }
-          & $compiler packaging/windows.iss
+          & $compiler "/DAppVersion=${{ steps.package.outputs.version }}" packaging/windows.iss
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $installer = (Resolve-Path release-assets/*Setup.exe).Path
           $installDir = Join-Path $env:RUNNER_TEMP 'Toolkit installation test'
@@ -124,6 +125,7 @@ jobs:
           CI checks workspace tests, packaged binary startup, Windows runtime imports and installer contents, and macOS library dependencies. These checks are not a substitute for testing the complete recording workflow on a clean end-user machine. Windows builds are unsigned and may show SmartScreen prompts.
           NOTES
           if ! gh release view "$tag" --repo "$REPOSITORY" >/dev/null 2>&1; then
-            gh release create "$tag" --repo "$REPOSITORY" --target "$COMMIT" --title "TF2 Demo Toolkit $tag" --prerelease --notes-file ../release-notes.md
+            gh release create "$tag" --repo "$REPOSITORY" --target "$COMMIT" --title "TF2 Demo Toolkit $tag" --draft --prerelease --notes-file ../release-notes.md
           fi
           gh release upload "$tag" ./* --repo "$REPOSITORY" --clobber
+          gh release edit "$tag" --repo "$REPOSITORY" --draft=false
