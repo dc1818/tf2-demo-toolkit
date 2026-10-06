@@ -30,18 +30,21 @@ Scores and tags are a way to narrow down the footage, not a substitute for watch
 
 ## Getting started
 
-### Windows package
+### Download a ready-to-run package
 
-Open [Actions → Rust workspace](https://github.com/dc1818/tf2-demo-toolkit/actions/workflows/build.yml), select a successful run for `main`, and download the **TF2-Demo-Toolkit-Windows** artifact. GitHub may require you to sign in to download it.
+Open [GitHub Releases](https://github.com/dc1818/tf2-demo-toolkit/releases) and choose a download for your computer. **Rust, Cargo, Visual Studio, Python, and .NET are not required.**
 
-Extract the entire ZIP and keep these items together:
+| Platform | Download | Start |
+| --- | --- | --- |
+| Windows x64 | `TF2-Demo-Toolkit-Windows-x64-Setup.exe` | Run the installer, then open Toolkit from the Start menu |
+| Windows x64 portable | `TF2-Demo-Toolkit-Windows-x64-Portable.zip` | Extract everything and run `TF2_Demo_Toolkit.exe` |
+| macOS Apple Silicon | `TF2-Demo-Toolkit-macOS-arm64.zip` | Unzip and open `TF2 Demo Toolkit.app` |
+| macOS Intel | `TF2-Demo-Toolkit-macOS-x64.zip` | Unzip and open `TF2 Demo Toolkit.app` |
+| Linux x64 | `TF2-Demo-Toolkit-Linux-x64.tar.gz` | Extract and run `./TF2_Demo_Toolkit.sh` |
 
-- `TF2_Demo_Toolkit.exe` — the main application.
-- `TF2_Demo_Director.exe` — the manual camera overlay.
-- `export_all.exe` — the demo parser.
-- `recording_resources_archive/` — bundled recording resources.
+Packages include Toolkit, Director, the demo parser, and recording resources. Keep portable package contents together. GitHub's **Source code** archives are for building the project yourself.
 
-Run `TF2_Demo_Toolkit.exe`. Python and .NET are not required.
+Linux requires glibc 2.35+ (Ubuntu 22.04 or newer or equivalent), a graphical X11/Wayland desktop, and graphics drivers. macOS packages require macOS 11 or newer. Beta downloads are not publisher-signed or Apple-notarized, so Windows SmartScreen or macOS may ask you to approve the app.
 
 ### Recording requirements
 
@@ -149,6 +152,8 @@ Do not manually delete session backups while restoration or recovery is pending.
 
 ## Build from source
 
+This section is for developers. To use the application, download a package from Releases above.
+
 Install [Rust](https://rustup.rs/). The workspace requires Rust 1.88 or newer; GitHub Actions uses 1.88.0.
 
 On Windows, the MSVC toolchain also needs Visual Studio Build Tools or Visual Studio Community with **Desktop development with C++** and a Windows SDK installed. VS Code alone does not provide `link.exe`.
@@ -187,7 +192,15 @@ cargo check --workspace --all-targets
 cargo test --workspace
 ```
 
-GitHub Actions runs workspace checks and tests on Windows, Ubuntu, and macOS, and builds the Windows release package.
+GitHub Actions runs workspace checks and tests on Windows, Ubuntu, and macOS.
+
+### Release maintenance
+
+Every push to `main` runs [Downloadable releases](.github/workflows/release.yml), builds all four targets, checks the packaged executables, and publishes a uniquely versioned beta only when every platform passes. Version tags beginning with `v` and manual workflow runs use the same pipeline. Tagged releases initially remain prereleases so they can be reviewed before being marked stable.
+
+The Windows MSVC runtime is statically linked through [.cargo/config.toml](.cargo/config.toml). Windows releases include a complete installer and portable ZIP. macOS packages are app bundles with checks against unbundled libraries. Linux packages include shared libraries and launchers, while relying on the documented host glibc and desktop requirements. SHA-256 checksums accompany each release.
+
+When adding a native dependency, helper executable, or runtime asset, update [packaging/package.py](packaging/package.py) and the smoke checks before releasing. Keep runtime discovery relative to the installed application. Never require users to run a build script. Before promoting a beta to stable, test parsing and the relevant recording workflow on clean supported operating systems without development tools installed.
 
 ## Source layout
 
@@ -198,7 +211,7 @@ GitHub Actions runs workspace checks and tests on Windows, Ubuntu, and macOS, an
 | `director/` | MIRV Director companion and overlay UI |
 | `app/ui/` | Slint components, theme, fonts, and class icons |
 | `recording_resources_archive/` | Bundled recording resources |
-| `.github/workflows/` | Cross-platform checks and Windows packaging |
+| `.github/workflows/` | Cross-platform checks and release packaging |
 
 The interface uses a TF2-inspired theme with full and compact layouts. The [Figma design](https://www.figma.com/design/Yr10mYuw4jcnQCMKuTPCH3) is available as a visual reference.
 
