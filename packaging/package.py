@@ -33,11 +33,13 @@ if mac:
     root.mkdir(parents=True)
 for original, packaged in names:
     shutil.copy2(source / (original + suffix), root / (packaged + suffix))
-shutil.copytree('recording_resources_archive', root / 'recording_resources_archive')
+data_root = root.parent / 'Resources' if mac else root
+data_root.mkdir(exist_ok=True)
+shutil.copytree('recording_resources_archive', data_root / 'recording_resources_archive')
 for file in ['README.md', 'THIRD_PARTY_NOTICES.md']:
-    shutil.copy2(file, root / file)
-(root / 'BUILD.txt').write_text(f"Commit: {os.environ.get('GITHUB_SHA', 'local')}\nTarget: {a.target}\n", encoding='utf-8')
-(root / 'START-HERE.txt').write_text('TF2 Demo Toolkit beta\n\nNo Rust, Cargo, Visual Studio, Python or .NET installation is needed.\nKeep all files in this package together.\nWindows: run TF2_Demo_Toolkit.exe (or use the Setup.exe download).\nmacOS: open TF2 Demo Toolkit.app.\nLinux: run ./TF2_Demo_Toolkit.sh from a graphical desktop.\n\nLinux requires glibc 2.35+ and a working X11/Wayland desktop and graphics drivers.\nTF2, HLAE and FFmpeg are separate recording requirements.\nHLAE recording is Windows-only.\nBeta builds are not publisher-signed or Apple-notarized.\n', encoding='utf-8')
+    shutil.copy2(file, data_root / file)
+(data_root / 'BUILD.txt').write_text(f"Commit: {os.environ.get('GITHUB_SHA', 'local')}\nTarget: {a.target}\n", encoding='utf-8')
+(data_root / 'START-HERE.txt').write_text('TF2 Demo Toolkit beta\n\nNo Rust, Cargo, Visual Studio, Python or .NET installation is needed.\nKeep all files in this package together.\nWindows: run TF2_Demo_Toolkit.exe (or use the Setup.exe download).\nmacOS: open TF2 Demo Toolkit.app.\nLinux: run ./TF2_Demo_Toolkit.sh from a graphical desktop.\n\nLinux requires glibc 2.35+ and a working X11/Wayland desktop and graphics drivers.\nTF2, HLAE and FFmpeg are separate recording requirements.\nHLAE recording is Windows-only.\nBeta builds are not publisher-signed or Apple-notarized.\n', encoding='utf-8')
 
 if mac:
     contents = root.parent
@@ -49,7 +51,8 @@ if mac:
             dependency = line.strip().split(' (')[0]
             if not dependency.startswith(('/System/Library/', '/usr/lib/')):
                 raise RuntimeError(f'Unbundled macOS dependency: {dependency}')
-        subprocess.run(['codesign', '--force', '--sign', '-', str(root / name)], check=True)
+        if name != 'TF2_Demo_Toolkit':
+            subprocess.run(['codesign', '--force', '--sign', '-', str(root / name)], check=True)
     subprocess.run(['codesign', '--force', '--sign', '-', str(contents.parent)], check=True)
     subprocess.run(['codesign', '--verify', '--deep', '--strict', str(contents.parent)], check=True)
     arch = 'arm64' if a.target.startswith('aarch64') else 'x64'
