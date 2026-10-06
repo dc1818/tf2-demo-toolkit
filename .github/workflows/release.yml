@@ -19,7 +19,7 @@ jobs:
   package:
     concurrency:
       group: package-${{ github.ref }}-${{ matrix.target }}
-      cancel-in-progress: true
+      cancel-in-progress: false
     strategy:
       fail-fast: false
       matrix:

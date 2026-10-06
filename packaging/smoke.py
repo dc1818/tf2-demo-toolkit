@@ -23,7 +23,7 @@ if windows:
         if forbidden:
             raise RuntimeError(f'External MSVC runtime required: {forbidden}')
 env = os.environ.copy()
-env['PATH'] = str(Path(env['SystemRoot']) / 'System32') if windows else '/usr/bin:/bin'
+env['PATH'] = str(Path(os.environ['SystemRoot']) / 'System32') if windows else '/usr/bin:/bin'
 env['SLINT_BACKEND'] = 'winit-software'
 if not windows and not mac:
     env['LD_LIBRARY_PATH'] = str(root / 'lib')
@@ -45,7 +45,7 @@ with tempfile.TemporaryDirectory() as working:
                 if process.poll() is not None:
                     log.seek(0)
                     raise RuntimeError(f'{name} exited during startup ({process.returncode}): {log.read().decode(errors="replace")}')
-                print(f'{name}: startup OK without development tools on PATH')
+                print(f'{name}: startup OK with restricted PATH')
             finally:
                 if process.poll() is None:
                     process.terminate()
