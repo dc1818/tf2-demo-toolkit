@@ -219,6 +219,12 @@ pub fn estimate_batch_preflight(
     if demos.is_empty() {
         bail!("choose at least one .dem file");
     }
+    if output_parent.as_os_str().is_empty() {
+        bail!("choose an export folder");
+    }
+    if let Some(existing) = output_parent.ancestors().find(|path| path.exists()) {
+        if !existing.is_dir() { bail!("export location must be a folder: {}", existing.display()); }
+    }
     let mut jobs = Vec::with_capacity(demos.len());
     for (index, demo) in demos.iter().enumerate() {
         let metadata = fs::metadata(demo).with_context(|| format!("could not inspect {}", demo.display()))?;

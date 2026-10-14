@@ -30,8 +30,9 @@ impl PerformanceProfile {
     pub fn from_setting(value: &str) -> Self {
         match value.trim().to_ascii_lowercase().as_str() {
             "low" => Self::Low,
-            "medium" => Self::Medium,
-            _ => Self::High,
+            "high" => Self::High,
+            "medium" | "normal" => Self::Medium,
+            _ => Self::Medium,
         }
     }
 

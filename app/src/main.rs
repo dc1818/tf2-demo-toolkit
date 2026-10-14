@@ -952,7 +952,69 @@ fn install_panic_logger() {
     }));
 }
 
+// Debug-only visual regression capture. Never reads user settings or starts jobs.
+#[cfg(debug_assertions)]
+fn capture_ui_snapshots(directory: PathBuf) -> Result<()> {
+    use std::{cell::RefCell, rc::Rc};
+    fs::create_dir_all(&directory)?;
+    let ui = AppWindow::new()?;
+    ui.set_imported_demo_count(12);
+    ui.set_imported_demos(ModelRc::new(VecModel::from((1..=12).map(|n| SharedString::from(format!("cp_process_match_{n:02}.dem"))).collect::<Vec<_>>())));
+    ui.set_export_directory("D:/TF2/Parsed".into());
+    ui.set_performance_profile("Medium".into());
+    ui.set_parse_options_ready(true);
+    ui.set_parse_estimate_overview("Estimated total time: 3m 20s (2m 10s parsing + 1m 10s analysis)\nEstimated export size: 2.1 GiB | Required free space: 2.5 GiB | Available: 120 GiB".into());
+    ui.set_parse_time_left("Estimated total: 3m 20s".into());
+    ui.set_status_text("".into());
+    ui.set_candidate_rows(ModelRc::new(VecModel::from((0..24).map(|index| CandidateRow {
+        rank: index + 1, score: "90".into(), recorded: "Not recorded".into(), map_name: "cp_process".into(), class_name: "Demoman".into(), ticks: "10000 - 12000".into(), mode: "Competitive".into(), ..Default::default()
+    }).collect::<Vec<_>>())));
+    ui.set_help_dialog_title("How to find the item schema".into());
+    ui.set_help_dialog_body("Demo Toolkit checks the selected demo folders and your TF2 installation automatically.\n\n1. In Steam, open Team Fortress 2 > Properties > Installed Files > Browse.\n2. Look for tf/scripts/items/items_game.txt.\n3. Use Choose file to select it.\n\nThe schema is optional. You can continue without it.".into());
+    let cases = [(800.,480.,0,false), (800.,480.,1,false), (800.,480.,2,false), (800.,480.,1,true), (900.,520.,0,false), (900.,520.,1,false), (900.,520.,2,false), (1280.,720.,1,false), (1480.,860.,0,false), (1480.,860.,1,false), (1480.,860.,2,false), (1920.,1080.,1,false), (800.,480.,4,false), (800.,480.,5,false), (800.,480.,6,false)];
+    let failure = Rc::new(RefCell::new(None::<String>));
+    let capture_failure = failure.clone();
+    let weak = ui.as_weak();
+    let timer = slint::Timer::default();
+    let mut frame = 0usize;
+    timer.start(slint::TimerMode::Repeated, Duration::from_millis(250), move || {
+        let Some(ui) = weak.upgrade() else { return };
+        if frame / 2 >= cases.len() { let _ = slint::quit_event_loop(); return; }
+        let (width, height, step, popup) = cases[frame / 2];
+        if frame % 2 == 0 {
+            ui.window().set_size(slint::LogicalSize::new(width, height));
+            ui.set_frame_debug(format!("WINDOW {} x {}", width as u32, height as u32).into());
+            ui.set_selected_page(if step == 6 { 1 } else if step >= 4 { 2 } else { 0 });
+            ui.set_has_export(step >= 4);
+            ui.set_recording_settings_section(if step == 5 { 4 } else { 0 });
+            ui.set_parse_step(if step < 3 { step } else { 0 });
+            ui.set_help_dialog_open(popup);
+        } else {
+            let result = (|| -> Result<()> {
+                let pixels = ui.window().take_snapshot()?;
+                let mut file = File::create(directory.join(format!("{:02}-{}x{}-step{}{}.ppm", frame / 2, width as u32, height as u32, step + 1, if popup { "-help" } else { "" })))?;
+                write!(file, "P6\n{} {}\n255\n", pixels.width(), pixels.height())?;
+                let bytes: Vec<u8> = pixels.as_bytes().chunks_exact(4).flat_map(|pixel| pixel[..3].iter().copied()).collect();
+                file.write_all(&bytes)?;
+                Ok(())
+            })();
+            if let Err(error) = result {
+                *capture_failure.borrow_mut() = Some(format!("{error:#}"));
+                let _ = slint::quit_event_loop();
+            }
+        }
+        frame += 1;
+    });
+    ui.run()?;
+    if let Some(error) = failure.borrow_mut().take() { anyhow::bail!(error); }
+    Ok(())
+}
+
 fn main() -> Result<()> {
+    #[cfg(debug_assertions)]
+    if let Some(directory) = std::env::var_os("TF2_TOOLKIT_UI_SNAPSHOTS") {
+        return capture_ui_snapshots(PathBuf::from(directory));
+    }
     install_panic_logger();
     if let Some(command) = std::env::args_os().nth(1) {
         if command == "--director" {
@@ -1003,7 +1065,7 @@ fn main() -> Result<()> {
     ui.set_avi_video_codec(settings.avi_video_codec.clone().into());
     ui.set_avi_pixel_format(settings.avi_pixel_format.clone().into());
     ui.set_dnxhr_profile(settings.dnxhr_profile.clone().into());
-    ui.set_performance_profile(settings.performance_profile.clone().into());
+    ui.set_performance_profile("Medium".into());
     ui.set_resolution(settings.resolution.clone().into());
     ui.set_dx_level(settings.dx_level.clone().into());
     ui.set_skybox(settings.skybox.clone().into());
@@ -1116,6 +1178,11 @@ fn center_window_on_startup(ui: &AppWindow) {
                 return;
             };
 
+            let scale = window.scale_factor();
+            let logical = monitor.size().to_logical::<f64>(scale);
+            let target_width = (logical.width - 48.0).min(1480.0).max(800.0);
+            let target_height = (logical.height - 100.0).min(860.0).max(480.0);
+            let _ = window.request_inner_size(winit::dpi::LogicalSize::new(target_width, target_height));
             let monitor_position = monitor.position();
             let monitor_size = monitor.size();
             let window_size = window.outer_size();
@@ -1323,11 +1390,35 @@ fn bind_file_callbacks(ui: &AppWindow, state: &Arc<Mutex<State>>) {
     let weak = ui.as_weak();
     ui.on_show_parse_estimate_details(move || {
         if let Some(ui) = weak.upgrade() {
-            rfd::MessageDialog::new()
-                .set_title("Time and space estimate")
-                .set_description(ui.get_batch_estimate().to_string())
-                .set_level(rfd::MessageLevel::Info)
-                .show();
+            show_parse_help(&ui, "Time and space estimate", ui.get_batch_estimate().to_string());
+        }
+    });
+    let weak = ui.as_weak();
+    let navigation_state = state.clone();
+    ui.on_navigate_parse_step(move |step| {
+        let Some(ui) = weak.upgrade() else { return };
+        if ui.get_busy() || ui.get_importing_demos() || !(0..=2).contains(&step) { return; }
+        if step > 0 && ui.get_imported_demo_count() == 0 { return; }
+        if step == 2 {
+            update_batch_preflight(&ui, &navigation_state);
+            if !ui.get_parse_options_ready() { return; }
+        }
+        ui.set_parse_started(false);
+        ui.set_parse_step(step);
+    });
+    let weak = ui.as_weak();
+    let detection_state = state.clone();
+    ui.on_detect_item_schema(move || {
+        let Some(ui) = weak.upgrade() else { return };
+        let demos = detection_state.lock().demos.clone();
+        let configured = PathBuf::from(ui.get_tf2_path().to_string());
+        let tf2 = configured.is_file().then_some(configured).or_else(|| discover_tf2_executable(&demos));
+        match discover_item_schema(&demos, tf2.as_deref()) {
+            Some(path) => {
+                ui.set_item_schema(path.display().to_string().into());
+                ui.set_item_schema_available(true);
+            }
+            None => show_parse_help(&ui, "No item schema found", "Checked the selected demo folders and detected TF2 installation. You can use ? How to find to select items_game.txt manually, or continue without it. The item schema is optional.".into()),
         }
     });
     let weak = ui.as_weak();
@@ -1374,12 +1465,11 @@ fn bind_file_callbacks(ui: &AppWindow, state: &Arc<Mutex<State>>) {
             }
         }
     });
+    let weak = ui.as_weak();
     ui.on_show_item_schema_help(move || {
-        rfd::MessageDialog::new()
-            .set_title("How to find the item schema")
-            .set_description("Demo Toolkit checks your demo folders and detected TF2 installation automatically.\n\nIn Steam, open Team Fortress 2 > Properties > Installed Files > Browse. Look for tf/scripts/items/items_game.txt, then use Choose file to select it.\n\nIf the file is not present, you can select a standalone items_game.txt you already have, or leave this optional field empty and continue. Some item names may be unavailable without a schema.")
-            .set_level(rfd::MessageLevel::Info)
-            .show();
+        if let Some(ui) = weak.upgrade() {
+            show_parse_help(&ui, "How to find the item schema", "Demo Toolkit checks the selected demo folders and your detected TF2 installation automatically.\n\n1. In Steam, open Team Fortress 2 > Properties > Installed Files > Browse.\n2. Look for tf/scripts/items/items_game.txt.\n3. Use Choose file to select it.\n\nIf that file is not present, you may select a standalone items_game.txt you already have, or continue without a schema. It is optional; some item names may be unavailable.".into());
+        }
     });
     let weak = ui.as_weak();
     ui.on_choose_item_schema(move || {
@@ -1392,6 +1482,12 @@ fn bind_file_callbacks(ui: &AppWindow, state: &Arc<Mutex<State>>) {
             }
         }
     });
+}
+
+fn show_parse_help(ui: &AppWindow, title: &str, body: String) {
+    ui.set_help_dialog_title(title.into());
+    ui.set_help_dialog_body(body.into());
+    ui.set_help_dialog_open(true);
 }
 
 fn import_demo_folder(ui: &AppWindow, state: &Arc<Mutex<State>>, folder: PathBuf, append: bool) {
@@ -1450,10 +1546,11 @@ fn apply_demo_selection(ui: &AppWindow, state: &Arc<Mutex<State>>, mut files: Ve
         (tf2, schema)
     };
     set_imported_demos(ui, &files);
+    ui.set_performance_profile("Medium".into());
     if let Some(path) = tf2 { ui.set_tf2_path(path.display().to_string().into()); }
     ui.set_item_schema(schema.map(|path| path.display().to_string()).unwrap_or_default().into());
     update_batch_preflight(ui, state);
-    ui.set_status_text(format!("{} demos selected. Continue to set your parsing options.", files.len()).into());
+    ui.set_status_text("".into());
 }
 
 fn set_imported_demos(ui: &AppWindow, demos: &[PathBuf]) {
@@ -1535,6 +1632,7 @@ fn bind_batch_callbacks(ui: &AppWindow, state: &Arc<Mutex<State>>) {
         ui.set_progress_value(0.0);
         ui.set_parse_time_left("Estimating time remaining...".into());
         ui.set_log_text("".into());
+        ui.set_log_lines(ModelRc::new(VecModel::from(Vec::<SharedString>::new())));
         ui.set_status_text("Preparing Rust resource plan...".into());
         let weak_for_thread = weak.clone();
         let state_for_thread = state_for_start.clone();
@@ -2402,6 +2500,7 @@ fn update_progress(weak: &Weak<AppWindow>, event: ProgressEvent) {
             }
             text.push_str(&line);
             text.push('\n');
+            ui.set_log_lines(ModelRc::new(VecModel::from(text.lines().map(SharedString::from).collect::<Vec<_>>())));
             ui.set_log_text(text.into());
         }
         ProgressEvent::Phase {
@@ -2813,16 +2912,24 @@ fn persist_recording_settings(ui: &AppWindow, state: &Arc<Mutex<State>>, report_
 }
 
 fn update_batch_preflight(ui: &AppWindow, state: &Arc<Mutex<State>>) {
+    ui.set_parse_options_ready(false);
     let demos = state.lock().demos.clone();
     if demos.is_empty() {
         ui.set_batch_estimate("Pre-flight estimate: choose one or more demos.".into());
         ui.set_parse_estimate_overview("Choose demos to calculate time and space estimates.".into());
         return;
     }
-    let output = PathBuf::from(ui.get_export_directory().to_string());
+    let export = ui.get_export_directory().to_string();
+    if export.trim().is_empty() {
+        ui.set_parse_estimate_overview("Choose an export location to calculate time and space estimates.".into());
+        ui.set_parse_time_left("Choose an export location".into());
+        return;
+    }
+    let output = PathBuf::from(export.trim());
     let profile = PerformanceProfile::from_setting(&ui.get_performance_profile().to_string());
     match batch::estimate_batch_preflight(&demos, &output, profile) {
         Ok(estimate) => {
+            ui.set_parse_options_ready(estimate.has_enough_space());
             ui.set_batch_estimate(estimate.summary().into());
             ui.set_parse_estimate_overview(estimate.overview().into());
             ui.set_parse_time_left(format!("Estimated total: {}", format_duration(estimate.estimated_parse_seconds.saturating_add(estimate.estimated_analysis_seconds))).into());

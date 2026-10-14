@@ -25,13 +25,25 @@ jobs:
 
       - name: Install Linux GUI dependencies
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
+        run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev xvfb
 
       - name: Check workspace
         run: cargo check --workspace --all-targets
 
       - name: Test workspace
         run: cargo test --workspace
+
+      - name: Capture responsive UI at supported window sizes
+        if: runner.os == 'Linux'
+        run: |
+          cargo build --bin tf2-demo-toolkit
+          xvfb-run -a -s "-screen 0 1920x1080x24" env SLINT_BACKEND=winit-software TF2_TOOLKIT_UI_SNAPSHOTS=ui-snapshots target/debug/tf2-demo-toolkit
+
+      - uses: actions/upload-artifact@v4
+        if: runner.os == 'Linux'
+        with:
+          name: responsive-ui-snapshots
+          path: ui-snapshots/*.ppm
 
   windows-release:
     runs-on: windows-latest
