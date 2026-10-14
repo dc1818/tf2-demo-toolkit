@@ -42,7 +42,7 @@ Open [GitHub Releases](https://github.com/dc1818/tf2-demo-toolkit/releases) and 
 | macOS Intel | `TF2-Demo-Toolkit-macOS-x64.zip` | Unzip and open `TF2 Demo Toolkit.app` |
 | Linux x64 | `TF2-Demo-Toolkit-Linux-x64.tar.gz` | Extract and run `./TF2_Demo_Toolkit.sh` |
 
-Packages include Toolkit, Director, the demo parser, and recording resources. Keep portable package contents together. GitHub's **Source code** archives are for building the project yourself.
+Packages include Toolkit with integrated Director, the demo parser, and recording resources. Director opens automatically for Manual MIRV capture using the same Toolkit executable in a separate process; no separate Director executable is required. Keep portable package contents together. GitHub's **Source code** archives are for building the project yourself.
 
 Linux requires glibc 2.35+ (Ubuntu 22.04 or newer or equivalent), a graphical X11/Wayland desktop, and graphics drivers. macOS packages require macOS 11 or newer. Beta downloads are not publisher-signed or Apple-notarized, so Windows SmartScreen or macOS may ask you to approve the app.
 
@@ -63,7 +63,7 @@ Set the TF2 executable, HLAE executable, FFmpeg executable, and recording output
 1. On **Parse Demos**, choose your demos or a folder, or drag them into the window.
 2. Choose an export folder and performance profile. Review the time and space estimate before starting.
 3. Open **Candidates** when analysis finishes.
-4. Filter the list and use **View Details** to inspect a candidate's kills, tags, and score breakdown.
+4. Filter tags with comma-separated phrases to require every phrase (for example, `airshot, medic pick`). Matching ignores case, treats underscores and hyphens as spaces, and ignores empty comma entries. Without commas, the existing keyword search still works. Filters stay active when you click elsewhere. Filter the list and use **View Details** to inspect a candidate's kills, tags, and score breakdown.
 5. Select one candidate and use **Preview Selected in TF2** to check the footage.
 
 You can reopen an export with **Load Previously Parsed Export** instead of parsing the same demos again. Keep the original `.dem` files available: exports contain analysis, not a replacement for the footage.
@@ -165,7 +165,7 @@ cd tf2-demo-toolkit
 
 ### Windows
 
-Run `BUILD_RUST_APP.bat`. The script builds the workspace and packages TF2 Demo Toolkit, TF2 Demo Director, the parser, and recording resources in `dist/`.
+Run `BUILD_RUST_APP.bat`. The script builds the workspace and packages TF2 Demo Toolkit with integrated Director, the parser, and recording resources in `dist/`.
 
 ### Linux and macOS
 

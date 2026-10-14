@@ -18,12 +18,12 @@ if errorlevel 1 (
 )
 
 if not exist dist mkdir dist
+if exist dist\TF2_Demo_Director.exe del dist\TF2_Demo_Director.exe
 copy /y target\release\tf2-demo-toolkit.exe dist\TF2_Demo_Toolkit.exe >nul
-copy /y target\release\tf2-demo-director.exe dist\TF2_Demo_Director.exe >nul
 copy /y target\release\export_all.exe dist\export_all.exe >nul
 if exist dist\recording_resources_archive rmdir /s /q dist\recording_resources_archive
 xcopy /e /i /y recording_resources_archive dist\recording_resources_archive >nul
 echo.
-echo Built TF2 Demo Toolkit, TF2 Demo Director, the parser, and recording resources in dist\
+echo Built TF2 Demo Toolkit (with integrated Director), the parser, and recording resources in dist\
 echo Open dist\TF2_Demo_Toolkit.exe to start the program.
 pause

@@ -1439,35 +1439,13 @@ fn write_director_session(
 
 fn launch_director_companion(session_path: &Path) -> Result<Option<std::process::Child>> {
     let current = std::env::current_exe().context("could not locate the helper executable")?;
-    let directory = current
-        .parent()
-        .context("could not locate the helper executable directory")?;
-    let names: &[&str] = if cfg!(target_os = "windows") {
-        &[
-            "TF2_Demo_Director.exe",
-            "tf2-demo-director.exe",
-            "TF2_MIRV_Director.exe",
-            "tf2-mirv-director.exe",
-        ]
-    } else {
-        &[
-            "TF2_Demo_Director",
-            "tf2-demo-director",
-            "TF2_MIRV_Director",
-            "tf2-mirv-director",
-        ]
-    };
-    let Some(executable) = names
-        .iter()
-        .map(|name| directory.join(name))
-        .find(|path| path.is_file())
-    else {
-        return Ok(None);
-    };
-    let child = Command::new(&executable)
+    // Reuse the running executable, including renamed portable installations.
+    // A separate process keeps the Director's event loop independent of Toolkit.
+    let child = Command::new(&current)
+        .arg("--director")
         .arg(session_path)
         .spawn()
-        .with_context(|| format!("could not launch {}", executable.display()))?;
+        .with_context(|| format!("could not launch Director mode in {}", current.display()))?;
     Ok(Some(child))
 }
 

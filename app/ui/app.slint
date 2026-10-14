@@ -936,7 +936,7 @@ export component AppWindow inherits Window {
             padding: root.compact ? 9px : 14px; spacing: root.compact ? 5px : 8px;
             if !root.compact : HorizontalLayout {
                 height: 38px; spacing: 7px;
-                Tf2LineEdit { text <=> root.tag-filter; placeholder: "FILTER TAGS — FOR EXAMPLE: DEMOKNIGHT"; centered: true; edited(value) => { root.set-tag-filter(value); } focus-lost => { root.tag-filter = ""; root.set-tag-filter(""); } }
+                Tf2LineEdit { text <=> root.tag-filter; placeholder: "ALL TAGS: AIRSHOT, MEDIC PICK"; centered: true; edited(value) => { root.set-tag-filter(value); } }
                 MultiSelectDropdown { width: root.map-filter-width * 1px; content-width-px: root.map-filter-width; summary: root.map-filter-summary; search-placeholder: "Search maps..."; options: root.map-filter-options; search-text <=> root.map-filter-search; search-edited(value) => { root.search-map-filters(value); } toggled(value) => { root.toggle-map-filter(value); } }
                 MultiSelectDropdown { width: root.server-type-filter-width * 1px; content-width-px: root.server-type-filter-width; summary: root.server-type-filter-summary; search-placeholder: "Search server types..."; options: root.server-type-filter-options; search-text <=> root.server-type-filter-search; search-edited(value) => { root.search-server-type-filters(value); } toggled(value) => { root.toggle-server-type-filter(value); } }
                 Tf2Button { width: 120px; text: "REC: " + root.recorded-filter; clicked => { root.recorded-filter = root.recorded-filter == "Any" ? "Yes" : root.recorded-filter == "Yes" ? "No" : "Any"; root.set-recorded-filter(root.recorded-filter); } }
@@ -984,7 +984,7 @@ export component AppWindow inherits Window {
             }
             if root.compact : HorizontalLayout {
                 height: 34px; spacing: 5px;
-                Tf2LineEdit { text <=> root.tag-filter; placeholder: "FILTER TAGS"; centered: true; edited(value) => { root.set-tag-filter(value); } focus-lost => { root.tag-filter = ""; root.set-tag-filter(""); } }
+                Tf2LineEdit { text <=> root.tag-filter; placeholder: "ALL TAGS: AIRSHOT, MEDIC PICK"; centered: true; edited(value) => { root.set-tag-filter(value); } }
                 Tf2Button { width: 98px; height: 32px; text: root.candidate-filters-open ? "CLOSE" : "FILTERS"; clicked => { root.candidate-filters-open = !root.candidate-filters-open; } }
                 Tf2Button { width: 165px; height: 32px; text: "OPEN HLAE"; enabled: root.selected-count == 1 && root.recording-ready; tone: Tf2Colors.gold; hover-tone: Tf2Colors.gold-hover; pressed-tone: Tf2Colors.gold-pressed; clicked => { root.launch-manual-hlae(); } }
                 Tf2Button { width: 120px; height: 32px; text: "PREVIEW"; enabled: root.selected-count == 1; tone: Tf2Colors.blu; hover-tone: Tf2Colors.blu-hover; pressed-tone: Tf2Colors.blu-pressed; clicked => { root.preview-selected(); } }

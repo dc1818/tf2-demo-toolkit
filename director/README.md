@@ -14,12 +14,12 @@ The companion does not inject another DLL. HLAE still supplies the `mirv_*` comm
 
 ## Build and run
 
-Both repository build scripts package the Director alongside the main application. See the [main README](../README.md#build-from-source) for prerequisites and build instructions.
+Director is built into the Toolkit executable. Manual MIRV capture launches the same executable with `--director` in a separate process. See the [main README](../README.md#build-from-source) for prerequisites and build instructions.
 
 For troubleshooting, a built Director can also open an existing session file directly:
 
 ```sh
-tf2-demo-director path/to/director_session.json
+tf2-demo-toolkit --director path/to/director_session.json
 ```
 
-The packaged executable is `TF2_Demo_Director.exe` on Windows and `TF2_Demo_Director` on Linux and macOS. The desktop app builds on all three platforms; TF2/HLAE recording integration is Windows-only.
+The packaged executable is `TF2_Demo_Toolkit.exe` on Windows and `TF2_Demo_Toolkit` on Linux and macOS. Pass `--director` followed by the session file path for Director mode. The desktop app builds on all three platforms; TF2/HLAE recording integration is Windows-only.

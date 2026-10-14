@@ -26,7 +26,7 @@ assets.mkdir(exist_ok=True)
 windows = 'windows' in a.target
 mac = 'apple' in a.target
 suffix = '.exe' if windows else ''
-names = [('tf2-demo-toolkit', 'TF2_Demo_Toolkit'), ('tf2-demo-director', 'TF2_Demo_Director'), ('export_all', 'export_all')]
+names = [('tf2-demo-toolkit', 'TF2_Demo_Toolkit'), ('export_all', 'export_all')]
 root = dist
 if mac:
     root = dist / 'TF2 Demo Toolkit.app' / 'Contents' / 'MacOS'
@@ -102,7 +102,7 @@ else:
             copyright_file = Path('/usr/share/doc') / package / 'copyright'
             if copyright_file.is_file():
                 shutil.copy2(copyright_file, notices / (package + '.copyright'))
-    for _, name in names[:2]:
+    for _, name in names[:1]:
         launcher = root / (name + '.sh')
         launcher.write_text('#!/bin/sh\nHERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)\nexport LD_LIBRARY_PATH="$HERE/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"\nexport SLINT_BACKEND="${SLINT_BACKEND:-winit-software}"\nexec "$HERE/' + name + '" "$@"\n')
         launcher.chmod(0o755)

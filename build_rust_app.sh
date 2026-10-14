@@ -9,9 +9,9 @@ fi
 
 cargo build --workspace --release
 mkdir -p dist
+rm -f dist/TF2_Demo_Director dist/TF2_Demo_Director.sh
 cp target/release/tf2-demo-toolkit dist/TF2_Demo_Toolkit
-cp target/release/tf2-demo-director dist/TF2_Demo_Director
 cp target/release/export_all dist/export_all
 mkdir -p dist/recording_resources_archive
 cp recording_resources_archive/resources.part* dist/recording_resources_archive/
-echo "Built TF2 Demo Toolkit, TF2 Demo Director, the parser, and recording resources in dist/"
+echo "Built TF2 Demo Toolkit (with integrated Director), the parser, and recording resources in dist/"

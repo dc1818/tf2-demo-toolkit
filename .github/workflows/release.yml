@@ -78,7 +78,7 @@ jobs:
           $installDir = Join-Path $env:RUNNER_TEMP 'Toolkit installation test'
           $install = Start-Process -FilePath $installer -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/DIR=`"$installDir`"" -Wait -PassThru
           if ($install.ExitCode -ne 0) { throw "Installer failed: $($install.ExitCode)" }
-          foreach ($file in @('TF2_Demo_Toolkit.exe', 'TF2_Demo_Director.exe', 'export_all.exe', 'recording_resources_archive')) {
+          foreach ($file in @('TF2_Demo_Toolkit.exe', 'export_all.exe', 'recording_resources_archive')) {
             if (!(Test-Path (Join-Path $installDir $file))) { throw "Installer omitted $file" }
           }
       - uses: actions/upload-artifact@v4
@@ -124,7 +124,7 @@ jobs:
           cat > ../release-notes.md <<'NOTES'
           Ready-to-run TF2 Demo Toolkit packages. No Rust, Cargo, Visual Studio, Python, or .NET installation is required.
 
-          - **Windows x64:** download **TF2-Demo-Toolkit-Windows-x64-Setup.exe** and run it. The installer includes Toolkit, Director, the parser, and recording assets. A portable ZIP is also available; extract it completely.
+          - **Windows x64:** download **TF2-Demo-Toolkit-Windows-x64-Setup.exe** and run it. The installer includes Toolkit with integrated Director, the parser, and recording assets. A portable ZIP is also available; extract it completely.
           - **macOS:** choose **arm64** for Apple Silicon or **x64** for Intel, unzip, and open the app. These beta builds are ad-hoc signed, not Apple-notarized; macOS may require approval in Privacy & Security.
           - **Linux x64:** extract the tar.gz and run `./TF2_Demo_Toolkit.sh`. Requires glibc 2.35+ (Ubuntu 22.04 or newer or equivalent), a graphical X11/Wayland desktop, and system graphics drivers. Runtime libraries are included; no compiler is needed.
 

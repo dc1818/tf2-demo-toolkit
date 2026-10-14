@@ -82,17 +82,25 @@ impl CandidateUiFilters {
         {
             return false;
         }
-        let tag_query = normalize_tag_search(&self.tag_query);
-        if !tag_query.is_empty() {
-            let tags = normalize_tag_search(&candidate.tags.join(" "));
-            if !tag_query
-                .split_whitespace()
-                .all(|keyword| tags.contains(keyword))
-            {
-                return false;
-            }
+        if !matches_tag_query(&candidate.tags, &self.tag_query) {
+            return false;
         }
         true
+    }
+}
+
+/// Commas separate required phrases; each phrase must occur within one tag.
+/// Preserve the existing space-separated keyword search when no comma is used.
+fn matches_tag_query(tags: &[String], query: &str) -> bool {
+    let tags: Vec<_> = tags.iter().map(|tag| normalize_tag_search(tag)).collect();
+    if query.contains(',') {
+        query.split(',')
+            .map(normalize_tag_search)
+            .filter(|phrase| !phrase.is_empty())
+            .all(|phrase| tags.iter().any(|tag| tag.contains(&phrase)))
+    } else {
+        normalize_tag_search(query).split_whitespace()
+            .all(|word| tags.iter().any(|tag| tag.contains(word)))
     }
 }
 
@@ -112,7 +120,8 @@ fn canonical_candidate_class(value: &str) -> String {
 }
 
 fn normalize_tag_search(value: &str) -> String {
-    value.trim().to_ascii_lowercase().replace(['_', '-'], " ")
+    value.to_ascii_lowercase().replace(['_', '-'], " ")
+        .split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 fn candidate_server_type(candidate: &Candidate) -> &str {
@@ -945,7 +954,12 @@ fn install_panic_logger() {
 
 fn main() -> Result<()> {
     install_panic_logger();
-    if let Some(command) = std::env::args().nth(1) {
+    if let Some(command) = std::env::args_os().nth(1) {
+        if command == "--director" {
+            let session = std::env::args_os().nth(2)
+                .context("usage: tf2-demo-toolkit --director <director_session.json>")?;
+            return tf2_mirv_director::run(PathBuf::from(session));
+        }
         if command == "--analyze-export" {
             let export = PathBuf::from(std::env::args().nth(2).context("missing export path")?);
             analyzer::analyze_export(&export, None)?;
@@ -2884,6 +2898,41 @@ fn open_path(path: &Path) -> Result<()> {
 mod detail_tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn comma_tag_filters_require_every_phrase_and_preserve_other_filters() {
+        let candidate = Candidate {
+            tags: vec!["confirmed_airshot".into(), "medic-pick".into()],
+            map_name: "cp_process".into(),
+            ..Candidate::default()
+        };
+        let mut filters = CandidateUiFilters {
+            tag_query: " AIRSHOT, Medic   Pick, ,".into(),
+            ..CandidateUiFilters::default()
+        };
+        assert!(filters.matches(&candidate, false));
+        filters.tag_query = "airshot, backstab".into();
+        assert!(!filters.matches(&candidate, false));
+        filters.tag_query = "airshot, medic pick".into();
+        filters.maps.insert("cp_badlands".into());
+        assert!(!filters.matches(&candidate, false));
+        filters.maps.clear();
+        filters.recorded = Some(true);
+        assert!(!filters.matches(&candidate, false));
+        assert!(filters.matches(&candidate, true));
+    }
+
+    #[test]
+    fn tag_search_handles_empty_queries_and_legacy_keywords() {
+        let tags = vec!["confirmed_airshot".into(), "medic_pick".into()];
+        for query in ["", "  ", ", ,", "AIRSHOT medic", "confirmed-airshot, medic_pick"] {
+            assert!(matches_tag_query(&tags, query), "{query:?}");
+        }
+        // A comma-delimited phrase cannot straddle separate tags.
+        assert!(!matches_tag_query(&tags, "airshot medic, pick"));
+        assert!(!matches_tag_query(&[], "airshot,"));
+        assert!(matches_tag_query(&[], ", ,"));
+    }
 
     #[test]
     fn kill_details_name_the_source_demo_victims_and_tick_tag_groups() {

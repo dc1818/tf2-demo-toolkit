@@ -20,6 +20,9 @@ Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
 UninstallDisplayIcon={app}\TF2_Demo_Toolkit.exe
+[InstallDelete]
+Type: files; Name: "{app}\TF2_Demo_Director.exe"
+
 [Files]
 Source: "..\dist\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 [Icons]

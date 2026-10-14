@@ -9,10 +9,6 @@ build = "build.rs"
 name = "tf2_mirv_director"
 path = "src/lib.rs"
 
-[[bin]]
-name = "tf2-demo-director"
-path = "src/main.rs"
-
 [dependencies]
 anyhow = "1.0"
 rfd = "0.15"

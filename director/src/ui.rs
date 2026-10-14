@@ -1,15 +1,10 @@
-#![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
-
-mod rcon;
-
 use anyhow::{bail, Context, Result};
-use rcon::CommandDelivery as RconDelivery;
+use crate::rcon::CommandDelivery as RconDelivery;
 use slint::winit_030::{winit, WinitWindowAccessor};
 use slint::{ComponentHandle, ModelRc, SharedString, Timer, TimerMode, VecModel};
 use std::{
     cell::{Cell, RefCell},
     collections::VecDeque,
-    env,
     fs::{self, File, OpenOptions},
     io::{Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
@@ -18,7 +13,7 @@ use std::{
     thread,
     time::{Duration, Instant},
 };
-use tf2_mirv_director::{
+use crate::{
     DirectorControl, DirectorSession, DIRECTOR_ACTION_ACK_PREFIX, DIRECTOR_ACTION_FILE_PREFIX,
     DIRECTOR_ACTION_SLOTS, DIRECTOR_KEYFRAME_ALLOW_EMPTY_MARKER,
     DIRECTOR_KEYFRAME_BEGIN_PREFIX, DIRECTOR_KEYFRAME_DIRTY_MARKER, DIRECTOR_KEYFRAME_END_PREFIX,
@@ -38,11 +33,8 @@ const MAX_CAMPATH_POINTS: usize = 100_000;
 
 slint::include_modules!();
 
-fn main() -> Result<()> {
-    let path = env::args_os()
-        .nth(1)
-        .context("usage: tf2-demo-director <director_session.json>")?;
-    let session_path = PathBuf::from(path);
+/// Open the Director UI in the process launched by Toolkit with --director.
+pub fn run(session_path: PathBuf) -> Result<()> {
     let session = Rc::new(load_session(&session_path)?);
     let telemetry_diagnostic = session_path.with_file_name("director_telemetry.log");
     let _ = fs::write(

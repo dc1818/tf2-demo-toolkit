@@ -44,7 +44,6 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force dist | Out-Null
           Copy-Item target/release/tf2-demo-toolkit.exe dist/TF2_Demo_Toolkit.exe
-          Copy-Item target/release/tf2-demo-director.exe dist/TF2_Demo_Director.exe
           Copy-Item target/release/export_all.exe dist/export_all.exe
           Copy-Item recording_resources_archive dist/recording_resources_archive -Recurse
       - uses: actions/upload-artifact@v4
