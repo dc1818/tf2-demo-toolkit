@@ -1272,7 +1272,7 @@ fn bind_demo_file_drop(ui: &AppWindow, state: &Arc<Mutex<State>>) {
         }
         match event {
             winit::event::WindowEvent::HoveredFile(path) => {
-                if path.extension().is_some_and(|extension| extension.eq_ignore_ascii_case("dem")) {
+                if path.is_dir() || path.extension().is_some_and(|extension| extension.eq_ignore_ascii_case("dem")) {
                     if let Some(ui) = weak.upgrade() { ui.set_demo_drop_active(true); }
                 } else {
                     if let Some(ui) = weak.upgrade() { ui.set_demo_drop_active(false); }
@@ -1286,34 +1286,20 @@ fn bind_demo_file_drop(ui: &AppWindow, state: &Arc<Mutex<State>>) {
             _ => {}
         }
         let winit::event::WindowEvent::DroppedFile(path) = event else { return EventResult::Propagate };
-        if let Some(ui) = weak.upgrade() { ui.set_demo_drop_active(false); }
-        if !path.extension().is_some_and(|extension| extension.eq_ignore_ascii_case("dem")) {
-            if let Some(ui) = weak.upgrade() { ui.set_status_text("Only TF2 .dem files can be dropped here".into()); }
-            return EventResult::PreventDefault;
-        }
-        let additions = vec![path.clone()];
-        let (files, tf2, schema) = {
-            let mut current = drop_state.lock();
-            for addition in additions {
-                if !current.demos.contains(&addition) { current.demos.push(addition); }
-            }
-            current.demos.sort();
-            let files = current.demos.clone();
-            let tf2 = current.settings.tf2_executable.is_file().then(|| current.settings.tf2_executable.clone())
-                .or_else(|| discover_tf2_executable(&files));
-            if let Some(path) = &tf2 { current.settings.tf2_executable = path.clone(); }
-            let schema = current.settings.item_schema.is_file().then(|| current.settings.item_schema.clone())
-                .or_else(|| discover_item_schema(&files, tf2.as_deref()));
-            if let Some(path) = &schema { current.settings.item_schema = path.clone(); }
-            let _ = current.settings.save();
-            (files, tf2, schema)
-        };
         if let Some(ui) = weak.upgrade() {
-            set_imported_demos(&ui, &files);
-            if let Some(path) = tf2 { ui.set_tf2_path(path.display().to_string().into()); }
-            if let Some(path) = schema { ui.set_item_schema(path.display().to_string().into()); }
-            ui.set_status_text(format!("Loaded {} dropped demo{}", files.len(), if files.len() == 1 { "" } else { "s" }).into());
-            update_batch_preflight(&ui, &drop_state);
+            if ui.get_busy() || ui.get_importing_demos() { return EventResult::PreventDefault; }
+        }
+        if let Some(ui) = weak.upgrade() { ui.set_demo_drop_active(false); }
+        if let Some(ui) = weak.upgrade() {
+            if path.is_dir() {
+                import_demo_folder(&ui, &drop_state, path.clone(), true);
+            } else if path.is_file() && path.extension().is_some_and(|extension| extension.eq_ignore_ascii_case("dem")) {
+                let mut files = drop_state.lock().demos.clone();
+                files.push(path.clone());
+                apply_demo_selection(&ui, &drop_state, files);
+            } else {
+                ui.set_status_text("Drop TF2 .dem files or a folder containing demos.".into());
+            }
         }
         EventResult::PreventDefault
     });
@@ -1330,40 +1316,29 @@ fn bind_file_callbacks(ui: &AppWindow, state: &Arc<Mutex<State>>) {
         if files.is_empty() {
             return;
         }
-        let (tf2, schema) = {
-            let mut current = demos_state.lock();
-            current.demos = files.clone();
-            let tf2 = current
-                .settings
-                .tf2_executable
-                .is_file()
-                .then(|| current.settings.tf2_executable.clone())
-                .or_else(|| discover_tf2_executable(&files));
-            if let Some(path) = &tf2 {
-                current.settings.tf2_executable = path.clone();
-            }
-            let schema = current
-                .settings
-                .item_schema
-                .is_file()
-                .then(|| current.settings.item_schema.clone())
-                .or_else(|| discover_item_schema(&files, tf2.as_deref()));
-            if let Some(path) = &schema {
-                current.settings.item_schema = path.clone();
-            }
-            let _ = current.settings.save();
-            (tf2, schema)
-        };
         if let Some(ui) = weak.upgrade() {
-            set_imported_demos(&ui, &files);
-            if let Some(path) = tf2 {
-                ui.set_tf2_path(path.display().to_string().into());
-            }
-            if let Some(path) = schema {
-                ui.set_item_schema(path.display().to_string().into());
-            }
-            update_batch_preflight(&ui, &demos_state);
+            apply_demo_selection(&ui, &demos_state, files);
         }
+    });
+    let weak = ui.as_weak();
+    let folder_state = state.clone();
+    ui.on_choose_demo_folder(move || {
+        let Some(ui) = weak.upgrade() else { return };
+        if ui.get_busy() || ui.get_importing_demos() { return; }
+        let Some(folder) = rfd::FileDialog::new().pick_folder() else { return };
+        import_demo_folder(&ui, &folder_state, folder, false);
+    });
+    let weak = ui.as_weak();
+    let review_state = state.clone();
+    ui.on_review_parse_options(move || {
+        let Some(ui) = weak.upgrade() else { return };
+        if ui.get_busy() || ui.get_importing_demos() || ui.get_imported_demo_count() == 0 { return; }
+        if ui.get_export_directory().trim().is_empty() {
+            ui.set_status_text("Choose an export location before continuing.".into());
+            return;
+        }
+        update_batch_preflight(&ui, &review_state);
+        ui.set_parse_step(2);
     });
     let weak = ui.as_weak();
     let output_state = state.clone();
@@ -1388,7 +1363,71 @@ fn bind_file_callbacks(ui: &AppWindow, state: &Arc<Mutex<State>>) {
     });
 }
 
+fn import_demo_folder(ui: &AppWindow, state: &Arc<Mutex<State>>, folder: PathBuf, append: bool) {
+    ui.set_importing_demos(true);
+    ui.set_status_text("Scanning folder for .dem files...".into());
+    let weak = ui.as_weak();
+    let state = state.clone();
+    thread::spawn(move || {
+        let result = collect_demo_folder(&folder);
+        let _ = slint::invoke_from_event_loop(move || {
+            let Some(ui) = weak.upgrade() else { return };
+            ui.set_importing_demos(false);
+            match result {
+                Ok(mut files) if !files.is_empty() => {
+                    if append { files.extend(state.lock().demos.iter().cloned()); }
+                    apply_demo_selection(&ui, &state, files);
+                }
+                Ok(_) => ui.set_status_text("No .dem files found in this folder or its subfolders. Choose another folder.".into()),
+                Err(error) => ui.set_status_text(format!("Could not read demo folder: {error:#}").into()),
+            }
+        });
+    });
+}
+
+fn collect_demo_folder(folder: &Path) -> Result<Vec<PathBuf>> {
+    anyhow::ensure!(folder.is_dir(), "the selected folder is not available");
+    let mut demos = Vec::new();
+    for entry in walkdir::WalkDir::new(folder).follow_links(false) {
+        let entry = entry.with_context(|| format!("could not scan {}", folder.display()))?;
+        if entry.file_type().is_file()
+            && entry.path().extension().is_some_and(|extension| extension.eq_ignore_ascii_case("dem"))
+        {
+            demos.push(entry.into_path());
+        }
+    }
+    demos.sort();
+    demos.dedup();
+    Ok(demos)
+}
+
+fn apply_demo_selection(ui: &AppWindow, state: &Arc<Mutex<State>>, mut files: Vec<PathBuf>) {
+    files.sort();
+    files.dedup();
+    let (tf2, schema) = {
+        let mut current = state.lock();
+        current.demos = files.clone();
+        let tf2 = current.settings.tf2_executable.is_file()
+            .then(|| current.settings.tf2_executable.clone())
+            .or_else(|| discover_tf2_executable(&files));
+        if let Some(path) = &tf2 { current.settings.tf2_executable = path.clone(); }
+        let schema = current.settings.item_schema.is_file()
+            .then(|| current.settings.item_schema.clone())
+            .or_else(|| discover_item_schema(&files, tf2.as_deref()));
+        if let Some(path) = &schema { current.settings.item_schema = path.clone(); }
+        let _ = current.settings.save();
+        (tf2, schema)
+    };
+    set_imported_demos(ui, &files);
+    if let Some(path) = tf2 { ui.set_tf2_path(path.display().to_string().into()); }
+    if let Some(path) = schema { ui.set_item_schema(path.display().to_string().into()); }
+    update_batch_preflight(ui, state);
+    ui.set_status_text(format!("{} demos selected. Continue to set your parsing options.", files.len()).into());
+}
+
 fn set_imported_demos(ui: &AppWindow, demos: &[PathBuf]) {
+    ui.set_parse_step(0);
+    ui.set_parse_started(false);
     let names = demos
         .iter()
         .map(|path| {
@@ -1407,6 +1446,11 @@ fn bind_batch_callbacks(ui: &AppWindow, state: &Arc<Mutex<State>>) {
     let state_for_start = state.clone();
     ui.on_start_batch(move || {
         let Some(ui) = weak.upgrade() else { return };
+        if ui.get_busy() || ui.get_importing_demos() { return; }
+        if ui.get_export_directory().trim().is_empty() {
+            ui.set_status_text("Choose an export location before parsing.".into());
+            return;
+        }
         let demos = state_for_start.lock().demos.clone();
         if demos.is_empty() {
             ui.set_status_text("Choose one or more .dem files".into());
@@ -1450,6 +1494,8 @@ fn bind_batch_callbacks(ui: &AppWindow, state: &Arc<Mutex<State>>) {
         }
         let controller = BatchController::new();
         state_for_start.lock().controller = Some(controller.clone());
+        ui.set_parse_step(2);
+        ui.set_parse_started(true);
         ui.set_busy(true);
         ui.set_has_export(false);
         ui.set_selected_count(0);
@@ -2898,6 +2944,20 @@ fn open_path(path: &Path) -> Result<()> {
 mod detail_tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn demo_folder_scan_handles_nested_files_case_and_empty_folders() {
+        let folder = std::env::temp_dir().join(format!("toolkit-demo-scan-{}-{}", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        fs::create_dir_all(folder.join("nested/empty")).unwrap();
+        fs::write(folder.join("first.dem"), []).unwrap();
+        fs::write(folder.join("nested/second.DEM"), []).unwrap();
+        fs::write(folder.join("nested/ignore.txt"), []).unwrap();
+        let files = collect_demo_folder(&folder).unwrap();
+        assert_eq!(files, vec![folder.join("first.dem"), folder.join("nested/second.DEM")]);
+        assert!(collect_demo_folder(&folder.join("nested/empty")).unwrap().is_empty());
+        assert!(collect_demo_folder(&folder.join("missing")).is_err());
+        fs::remove_dir_all(folder).unwrap();
+    }
 
     #[test]
     fn comma_tag_filters_require_every_phrase_and_preserve_other_filters() {

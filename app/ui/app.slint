@@ -61,8 +61,7 @@ component AppHeader inherits Rectangle {
         spacing: 6px;
         HorizontalLayout {
             height: 48px;
-            Text { text: "TF2"; color: Tf2Colors.cream; font-family: "Bebas Neue"; font-size: 31px; vertical-alignment: center; }
-            Text { text: "  /  DEMO TOOLKIT"; color: Tf2Colors.muted; font-family: "Bebas Neue"; font-size: 25px; vertical-alignment: center; }
+            Text { text: "Demo Toolkit"; color: Tf2Colors.cream; font-family: "Roboto Condensed"; font-weight: 700; font-size: 31px; vertical-alignment: center; }
             Rectangle { horizontal-stretch: 1; }
         }
         HorizontalLayout {
@@ -80,7 +79,7 @@ component AppHeader inherits Rectangle {
         spacing: 12px;
         VerticalLayout {
             spacing: -2px;
-            Text { text: "TF2 DEMO TOOLKIT"; color: Tf2Colors.cream; font-family: "Bebas Neue"; font-size: 23px; }
+            Text { text: "Demo Toolkit"; color: Tf2Colors.cream; font-family: "Roboto Condensed"; font-weight: 700; font-size: 23px; }
             Text {
                 text: root.page == 0 ? "PARSE DEMOS" : root.page == 1 ? "CANDIDATES" : root.page == 2 ? "RECORDING SETTINGS" : root.page == 3 ? "LOGS" : "CANDIDATE DETAILS";
                 color: #8ab3cd; font-family: "TF2 Build"; font-size: 12px;
@@ -611,6 +610,9 @@ export component AppWindow inherits Window {
     in-out property <string> frame-debug: "FRAME: waiting for native size";
     in-out property <[string]> imported-demos;
     in-out property <int> imported-demo-count: 0;
+    in-out property <int> parse-step: 0;
+    in-out property <bool> parse-started: false;
+    in-out property <bool> importing-demos: false;
     in-out property <bool> demo-drop-active: false;
     in-out property <string> export-directory;
     in-out property <string> item-schema;
@@ -740,7 +742,7 @@ export component AppWindow inherits Window {
     in-out property <string> mirv-overlay-interaction-toggle: "F11";
     in-out property <string> custom-resources;
 
-    callback choose-demos(); callback choose-export-directory(); callback choose-item-schema();
+    callback choose-demos(); callback choose-demo-folder(); callback review-parse-options(); callback choose-export-directory(); callback choose-item-schema();
     callback start-batch(); callback cancel-batch(); callback load-export(); callback open-export();
     callback refresh-filter(string, int); callback drag-select-candidates(int, float, bool, bool); callback selection-changed(); callback select-all-visible();
     callback set-tag-filter(string); callback toggle-class-filter(string); callback toggle-map-filter(string); callback search-map-filters(string);
@@ -833,102 +835,152 @@ export component AppWindow inherits Window {
             }
         }
 
-        if root.selected-page == 0 && !root.compact : VerticalLayout {
-            x: 0px; y: 118px; width: root.width; height: root.height - self.y;
-            padding: 16px; spacing: 9px;
-            Tf2Panel {
-                height: 128px; background: root.demo-drop-active ? #263b49 : Tf2Colors.panel-dark; border-color: (root.demo-drop-active || drop-touch.has-hover) ? Tf2Colors.blu-hover : Tf2Colors.border;
-                VerticalLayout {
-                    padding: 12px; spacing: 5px;
-                    Text { text: root.demo-drop-active ? "READY TO ADD DEMOS" : "DROP DEMOS HERE"; color: root.demo-drop-active ? Tf2Colors.blu-hover : Tf2Colors.cream; font-family: "TF2 Build"; font-size: 22px; horizontal-alignment: center; }
-                    Text { text: root.demo-drop-active ? "↓  RELEASE TO ADD THE SELECTED DEMO FILES  ↓" : "Drag one or more TF2 .dem files here, or choose them below."; color: root.demo-drop-active ? Tf2Colors.cream : Tf2Colors.muted; font-family: "Roboto Condensed"; font-size: 13px; horizontal-alignment: center; wrap: word-wrap; }
-                    HorizontalLayout {
-                        spacing: 8px; Rectangle { horizontal-stretch: 1; }
-                        Tf2Button { width: 155px; text: "CHOOSE DEMOS"; clicked => { root.choose-demos(); } }
-                        Rectangle { horizontal-stretch: 1; }
-                    }
-                }
-                drop-touch := TouchArea { clicked => { root.choose-demos(); } }
-            }
-            GridLayout {
-                height: 118px; spacing: 8px;
-                Row { Tf2Label { text: "EXPORT LOCATION"; width: 150px; } Tf2LineEdit { text <=> root.export-directory; } Tf2Button { width: 145px; text: "SELECT LOCATION"; clicked => { root.choose-export-directory(); } } }
-                Row { Tf2Label { text: "ITEM SCHEMA (OPTIONAL)"; width: 150px; } Tf2LineEdit { text <=> root.item-schema; } Tf2Button { width: 145px; text: "SELECT SCHEMA"; clicked => { root.choose-item-schema(); } } }
-                Row { Tf2Label { text: "PERFORMANCE"; width: 150px; } ComboBox { width: 170px; model: ["Low", "Medium", "High"]; current-value <=> root.performance-profile; } Tf2Body { text: "Low ~45%  •  Medium ~70%  •  High uses the full safe dynamic worker maximum"; color: Tf2Colors.muted; wrap: word-wrap; } }
-            }
+        if root.selected-page == 0 : VerticalLayout {
+            x: 0px; y: root.compact ? (root.compact-nav-open ? 112px : 64px) : 118px;
+            width: root.width; height: root.height - self.y;
+            padding: root.compact ? 10px : 18px; spacing: 10px;
             HorizontalLayout {
-                spacing: 9px;
-                Tf2Panel {
-                    width: 42%;
-                    VerticalLayout {
-                        padding: 10px; spacing: 5px;
-                        Tf2Heading { text: root.imported-demo-count == 0 ? "IMPORTED DEMOS" : "IMPORTED DEMOS (" + root.imported-demo-count + ")"; }
-                        if root.imported-demo-count == 0 : Tf2Body { text: "No demos selected yet."; color: Tf2Colors.muted; vertical-stretch: 1; vertical-alignment: center; horizontal-alignment: center; }
-                        if root.imported-demo-count > 0 : ListView {
-                            vertical-stretch: 1;
-                            vertical-scrollbar-policy: always-on;
-                            for demo in root.imported-demos : Tf2Body { height: 36px; text: demo; wrap: word-wrap; vertical-alignment: center; }
+                height: 42px; spacing: 10px;
+                for label[index] in ["1  Select demos", "2  Set options", "3  Parse"] : Rectangle {
+                    background: root.parse-step == index ? Tf2Colors.red : Tf2Colors.panel-dark;
+                    border-width: 1px; border-color: root.parse-step >= index ? Tf2Colors.border-bright : Tf2Colors.border;
+                    Tf2Body { x: 8px; width: parent.width - 16px; height: parent.height; text: label; font-weight: 600; horizontal-alignment: center; color: root.parse-step >= index ? Tf2Colors.cream : Tf2Colors.dim; }
+                }
+            }
+            parse-scroll := ScrollView {
+                vertical-stretch: 1;
+                vertical-scrollbar-policy: as-needed;
+                horizontal-scrollbar-policy: always-off;
+                viewport-width: self.width;
+                viewport-height: parse-content.height + 16px;
+                parse-content := Rectangle {
+                    x: 4px; y: 4px; width: parse-scroll.width - 24px;
+                    height: Math.max(parse-scroll.height - 16px, root.parse-step == 0 ? (root.imported-demo-count > 0 ? 440px : 330px) : root.parse-step == 1 ? 540px : root.parse-started ? 380px : 480px);
+                    if root.parse-step == 0 : VerticalLayout {
+                        spacing: 12px;
+                        Tf2Heading { height: 36px; font-size: root.compact ? 25px : 30px; text: "Choose your demos"; horizontal-alignment: center; }
+                        Tf2Body { height: 30px; text: "Select one demo, several demos, or a folder to get started."; color: Tf2Colors.muted; wrap: word-wrap; horizontal-alignment: center; }
+                        Tf2Panel {
+                            height: root.imported-demo-count > 0 ? 154px : 180px;
+                            background: root.demo-drop-active ? #263b49 : Tf2Colors.panel-dark;
+                            border-color: root.demo-drop-active ? Tf2Colors.blu-hover : Tf2Colors.border;
+                            VerticalLayout {
+                                padding: 14px; spacing: 10px;
+                                Tf2Heading { text: root.demo-drop-active ? "RELEASE TO ADD DEMOS" : "DROP DEMOS OR A FOLDER HERE"; font-family: "TF2 Build"; font-size: 24px; horizontal-alignment: center; }
+                                Tf2Body { text: "Drag files or a folder here. Subfolders are included."; color: Tf2Colors.muted; wrap: word-wrap; horizontal-alignment: center; }
+                                HorizontalLayout {
+                                    height: 38px; spacing: 12px;
+                                    Rectangle { horizontal-stretch: 1; }
+                                    Tf2Button { width: 180px; text: "Choose demos"; enabled: !root.busy && !root.importing-demos; tone: Tf2Colors.red; hover-tone: Tf2Colors.red-hover; pressed-tone: Tf2Colors.red-pressed; clicked => { root.choose-demos(); } }
+                                    Tf2Button { width: 180px; text: "Choose folder"; enabled: !root.busy && !root.importing-demos; tone: Tf2Colors.blu; hover-tone: Tf2Colors.blu-hover; pressed-tone: Tf2Colors.blu-pressed; clicked => { root.choose-demo-folder(); } }
+                                    Rectangle { horizontal-stretch: 1; }
+                                }
+                            }
                         }
+                        if root.imported-demo-count > 0 : Tf2Panel {
+                            vertical-stretch: 1;
+                            VerticalLayout {
+                                padding: 10px; spacing: 6px;
+                                Tf2Heading { height: 26px; text: root.imported-demo-count + " demos selected"; }
+                                ListView { vertical-stretch: 1; for demo in root.imported-demos : Tf2Body { height: 30px; text: demo; overflow: elide; } }
+                            }
+                        }
+                        if root.imported-demo-count == 0 : Rectangle { vertical-stretch: 1; }
+                        Tf2Button { height: 38px; text: "Load a previously parsed export"; enabled: !root.busy && !root.importing-demos; tone: Tf2Colors.gold; hover-tone: Tf2Colors.gold-hover; pressed-tone: Tf2Colors.gold-pressed; clicked => { root.load-export(); } }
+                    }
+                    if root.parse-step == 1 && root.imported-demo-count > 0 : VerticalLayout {
+                        spacing: 12px;
+                        Tf2Heading { height: 34px; font-size: root.compact ? 24px : 28px; text: "Set your parsing options"; }
+                        Tf2Body { height: 28px; text: root.imported-demo-count + " demos selected. Choose where results are saved and how much processing power to use."; color: Tf2Colors.muted; wrap: word-wrap; }
+                        Tf2Panel {
+                            height: 118px;
+                            VerticalLayout {
+                                padding: 12px; spacing: 6px;
+                                Tf2Heading { height: 24px; text: "1  Export location"; }
+                                Tf2Body { height: 24px; text: "Parsed files and candidate results will be saved here."; color: Tf2Colors.muted; wrap: word-wrap; }
+                                HorizontalLayout { height: 36px; spacing: 8px; Tf2LineEdit { text <=> root.export-directory; placeholder: "Choose an output folder"; } Tf2Button { width: 130px; height: 36px; text: "Browse"; clicked => { root.choose-export-directory(); } } }
+                            }
+                        }
+                        Tf2Panel {
+                            height: 142px;
+                            VerticalLayout {
+                                padding: 12px; spacing: 6px;
+                                Tf2Heading { height: 24px; text: "2  Item schema (optional)"; }
+                                Tf2Body { height: 30px; text: "Provides weapon and item names. Automatic detection is suitable for most users."; color: Tf2Colors.muted; wrap: word-wrap; }
+                                HorizontalLayout { height: 36px; spacing: 8px; Tf2LineEdit { text <=> root.item-schema; placeholder: "Automatic detection"; } Tf2Button { width: 130px; height: 36px; text: "Choose file"; clicked => { root.choose-item-schema(); } } Tf2Button { width: 110px; height: 36px; text: "Automatic"; clicked => { root.item-schema = ""; } } }
+                                Tf2Body { height: 16px; font-size: 12px; text: "Leave automatic unless you want to supply your own items_game.txt file."; color: Tf2Colors.muted; }
+                            }
+                        }
+                        Tf2Panel {
+                            height: 132px;
+                            VerticalLayout {
+                                padding: 12px; spacing: 6px;
+                                Tf2Heading { height: 24px; text: "3  Performance"; }
+                                Tf2Body { height: 24px; text: "Choose how much of your computer to use while parsing."; color: Tf2Colors.muted; }
+                                HorizontalLayout {
+                                    height: 36px; spacing: 10px;
+                                    for profile in ["Low", "Medium", "High"] : Tf2Button {
+                                        height: 36px; text: profile;
+                                        tone: root.performance-profile == profile ? Tf2Colors.blu : Tf2Colors.neutral;
+                                        hover-tone: Tf2Colors.blu-hover; pressed-tone: Tf2Colors.blu-pressed;
+                                        clicked => { root.performance-profile = profile; }
+                                    }
+                                }
+                                Tf2Body { height: 18px; text: root.performance-profile == "Low" ? "Low: leaves more room for other apps." : root.performance-profile == "Medium" ? "Medium: balances speed and responsiveness." : "High: uses more available resources, with memory safeguards."; color: Tf2Colors.muted; font-size: 13px; }
+                            }
+                        }
+                        Rectangle { vertical-stretch: 1; }
+                    }
+                    if root.parse-step == 2 && root.imported-demo-count > 0 && !root.parse-started : VerticalLayout {
+                        spacing: 12px;
+                        Tf2Heading { height: 34px; font-size: root.compact ? 24px : 28px; text: "Ready to parse"; }
+                        Tf2Body { height: 26px; text: "Review your demos and settings, then start the analysis."; color: Tf2Colors.muted; }
+                        HorizontalLayout {
+                            height: 238px; spacing: 12px;
+                            Tf2Panel {
+                                width: 52%;
+                                VerticalLayout { padding: 12px; spacing: 8px; Tf2Heading { height: 26px; text: "Selected demos (" + root.imported-demo-count + ")"; } ListView { vertical-stretch: 1; for demo in root.imported-demos : Tf2Body { height: 30px; text: demo; overflow: elide; } } Tf2Button { height: 32px; text: "Change selection"; clicked => { root.parse-step = 0; } } }
+                            }
+                            Tf2Panel {
+                                VerticalLayout {
+                                    padding: 12px; spacing: 5px;
+                                    Tf2Heading { height: 26px; text: "Your settings"; }
+                                    Tf2Label { height: 20px; text: "Export location"; }
+                                    Tf2Body { height: 28px; text: root.export-directory; overflow: elide; }
+                                    Tf2Label { height: 20px; text: "Item schema"; }
+                                    Tf2Body { height: 28px; text: root.item-schema == "" ? "Automatic detection" : root.item-schema; overflow: elide; }
+                                    Tf2Body { height: 24px; text: "Performance: " + root.performance-profile; }
+                                    Rectangle { vertical-stretch: 1; }
+                                    Tf2Button { height: 32px; text: "Edit options"; clicked => { root.parse-step = 1; } }
+                                }
+                            }
+                        }
+                        Tf2Panel { height: 92px; VerticalLayout { padding: 12px; spacing: 6px; Tf2Heading { height: 24px; text: "What happens next"; } Tf2Body { text: "Each demo is parsed and analyzed for highlight candidates. Progress appears here while it runs. Your original demo files stay unchanged."; color: Tf2Colors.muted; wrap: word-wrap; } } }
+                        Tf2Body { height: 42px; text: root.batch-estimate; color: #8ab3cd; font-size: 12px; wrap: word-wrap; }
+                        Rectangle { vertical-stretch: 1; }
+                    }
+                    if root.parse-step == 2 && root.parse-started : VerticalLayout {
+                        spacing: 12px;
+                        Tf2Heading { height: 34px; font-size: 26px; text: root.busy ? "Parsing your demos" : root.has-export ? "Your candidates are ready" : "Parsing stopped"; }
+                        Tf2Body { height: 38px; text: root.status-text; wrap: word-wrap; color: #8ab3cd; }
+                        Tf2Progress { height: 12px; value: root.progress-value; }
+                        Tf2Panel { vertical-stretch: 1; VerticalLayout { padding: 12px; spacing: 8px; Tf2Heading { height: 24px; text: "Analysis log"; } AutoScrollLog { vertical-stretch: 1; log-text: root.log-text; } } }
+                        Tf2Body { height: 42px; text: root.resource-plan-text; color: Tf2Colors.muted; wrap: word-wrap; font-size: 12px; }
                     }
                 }
-                Tf2Panel { VerticalLayout { padding: 10px; spacing: 5px; Tf2Heading { text: "ANALYSIS LOG"; } AutoScrollLog { log-text: root.log-text; vertical-stretch: 1; } } }
             }
-            Tf2Progress { value: root.progress-value; }
             HorizontalLayout {
-                height: 40px; spacing: 7px;
-                Tf2Button { width: 165px; text: "PARSE DEMOS"; enabled: !root.busy; tone: Tf2Colors.red; hover-tone: Tf2Colors.red-hover; pressed-tone: Tf2Colors.red-pressed; clicked => { root.start-batch(); } }
-                Tf2Button { width: 105px; text: "CANCEL"; enabled: root.busy; clicked => { root.cancel-batch(); } }
-                Tf2Button { width: 220px; text: "OPEN EXPORT LOCATION"; enabled: root.has-export; tone: Tf2Colors.gold; hover-tone: Tf2Colors.gold-hover; pressed-tone: Tf2Colors.gold-pressed; clicked => { root.open-export(); } }
-                Tf2Button { width: 285px; text: "LOAD PREVIOUSLY PARSED EXPORT"; enabled: !root.busy; tone: Tf2Colors.blu; hover-tone: Tf2Colors.blu-hover; pressed-tone: Tf2Colors.blu-pressed; clicked => { root.load-export(); } }
+                height: 38px; spacing: 10px;
+                if root.parse-step > 0 : Tf2Button { width: 100px; text: "Back"; enabled: !root.busy && !root.importing-demos; clicked => { root.parse-step -= 1; root.parse-started = false; } }
+                if root.parse-step == 2 && root.busy : Tf2Button { width: 110px; text: "Cancel"; clicked => { root.cancel-batch(); } }
                 Rectangle { horizontal-stretch: 1; }
+                if root.parse-step == 0 : Tf2Button { width: 180px; text: "Continue"; enabled: root.imported-demo-count > 0 && !root.busy && !root.importing-demos; tone: Tf2Colors.red; hover-tone: Tf2Colors.red-hover; pressed-tone: Tf2Colors.red-pressed; clicked => { root.parse-step = 1; } }
+                if root.parse-step == 1 : Tf2Button { width: 210px; text: "Continue to parse"; enabled: root.export-directory != "" && !root.busy; tone: Tf2Colors.red; hover-tone: Tf2Colors.red-hover; pressed-tone: Tf2Colors.red-pressed; clicked => { root.review-parse-options(); } }
+                if root.parse-step == 2 && (!root.parse-started || (!root.busy && !root.has-export)) : Tf2Button { width: 210px; text: root.parse-started ? "Retry parsing" : "Parse " + root.imported-demo-count + " demos"; enabled: !root.busy && root.imported-demo-count > 0; tone: Tf2Colors.red; hover-tone: Tf2Colors.red-hover; pressed-tone: Tf2Colors.red-pressed; clicked => { root.start-batch(); } }
+                if root.parse-step == 2 && root.parse-started && !root.busy && root.has-export : Tf2Button { width: 170px; text: "Open export folder"; clicked => { root.open-export(); } }
+                if root.parse-step == 2 && root.parse-started && !root.busy && root.has-export : Tf2Button { width: 180px; text: "View candidates"; tone: Tf2Colors.red; hover-tone: Tf2Colors.red-hover; pressed-tone: Tf2Colors.red-pressed; clicked => { root.selected-page = 1; } }
             }
-            Tf2Body { height: 34px; text: root.resource-plan-text == "" ? root.status-text : root.resource-plan-text; color: #8ab3cd; font-size: 12px; wrap: word-wrap; vertical-alignment: center; }
-        }
-
-        if root.selected-page == 0 && root.compact : VerticalLayout {
-            x: 0px; y: root.compact-nav-open ? 112px : 64px; width: root.width; height: root.height - self.y;
-            padding-left: 10px; padding-right: 10px; padding-top: 8px; padding-bottom: 7px; spacing: 5px;
-            Tf2Panel {
-                height: 104px; background: root.demo-drop-active ? #263b49 : Tf2Colors.panel-dark; border-color: root.demo-drop-active ? Tf2Colors.blu-hover : Tf2Colors.border;
-                VerticalLayout {
-                    padding: 8px; spacing: 4px;
-                    Text { height: 22px; text: root.demo-drop-active ? "READY TO DROP" : "DROP DEMOS HERE"; color: root.demo-drop-active ? Tf2Colors.blu-hover : Tf2Colors.cream; font-family: "TF2 Build"; font-size: 17px; horizontal-alignment: center; vertical-alignment: center; }
-                    Text { height: 18px; text: root.demo-drop-active ? "RELEASE TO ADD TF2 DEMOS" : "Drag TF2 .dem files here or choose them below."; color: root.demo-drop-active ? Tf2Colors.cream : Tf2Colors.muted; font-family: "Roboto Condensed"; font-size: 11px; horizontal-alignment: center; vertical-alignment: center; }
-                    HorizontalLayout { Rectangle { horizontal-stretch: 1; } Tf2Button { width: 160px; height: 34px; label-font-size: 13px; text: "CHOOSE DEMOS"; clicked => { root.choose-demos(); } } Rectangle { horizontal-stretch: 1; } }
-                }
-            }
-            GridLayout {
-                height: 110px; spacing: 4px;
-                Row { Tf2Label { text: "EXPORT"; width: 90px; } Tf2LineEdit { height: 32px; text <=> root.export-directory; } Tf2Button { width: 160px; height: 32px; label-font-size: 12px; text: "OUTPUT LOCATION"; clicked => { root.choose-export-directory(); } } }
-                Row { Tf2Label { text: "SCHEMA"; width: 90px; } Tf2LineEdit { height: 32px; text <=> root.item-schema; placeholder: "Automatic item schema"; } Tf2Button { width: 140px; height: 32px; label-font-size: 12px; text: "SELECT SCHEMA"; clicked => { root.choose-item-schema(); } } }
-                Row { Tf2Label { text: "PERFORMANCE"; width: 90px; } ComboBox { width: 145px; height: 32px; model: ["Low", "Medium", "High"]; current-value <=> root.performance-profile; } Tf2Body { text: "Low ~45%  •  Medium ~70%  •  High uses the full safe worker maximum"; color: Tf2Colors.muted; font-size: 11px; wrap: word-wrap; vertical-alignment: center; } }
-            }
-            HorizontalLayout {
-                spacing: 5px;
-                Tf2Panel {
-                    width: 42%;
-                    VerticalLayout {
-                        padding: 7px; spacing: 3px;
-                        Tf2Heading { text: root.imported-demo-count == 0 ? "IMPORTED DEMOS" : "IMPORTED DEMOS (" + root.imported-demo-count + ")"; font-size: 14px; }
-                        if root.imported-demo-count == 0 : Tf2Body { text: "No demos selected yet."; color: Tf2Colors.muted; font-size: 12px; vertical-stretch: 1; vertical-alignment: center; horizontal-alignment: center; }
-                        if root.imported-demo-count > 0 : ListView {
-                            vertical-stretch: 1;
-                            vertical-scrollbar-policy: always-on;
-                            for demo in root.imported-demos : Tf2Body { height: 32px; text: demo; font-size: 12px; wrap: word-wrap; vertical-alignment: center; }
-                        }
-                    }
-                }
-                Tf2Panel { VerticalLayout { padding: 7px; spacing: 3px; Tf2Heading { text: "ANALYSIS LOG"; font-size: 14px; } AutoScrollLog { log-text: root.log-text; vertical-stretch: 1; } } }
-            }
-            Tf2Progress { value: root.progress-value; height: 9px; }
-            HorizontalLayout {
-                height: 34px; spacing: 5px;
-                Tf2Button { text: "PARSE"; height: 32px; label-font-size: 13px; tone: Tf2Colors.red; hover-tone: Tf2Colors.red-hover; pressed-tone: Tf2Colors.red-pressed; enabled: !root.busy; clicked => { root.start-batch(); } }
-                Tf2Button { text: "CANCEL"; height: 32px; label-font-size: 13px; enabled: root.busy; clicked => { root.cancel-batch(); } }
-                Tf2Button { text: "OPEN LOCATION"; height: 32px; label-font-size: 13px; tone: Tf2Colors.gold; hover-tone: Tf2Colors.gold-hover; pressed-tone: Tf2Colors.gold-pressed; enabled: root.has-export; clicked => { root.open-export(); } }
-                Tf2Button { text: "LOAD PREVIOUSLY PARSED EXPORT"; height: 32px; label-font-size: 11px; enabled: !root.busy; tone: Tf2Colors.blu; hover-tone: Tf2Colors.blu-hover; pressed-tone: Tf2Colors.blu-pressed; clicked => { root.load-export(); } }
-            }
-            Tf2Body { height: 30px; text: root.status-text; color: #8ab3cd; font-size: 11px; wrap: word-wrap; vertical-alignment: center; }
+            if !(root.parse-step == 2 && root.parse-started) : Tf2Body { height: 28px; text: root.importing-demos ? "Scanning folder for .dem files..." : root.parse-step == 0 && root.imported-demo-count == 0 ? root.status-text == "Ready" ? "Select demos to continue." : root.status-text : root.status-text; color: Tf2Colors.muted; wrap: word-wrap; font-size: 12px; }
         }
 
         if root.selected-page == 1 && root.has-export : VerticalLayout {

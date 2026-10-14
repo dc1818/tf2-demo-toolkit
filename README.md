@@ -60,6 +60,8 @@ Set the TF2 executable, HLAE executable, FFmpeg executable, and recording output
 
 ## Find clips
 
+The **Parse Demos** page guides you through **Select demos → Set options → Parse**. Choose or drag one or more files or a folder. Folder scans include subfolders, and the selected demo list shows what will be parsed. Export location, optional item schema, and performance controls appear only after selecting demos and continuing. Each option is explained, and Back preserves your choices. The final review shows the selected files and settings; progress and the analysis log appear after parsing starts.
+
 1. On **Parse Demos**, choose your demos or a folder, or drag them into the window.
 2. Choose an export folder and performance profile. Review the time and space estimate before starting.
 3. Open **Candidates** when analysis finishes.
