@@ -94,6 +94,7 @@ jobs:
     runs-on: ubuntu-22.04
     permissions:
       contents: write
+      actions: read
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
@@ -101,6 +102,26 @@ jobs:
           pattern: package-*
           path: release-assets
           merge-multiple: true
+      - name: Require workspace and responsive UI checks
+        if: github.ref_type != 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          COMMIT: ${{ github.sha }}
+        shell: bash
+        run: |
+          for attempt in $(seq 1 60); do
+            state=$(gh api "repos/$REPOSITORY/actions/runs?head_sha=$COMMIT&event=push&per_page=100" --jq '.workflow_runs | map(select(.name == "Rust workspace")) | sort_by(.id) | last | .conclusion // .status // "missing"')
+            case "$state" in
+              success) exit 0 ;;
+              failure|cancelled|timed_out|action_required|startup_failure)
+                echo "Workspace or responsive UI checks did not pass: $state"
+                exit 1 ;;
+            esac
+            sleep 10
+          done
+          echo "Workspace checks did not finish before the release deadline."
+          exit 1
       - name: Publish verified packages
         env:
           GH_TOKEN: ${{ github.token }}
