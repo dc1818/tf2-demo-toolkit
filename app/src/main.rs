@@ -982,6 +982,7 @@ fn capture_ui_snapshots(directory: PathBuf) -> Result<()> {
         if frame / 2 >= cases.len() { let _ = slint::quit_event_loop(); return; }
         let (width, height, step, popup) = cases[frame / 2];
         if frame % 2 == 0 {
+            eprintln!("Rendering case {}: {}x{} step {} popup {}", frame / 2, width, height, step, popup);
             ui.window().set_size(slint::LogicalSize::new(width, height));
             ui.set_frame_debug(format!("WINDOW {} x {}", width as u32, height as u32).into());
             ui.set_selected_page(if step == 6 { 1 } else if step >= 4 { 2 } else { 0 });
