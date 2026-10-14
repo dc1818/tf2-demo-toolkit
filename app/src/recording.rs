@@ -2296,7 +2296,6 @@ fn stage_recording_profile(
     let cfg = game.join("cfg").join(PROFILE_CFG);
     let backup = game.join("tf2fragdemohelper_backups").join(session_id);
     let cfg_folder_backup = backup.join("cfg_original");
-    let custom_backup = backup.join("custom_original");
     let profile = custom.join(PROFILE_FOLDER);
     let profile_backup = backup.join("custom_profile_original");
     let cfg_backup = backup.join(PROFILE_CFG);
@@ -2321,7 +2320,9 @@ fn stage_recording_profile(
         original_custom_existed: custom.is_dir(),
         original_profile_existed: profile.is_dir(),
         original_profile_cfg_existed: cfg.is_file(),
-        isolated_custom: settings.isolate_custom_resources,
+        // Legacy session recovery still understands isolated_custom=true.
+        // New recordings preserve the existing custom folder.
+        isolated_custom: false,
         tf_process_name: tf_process_name.to_owned(),
         original_config_existed: config.is_file(),
         original_video_existed: video.is_file(),
@@ -2366,26 +2367,9 @@ fn stage_recording_profile(
                 fs::copy(&offline_config_path, &offline_cfg_backup)?;
             }
         }
-        if session.isolated_custom {
-            if session.original_custom_existed {
-                fs::rename(&custom, &custom_backup)
-                    .context("could not back up TF2's custom folder")?;
-            }
-            fs::create_dir_all(&custom)?;
-            for selected in &settings.custom_resources {
-                let source = if selected.exists() {
-                    selected.clone()
-                } else {
-                    custom_backup.join(selected.file_name().unwrap_or_default())
-                };
-                let destination = custom.join(source.file_name().unwrap_or_default());
-                copy_path(&source, &destination)?;
-            }
-        } else {
-            fs::create_dir_all(&custom)?;
-            if session.original_profile_existed {
-                fs::rename(&profile, &profile_backup)?;
-            }
+        fs::create_dir_all(&custom)?;
+        if session.original_profile_existed {
+            fs::rename(&profile, &profile_backup)?;
         }
         install_recording_resources(&custom, settings)?;
         install_recording_message_suppression(&custom)?;

@@ -971,7 +971,7 @@ fn capture_ui_snapshots(directory: PathBuf) -> Result<()> {
     }).collect::<Vec<_>>())));
     ui.set_help_dialog_title("How to find the item schema".into());
     ui.set_help_dialog_body("Demo Toolkit checks the selected demo folders and your TF2 installation automatically.\n\n1. In Steam, open Team Fortress 2 > Properties > Installed Files > Browse.\n2. Look for tf/scripts/items/items_game.txt.\n3. Use Choose file to select it.\n\nThe schema is optional. You can continue without it.".into());
-    let cases = [(800.,480.,0,false), (800.,480.,1,false), (800.,480.,2,false), (800.,480.,1,true), (900.,520.,0,false), (900.,520.,1,false), (900.,520.,2,false), (1280.,720.,1,false), (1480.,860.,0,false), (1480.,860.,1,false), (1480.,860.,2,false), (1920.,1080.,1,false), (800.,480.,4,false), (800.,480.,5,false), (800.,480.,6,false)];
+    let cases = [(800.,480.,0,false), (800.,480.,1,false), (800.,480.,2,false), (800.,480.,1,true), (900.,520.,0,false), (900.,520.,1,false), (900.,520.,2,false), (1280.,720.,1,false), (1480.,860.,0,false), (1480.,860.,1,false), (1480.,860.,2,false), (1920.,1080.,1,false), (800.,480.,4,false), (800.,480.,5,false), (800.,480.,6,false), (800.,480.,7,false), (800.,480.,8,false), (800.,480.,9,false), (1480.,860.,10,false), (800.,480.,10,false), (1920.,1080.,10,false), (800.,480.,11,false)];
     let failure = Rc::new(RefCell::new(None::<String>));
     let capture_failure = failure.clone();
     let weak = ui.as_weak();
@@ -987,7 +987,10 @@ fn capture_ui_snapshots(directory: PathBuf) -> Result<()> {
             ui.set_frame_debug(format!("WINDOW {} x {}", width as u32, height as u32).into());
             ui.set_selected_page(if step == 6 { 1 } else if step >= 4 { 2 } else { 0 });
             ui.set_has_export(step >= 4);
-            ui.set_recording_settings_section(if step == 5 { 4 } else { 0 });
+            ui.set_recording_settings_section(match step { 5 => 4, 7 => 1, 8 => 2, 9 => 3, _ => 0 });
+            ui.set_recording_advanced_view(step >= 10);
+            ui.set_mp4_compatibility("Custom".into());
+            ui.set_recording_scroll_y(if step == 11 { -900.0 } else { 0.0 });
             ui.set_parse_step(if step < 3 { step } else { 0 });
             ui.set_help_dialog_open(popup);
         } else {
@@ -1082,7 +1085,7 @@ fn main() -> Result<()> {
     ui.set_disable_crosshair(settings.disable_crosshair);
     ui.set_disable_crosshair_switching(settings.disable_crosshair_switching);
     ui.set_hud_player_model(settings.hud_player_model);
-    ui.set_isolate_custom_resources(settings.isolate_custom_resources);
+    ui.set_recording_advanced_view(settings.recording_advanced_view);
     ui.set_disable_announcer(settings.disable_announcer_voices);
     ui.set_disable_applause(settings.disable_applause_sounds);
     ui.set_disable_domination(settings.disable_domination_sounds);
@@ -1110,15 +1113,6 @@ fn main() -> Result<()> {
     );
     ui.set_mirv_overlay_interaction_toggle(
         settings.mirv_shortcuts.overlay_interaction_toggle.clone().into(),
-    );
-    ui.set_custom_resources(
-        settings
-            .custom_resources
-            .iter()
-            .map(|path| path.display().to_string())
-            .collect::<Vec<_>>()
-            .join("; ")
-            .into(),
     );
     update_output_description(&ui);
     if recovered_recording_profile {
@@ -2440,38 +2434,6 @@ fn bind_settings_callbacks(ui: &AppWindow, state: &Arc<Mutex<State>>) {
         }
     });
     let weak = ui.as_weak();
-    ui.on_choose_custom_resources(move |kind| {
-        let Some(ui) = weak.upgrade() else { return };
-        let additions = if kind.to_string() == "folder" {
-            rfd::FileDialog::new()
-                .pick_folder()
-                .into_iter()
-                .collect::<Vec<_>>()
-        } else {
-            rfd::FileDialog::new()
-                .add_filter("TF2 custom resources", &["vpk", "zip"])
-                .pick_files()
-                .unwrap_or_default()
-        };
-        if additions.is_empty() {
-            return;
-        }
-        let mut values = split_paths(&ui.get_custom_resources().to_string());
-        for path in additions {
-            if !values.contains(&path) {
-                values.push(path);
-            }
-        }
-        ui.set_custom_resources(
-            values
-                .iter()
-                .map(|path| path.display().to_string())
-                .collect::<Vec<_>>()
-                .join("; ")
-                .into(),
-        );
-    });
-    let weak = ui.as_weak();
     let autosave_state = state.clone();
     ui.on_recording_settings_changed(move || {
         let Some(ui) = weak.upgrade() else { return };
@@ -2727,15 +2689,6 @@ fn format_duration(seconds: u64) -> String {
     }
 }
 
-fn split_paths(value: &str) -> Vec<PathBuf> {
-    value
-        .split(';')
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(PathBuf::from)
-        .collect()
-}
-
 fn sync_settings_from_ui(ui: &AppWindow, settings: &mut AppSettings) {
     settings.tf2_executable = PathBuf::from(ui.get_tf2_path().to_string());
     settings.hlae_executable = PathBuf::from(ui.get_hlae_path().to_string());
@@ -2774,7 +2727,7 @@ fn sync_settings_from_ui(ui: &AppWindow, settings: &mut AppSettings) {
     settings.disable_crosshair = ui.get_disable_crosshair();
     settings.disable_crosshair_switching = ui.get_disable_crosshair_switching();
     settings.hud_player_model = ui.get_hud_player_model();
-    settings.isolate_custom_resources = ui.get_isolate_custom_resources();
+    settings.recording_advanced_view = ui.get_recording_advanced_view();
     settings.disable_announcer_voices = ui.get_disable_announcer();
     settings.disable_applause_sounds = ui.get_disable_applause();
     settings.disable_domination_sounds = ui.get_disable_domination();
@@ -2800,7 +2753,6 @@ fn sync_settings_from_ui(ui: &AppWindow, settings: &mut AppSettings) {
         ui.get_mirv_overlay_panel_toggle().to_string();
     settings.mirv_shortcuts.overlay_interaction_toggle =
         ui.get_mirv_overlay_interaction_toggle().to_string();
-    settings.custom_resources = split_paths(&ui.get_custom_resources().to_string());
     settings.normalize_encoding_options();
     settings.normalize_recording_options();
 }

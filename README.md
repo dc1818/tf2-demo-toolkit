@@ -60,7 +60,7 @@ Set the TF2 executable, HLAE executable, FFmpeg executable, and recording output
 
 ## Find clips
 
-The **Parse Demos** page guides you through **Select demos → Set options → Parse**. Choose or drag one or more files or a folder. Folder scans include subfolders, and the selected demo list shows what will be parsed. Export location, optional item schema, and performance controls appear only after selecting demos and continuing. Each option is explained, and Back preserves your choices. Performance starts at Normal for each new demo selection. Click the step headings to navigate; Parse stays disabled until the demos and export location pass pre-flight checks, while the item schema remains optional. Time and size estimates stay in the footer. Main views and long lists use sections or pagination instead of scrollbars. The final review shows the selected files and settings; progress and the analysis log appear after parsing starts.
+The **Parse Demos** page guides you through **Select demos → Set options → Parse**. Choose or drag one or more files or a folder. Folder scans include subfolders, and the selected demo list shows what will be parsed. Export location, optional item schema, and performance controls appear only after selecting demos and continuing. Each option is explained, and Back preserves your choices. Performance starts at Normal for each new demo selection. Click the step headings to navigate; Parse stays disabled until the demos and export location pass pre-flight checks, while the item schema remains optional. Time and size estimates stay in the footer. Guided views and long lists use sections or pagination instead of scrollbars. The optional Advanced recording view shows every section together and scrolls when needed on smaller windows. The final review shows the selected files and settings; progress and the analysis log appear after parsing starts.
 
 1. On **Parse Demos**, choose your demos or a folder, or drag them into the window.
 2. Choose an export folder and performance profile. Review the time and space estimate before starting.
@@ -73,6 +73,8 @@ You can reopen an export with **Load Previously Parsed Export** instead of parsi
 POV demos only contain what was available to the recording player. STV demos can provide candidates from multiple players. Neither format guarantees that every player or event has enough data for every analysis rule.
 
 ## Record clips
+
+**Recording Settings** opens as a guided flow: **Paths & output → Video & HUD → Encoding → Profile → MIRV shortcuts**. Click a step heading or use Back and Continue. Changes save automatically. **Advanced view** shows all five sections together, and this preference is saved. Use **Guided view** to return to the steps.
 
 Choose the format, resolution, FPS, and lead-in/outro in **Recording Settings**, then select candidates and use **Record with HLAE**.
 
@@ -146,7 +148,7 @@ A valid format does not mean an option is useful or supported by TF2. Leave this
 
 ## TF2 settings and recovery
 
-Recording temporarily changes TF2's configuration and selected custom resources. The helper backs up the original CFG folder, binds, HUD/custom content, hitsounds, video settings, and DX setting, then restores them after its TF2 session closes.
+Recording temporarily changes TF2's configuration and installs its bundled recording profile. Custom-resource importing and whole-folder isolation have been removed; existing `tf/custom` content stays in place. Interrupted sessions from older versions can still restore their original custom folder. The helper backs up the original CFG folder, binds, HUD/custom content, hitsounds, video settings, and DX setting, then restores them after its TF2 session closes.
 
 Keep the helper open while recording and finalizing. If TF2 crashes or a batch is interrupted, the helper tries to finalize usable captures and preserve unfinished work. Reopening the helper runs recovery for retained sessions.
 
