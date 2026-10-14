@@ -50,6 +50,7 @@ with tempfile.TemporaryDirectory() as working:
         'telemetry_marker_prefix': 'TF2FRAG_DIRECTOR_TICK',
         'command_cfg_directory': working, 'control': {'mode': 'hotkeys_only'},
     }), encoding='utf-8')
+    (Path(working) / 'console.log').write_text('TF2FRAG_MANUAL_PAUSED_AT_START\n', encoding='utf-8')
     for arguments in [[], ['--director', str(session)]]:
         name = 'TF2_Demo_Toolkit'
         with tempfile.TemporaryFile() as log:
@@ -59,6 +60,10 @@ with tempfile.TemporaryDirectory() as working:
                 if process.poll() is not None:
                     log.seek(0)
                     raise RuntimeError(f'{name} exited during startup ({process.returncode}): {log.read().decode(errors="replace")}')
+                if arguments:
+                    diagnostic = (Path(working) / 'director_telemetry.log').read_text(encoding='utf-8')
+                    if 'status=DIRECTOR_WINDOWS_READY' not in diagnostic:
+                        raise RuntimeError('Director did not open its overlay windows')
                 print(f'{name} {arguments}: startup OK with restricted PATH')
             finally:
                 if process.poll() is None:

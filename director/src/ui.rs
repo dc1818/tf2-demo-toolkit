@@ -413,6 +413,7 @@ pub fn run(session_path: PathBuf) -> Result<()> {
 
     card.show()?;
     let docked_monitor = configure_overlay_windows(&strip, &card);
+    append_telemetry_diagnostic(&telemetry_diagnostic, "status=DIRECTOR_WINDOWS_READY");
 
     // TF2 is a borderless top-level window. Reasserting HWND_TOPMOST keeps both
     // Director windows above it without activating either window.
