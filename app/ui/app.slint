@@ -855,7 +855,7 @@ export component AppWindow inherits Window {
                 viewport-height: parse-content.height + 16px;
                 parse-content := Rectangle {
                     x: 4px; y: 4px; width: parse-scroll.width - 24px;
-                    height: Math.max(parse-scroll.height - 16px, root.parse-step == 0 ? (root.imported-demo-count > 0 ? 440px : 330px) : root.parse-step == 1 ? 540px : root.parse-started ? 380px : 480px);
+                    height: Math.max(parse-scroll.height - 16px, root.parse-step == 0 ? (root.imported-demo-count > 0 ? 440px : 330px) : root.parse-step == 1 ? 560px : root.parse-started ? 380px : 560px);
                     if root.parse-step == 0 : VerticalLayout {
                         spacing: 12px;
                         Tf2Heading { height: 36px; font-size: root.compact ? 25px : 30px; text: "Choose your demos"; horizontal-alignment: center; }
@@ -902,7 +902,7 @@ export component AppWindow inherits Window {
                             }
                         }
                         Tf2Panel {
-                            height: 142px;
+                            height: 150px;
                             VerticalLayout {
                                 padding: 12px; spacing: 6px;
                                 Tf2Heading { height: 24px; text: "2  Item schema (optional)"; }
@@ -912,7 +912,7 @@ export component AppWindow inherits Window {
                             }
                         }
                         Tf2Panel {
-                            height: 132px;
+                            height: 144px;
                             VerticalLayout {
                                 padding: 12px; spacing: 6px;
                                 Tf2Heading { height: 24px; text: "3  Performance"; }
@@ -936,7 +936,7 @@ export component AppWindow inherits Window {
                         Tf2Heading { height: 34px; font-size: root.compact ? 24px : 28px; text: "Ready to parse"; }
                         Tf2Body { height: 26px; text: "Review your demos and settings, then start the analysis."; color: Tf2Colors.muted; }
                         HorizontalLayout {
-                            height: 238px; spacing: 12px;
+                            height: 280px; spacing: 12px;
                             Tf2Panel {
                                 width: 52%;
                                 VerticalLayout { padding: 12px; spacing: 8px; Tf2Heading { height: 26px; text: "Selected demos (" + root.imported-demo-count + ")"; } ListView { vertical-stretch: 1; for demo in root.imported-demos : Tf2Body { height: 30px; text: demo; overflow: elide; } } Tf2Button { height: 32px; text: "Change selection"; clicked => { root.parse-step = 0; } } }
