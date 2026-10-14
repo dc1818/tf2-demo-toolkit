@@ -971,7 +971,7 @@ fn capture_ui_snapshots(directory: PathBuf) -> Result<()> {
     }).collect::<Vec<_>>())));
     ui.set_help_dialog_title("How to find the item schema".into());
     ui.set_help_dialog_body("Demo Toolkit checks the selected demo folders and your TF2 installation automatically.\n\n1. In Steam, open Team Fortress 2 > Properties > Installed Files > Browse.\n2. Look for tf/scripts/items/items_game.txt.\n3. Use Choose file to select it.\n\nThe schema is optional. You can continue without it.".into());
-    let cases = [(800.,480.,0,false), (800.,480.,1,false), (800.,480.,2,false), (800.,480.,1,true), (900.,520.,0,false), (900.,520.,1,false), (900.,520.,2,false), (1280.,720.,1,false), (1480.,860.,0,false), (1480.,860.,1,false), (1480.,860.,2,false), (1920.,1080.,1,false), (800.,480.,4,false), (800.,480.,5,false), (800.,480.,6,false), (800.,480.,7,false), (800.,480.,8,false), (800.,480.,9,false), (1480.,860.,10,false), (800.,480.,10,false), (1920.,1080.,10,false), (800.,480.,11,false), (1280.,720.,4,false), (1280.,720.,7,false), (1280.,720.,8,false), (1280.,720.,9,false), (1280.,720.,5,false), (800.,480.,12,false), (800.,480.,13,false), (800.,480.,14,false), (800.,480.,15,false)];
+    let cases = [(800.,480.,0,false), (800.,480.,1,false), (800.,480.,2,false), (800.,480.,1,true), (900.,520.,0,false), (900.,520.,1,false), (900.,520.,2,false), (1280.,720.,1,false), (1480.,860.,0,false), (1480.,860.,1,false), (1480.,860.,2,false), (1920.,1080.,1,false), (800.,480.,4,false), (800.,480.,5,false), (800.,480.,6,false), (800.,480.,7,false), (800.,480.,8,false), (800.,480.,9,false), (1480.,860.,10,false), (800.,480.,10,false), (1920.,1080.,10,false), (800.,480.,11,false), (1280.,720.,4,false), (1280.,720.,7,false), (1280.,720.,8,false), (1280.,720.,9,false), (1280.,720.,5,false), (800.,480.,12,false), (800.,480.,13,false), (800.,480.,14,false), (800.,480.,15,false), (1100.,600.,0,false), (1100.,600.,1,false), (1100.,600.,2,false), (1100.,600.,4,false), (1100.,600.,7,false), (1100.,600.,8,false), (1100.,600.,9,false), (1100.,600.,5,false), (1100.,600.,6,false), (1100.,600.,16,false), (1100.,600.,17,false), (800.,480.,16,false), (1100.,600.,18,false)];
     let failure = Rc::new(RefCell::new(None::<String>));
     let capture_failure = failure.clone();
     let weak = ui.as_weak();
@@ -985,7 +985,8 @@ fn capture_ui_snapshots(directory: PathBuf) -> Result<()> {
             eprintln!("Rendering case {}: {}x{} step {} popup {}", frame / 2, width, height, step, popup);
             ui.window().set_size(slint::LogicalSize::new(width, height));
             ui.set_frame_debug(format!("WINDOW {} x {}", width as u32, height as u32).into());
-            ui.set_selected_page(if step == 6 { 1 } else if step >= 4 { 2 } else { 0 });
+            ui.set_imported_demo_count(if step == 18 { 0 } else { 12 });
+            ui.set_selected_page(if step == 16 { 3 } else if step == 17 { 4 } else if step == 18 { 0 } else if step == 6 { 1 } else if step >= 4 { 2 } else { 0 });
             ui.set_has_export(step >= 4);
             ui.set_recording_settings_section(match step { 5 => 4, 7 => 1, 8 | 12..=15 => 2, 9 => 3, _ => 0 });
             ui.set_recording_advanced_view(step == 10 || step == 11);
@@ -1176,8 +1177,8 @@ fn center_window_on_startup(ui: &AppWindow) {
 
             let scale = window.scale_factor();
             let logical = monitor.size().to_logical::<f64>(scale);
-            let target_width = (logical.width - 48.0).min(1480.0).max(800.0);
-            let target_height = (logical.height - 100.0).min(860.0).max(480.0);
+            let target_width = (logical.width - 48.0).min(1100.0).max(800.0);
+            let target_height = (logical.height - 100.0).min(600.0).max(480.0);
             let _ = window.request_inner_size(winit::dpi::LogicalSize::new(target_width, target_height));
             let monitor_position = monitor.position();
             let monitor_size = monitor.size();
