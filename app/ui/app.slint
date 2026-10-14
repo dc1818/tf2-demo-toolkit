@@ -174,6 +174,79 @@ component AppHeader inherits Rectangle {
     }
 }
 
+component CandidateTableRow inherits Rectangle {
+    in property <CandidateRow> entry;
+    in property <int> index;
+    in property <bool> compact;
+    in property <bool> main-columns;
+    in property <bool> extra-columns;
+    in property <length> tag-column-width;
+    callback drag(int, float, bool, bool);
+    callback selection-done();
+
+                height: 30px; clip: true;
+                background: root.entry.selected ? Tf2Colors.gold : (Math.mod(root.index, 2) == 0 ? Tf2Colors.table : Tf2Colors.table-alt);
+                row-focus := FocusScope { }
+                HorizontalLayout {
+                    x: 0px; width: root.width;
+                    padding-left: 8px; padding-right: 8px; spacing: 8px;
+                    if root.main-columns && root.compact : Tf2Body { text: root.entry.score; width: 75px; }
+                    if root.main-columns && root.compact : Tf2Body { text: root.entry.recorded; width: 90px; color: root.entry.recorded == "Recorded" ? Tf2Colors.green : Tf2Colors.cream; horizontal-alignment: center; vertical-alignment: center; }
+                    if root.main-columns && !root.compact : Tf2Body { text: root.entry.recorded; width: 90px; color: root.entry.recorded == "Recorded" ? Tf2Colors.green : Tf2Colors.cream; horizontal-alignment: center; vertical-alignment: center; }
+                    if root.main-columns && !root.compact : Tf2Body { text: root.entry.score; width: 75px; }
+                    if root.main-columns : Tf2Body { text: root.entry.map-name; width: 200px; overflow: elide; }
+                    if root.main-columns : Tf2Body { text: root.entry.class-name; width: 110px; overflow: elide; }
+                    if root.main-columns : Tf2Body { text: root.entry.ticks; width: 160px; overflow: elide; }
+                    if root.extra-columns : Tf2Body { text: root.entry.mode; width: 220px; overflow: elide; }
+                    if root.extra-columns && !root.compact : Tf2Body { text: root.entry.team; width: 90px; overflow: elide; }
+                    if root.extra-columns : Rectangle {
+                        width: root.tag-column-width; height: parent.height; clip: true;
+                        HorizontalLayout {
+                            padding-top: 4px; padding-bottom: 4px; spacing: 4px;
+                            for group in root.entry.tag-groups : HorizontalLayout {
+                                width: (group.width + (group.has-separator ? 18 : 0)) * 1px;
+                                spacing: 4px;
+                                Rectangle {
+                                    width: group.width * 1px;
+                                    background: group.highlighted ? #202a31 : #1b1c1b;
+                                    border-width: 1px;
+                                    border-color: group.highlighted ? #385061 : #343633;
+                                    clip: true;
+                                    HorizontalLayout {
+                                        padding-left: 5px; padding-right: 5px; spacing: 3px;
+                                        Text { text: group.label; color: #8ab3cd; font-family: "Roboto Condensed"; font-size: 12px; vertical-alignment: center; overflow: elide; }
+                                        Text { text: group.tags; color: Tf2Colors.cream; font-family: "Roboto Condensed"; font-size: 12px; vertical-alignment: center; overflow: elide; }
+                                    }
+                                }
+                                if group.has-separator : Rectangle {
+                                    width: 14px; height: parent.height;
+                                    background: #191a19;
+                                    border-width: 1px; border-color: #3c4140;
+                                    Text { width: parent.width; height: parent.height; text: "|"; color: Tf2Colors.muted; font-family: "Roboto Condensed"; font-size: 12px; horizontal-alignment: center; vertical-alignment: center; }
+                                }
+                            }
+                        }
+                    }
+                }
+                drag-area := TouchArea {
+                    property <bool> drag-selecting; property <bool> dragging; property <bool> drag-additive;
+                    pointer-event(event) => {
+                        if (event.button == PointerEventButton.left && event.kind == PointerEventKind.down) {
+                            row-focus.focus();
+                            self.drag-additive = event.modifiers.control;
+                            self.drag-selecting = self.drag-additive ? !root.entry.selected : true;
+                            self.dragging = true;
+                            root.drag(root.index, 0, self.drag-selecting, self.drag-additive);
+                        }
+                        if (event.button == PointerEventButton.left && (event.kind == PointerEventKind.up || event.kind == PointerEventKind.cancel)) {
+                            self.dragging = false; root.selection-done();
+                        }
+                    }
+                    moved => { if (self.dragging) { root.drag(root.index, (self.mouse-y - self.pressed-y) / 1px, self.drag-selecting, self.drag-additive); } }
+                }
+            
+}
+
 component CandidateTable inherits Rectangle {
     in property <[CandidateRow]> rows;
     in property <bool> compact;
@@ -217,69 +290,13 @@ component CandidateTable inherits Rectangle {
         }
         candidate-list := Rectangle {
             vertical-stretch: 1;
-            for slot in root.capacity : Rectangle {
-                private property <int> index: root.current * root.capacity + slot;
-                private property <CandidateRow> row: root.rows[index];
-                y: slot * 30px; width: parent.width; height: 30px; clip: true; visible: index < root.rows.length;
-                background: row.selected ? Tf2Colors.gold : (Math.mod(index, 2) == 0 ? Tf2Colors.table : Tf2Colors.table-alt);
-                row-focus := FocusScope { }
-                HorizontalLayout {
-                    x: 0px; width: root.content-width;
-                    padding-left: 8px; padding-right: 8px; spacing: 8px;
-                    if root.main-columns && root.compact : Tf2Body { text: row.score; width: 75px; }
-                    if root.main-columns && root.compact : Tf2Body { text: row.recorded; width: 90px; color: row.recorded == "Recorded" ? Tf2Colors.green : Tf2Colors.cream; horizontal-alignment: center; vertical-alignment: center; }
-                    if root.main-columns && !root.compact : Tf2Body { text: row.recorded; width: 90px; color: row.recorded == "Recorded" ? Tf2Colors.green : Tf2Colors.cream; horizontal-alignment: center; vertical-alignment: center; }
-                    if root.main-columns && !root.compact : Tf2Body { text: row.score; width: 75px; }
-                    if root.main-columns : Tf2Body { text: row.map-name; width: 200px; overflow: elide; }
-                    if root.main-columns : Tf2Body { text: row.class-name; width: 110px; overflow: elide; }
-                    if root.main-columns : Tf2Body { text: row.ticks; width: 160px; overflow: elide; }
-                    if root.extra-columns : Tf2Body { text: row.mode; width: 220px; overflow: elide; }
-                    if root.extra-columns && !root.compact : Tf2Body { text: row.team; width: 90px; overflow: elide; }
-                    if root.extra-columns : Rectangle {
-                        width: root.tag-column-width; height: parent.height; clip: true;
-                        HorizontalLayout {
-                            padding-top: 4px; padding-bottom: 4px; spacing: 4px;
-                            for group in row.tag-groups : HorizontalLayout {
-                                width: (group.width + (group.has-separator ? 18 : 0)) * 1px;
-                                spacing: 4px;
-                                Rectangle {
-                                    width: group.width * 1px;
-                                    background: group.highlighted ? #202a31 : #1b1c1b;
-                                    border-width: 1px;
-                                    border-color: group.highlighted ? #385061 : #343633;
-                                    clip: true;
-                                    HorizontalLayout {
-                                        padding-left: 5px; padding-right: 5px; spacing: 3px;
-                                        Text { text: group.label; color: #8ab3cd; font-family: "Roboto Condensed"; font-size: 12px; vertical-alignment: center; overflow: elide; }
-                                        Text { text: group.tags; color: Tf2Colors.cream; font-family: "Roboto Condensed"; font-size: 12px; vertical-alignment: center; overflow: elide; }
-                                    }
-                                }
-                                if group.has-separator : Rectangle {
-                                    width: 14px; height: parent.height;
-                                    background: #191a19;
-                                    border-width: 1px; border-color: #3c4140;
-                                    Text { width: parent.width; height: parent.height; text: "|"; color: Tf2Colors.muted; font-family: "Roboto Condensed"; font-size: 12px; horizontal-alignment: center; vertical-alignment: center; }
-                                }
-                            }
-                        }
-                    }
-                }
-                drag-area := TouchArea {
-                    property <bool> drag-selecting; property <bool> dragging; property <bool> drag-additive;
-                    pointer-event(event) => {
-                        if (event.button == PointerEventButton.left && event.kind == PointerEventKind.down) {
-                            row-focus.focus();
-                            self.drag-additive = event.modifiers.control;
-                            self.drag-selecting = self.drag-additive ? !row.selected : true;
-                            self.dragging = true;
-                            root.drag(index, 0, self.drag-selecting, self.drag-additive);
-                        }
-                        if (event.button == PointerEventButton.left && (event.kind == PointerEventKind.up || event.kind == PointerEventKind.cancel)) {
-                            self.dragging = false; root.selection-done();
-                        }
-                    }
-                    moved => { if (self.dragging) { root.drag(index, (self.mouse-y - self.pressed-y) / 1px, self.drag-selecting, self.drag-additive); } }
-                }
+            for slot in root.capacity : CandidateTableRow {
+                y: slot * 30px; width: parent.width; height: 30px;
+                index: root.current * root.capacity + slot;
+                entry: root.rows[self.index]; visible: self.index < root.rows.length;
+                compact: root.compact; main-columns: root.main-columns; extra-columns: root.extra-columns; tag-column-width: root.tag-column-width;
+                drag(index, delta, selecting, additive) => { root.drag(index, delta, selecting, additive); }
+                selection-done => { root.selection-done(); }
             }
         }
         HorizontalLayout { height: 34px; spacing: 6px;
@@ -618,46 +635,6 @@ component MirvShortcutPanel inherits Rectangle {
     }
 }
 
-component CandidateDetailCard inherits Rectangle {
-    in property <string> heading;
-    in property <string> value;
-    in property <string> supporting-text;
-
-    background: Tf2Colors.panel-dark;
-    border-width: 1px;
-    border-color: Tf2Colors.border;
-    VerticalLayout {
-        padding: 10px; spacing: 3px;
-        Tf2Label { height: 18px; text: root.heading; font-size: 12px; }
-        Text { height: 28px; text: root.value; color: Tf2Colors.cream; font-family: "TF2 Build"; font-size: 17px; vertical-alignment: center; overflow: elide; }
-        Tf2Body { text: root.supporting-text; color: Tf2Colors.muted; font-size: 12px; wrap: word-wrap; vertical-alignment: top; }
-    }
-}
-
-component CandidateDetailSection inherits Rectangle {
-    in property <string> heading;
-    in property <string> body;
-    in property <length> section-floor-height: 72px;
-
-    height: Math.max(root.section-floor-height, detail-body.preferred-height + 48px);
-    background: Tf2Colors.panel-dark;
-    border-width: 1px;
-    border-color: Tf2Colors.border;
-    VerticalLayout {
-        padding: 10px; spacing: 5px;
-        Tf2Heading { height: 22px; text: root.heading; font-size: 15px; }
-        detail-body := Text {
-            height: self.preferred-height;
-            text: root.body;
-            color: Tf2Colors.cream;
-            font-family: "Roboto Condensed";
-            font-size: 14px;
-            wrap: word-wrap;
-            vertical-alignment: top;
-        }
-    }
-}
-
 export component AppWindow inherits Window {
     title: "TF2 Demo Toolkit";
     preferred-width: 1480px; preferred-height: 860px;
@@ -698,7 +675,7 @@ export component AppWindow inherits Window {
     in-out property <bool> busy: false;
     in-out property <string> resource-plan-text;
     in-out property <string> batch-estimate: "Choose demos and an export location to calculate pre-flight estimates.";
-    in-out property <string> performance-profile: "High";
+    in-out property <string> performance-profile: "Medium";
 
     in-out property <[CandidateRow]> candidate-rows;
     in-out property <string> filter-text;
@@ -926,7 +903,7 @@ export component AppWindow inherits Window {
                     spacing: root.parse-short ? 6px : 10px;
                     Tf2Panel {
                         vertical-stretch: root.imported-demo-count == 0 ? 1 : 0;
-                        height: root.imported-demo-count > 0 ? (root.parse-short ? 110px : 160px) : 100%;
+                        height: root.imported-demo-count > 0 ? (root.parse-short ? 110px : 160px) : parent.height - (root.status-text != "" && root.status-text != "Ready" ? 28px : 0px);
                         background: root.demo-drop-active ? #263b49 : Tf2Colors.panel-dark;
                         border-color: root.demo-drop-active ? Tf2Colors.blu-hover : Tf2Colors.border;
                         VerticalLayout {
