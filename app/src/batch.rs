@@ -360,6 +360,13 @@ pub fn run_batch(
         .num_threads(plan.parse_worker_ceiling)
         .thread_name(|index| format!("tf2-parse-{index}"))
         .build()?;
+    // Weight each phase by its calibrated expected duration, and each completed
+    // job by bytes. Do not animate unmeasured work or report 100% before saving.
+    let analysis_estimate = preflight.estimated_analysis_seconds;
+    let estimated_total = preflight.estimated_parse_seconds.saturating_add(analysis_estimate);
+    let parse_weight = if estimated_total == 0 { 0.5 } else {
+        (preflight.estimated_parse_seconds as f32 / estimated_total as f32).clamp(0.05, 0.95)
+    };
     let parse_completed = AtomicUsize::new(0);
     let parse_completed_bytes = AtomicU64::new(0);
     let total = jobs.len();
@@ -372,6 +379,7 @@ pub fn run_batch(
     let parse_jobs = largest_first(jobs.clone(), false);
     let parse_next = AtomicUsize::new(0);
     let parse_error = Mutex::new(None::<String>);
+    sink(ProgressEvent::Phase { phase: 1, completed: 0, total, fraction: 0.0, eta_seconds: Some(estimated_total), active_workers: 0, worker_limit: parse_gate.limit() });
     parse_pool.install(|| {
         (0..plan.parse_worker_ceiling).into_par_iter().for_each(|_| loop {
             if controller.is_cancelled() { break; }
@@ -392,7 +400,7 @@ pub fn run_batch(
                 let output_bytes = directory_size(&job.export_directory);
                 let completed = parse_completed.fetch_add(1, Ordering::SeqCst) + 1;
                 let completed_bytes = parse_completed_bytes.fetch_add(job.source_bytes, Ordering::SeqCst).saturating_add(job.source_bytes);
-                sink(ProgressEvent::Phase { phase: 1, completed, total, fraction: completed as f32 / total as f32 * 0.5, eta_seconds: estimated_remaining_seconds(completed_bytes, total_parse_bytes, parse_started.elapsed()), active_workers: parse_gate.active(), worker_limit: parse_gate.limit() });
+                sink(ProgressEvent::Phase { phase: 1, completed, total, fraction: completed_work_fraction(completed_bytes, total_parse_bytes, completed, total) * parse_weight, eta_seconds: estimated_remaining_seconds(completed_bytes, total_parse_bytes, parse_started.elapsed()).map(|remaining| remaining.saturating_add(analysis_estimate)), active_workers: parse_gate.active(), worker_limit: parse_gate.limit() });
                 emit(format!("[PARSE {:03}] complete in {:.1}s; {:.1} GiB", job.order, elapsed, output_bytes as f64 / 1_073_741_824.0));
                 Ok(())
             })();
@@ -441,6 +449,7 @@ pub fn run_batch(
     // admitted demos use that same pool for NDJSON parsing, state enrichment,
     // and scoring. As jobs finish, the remaining demo automatically inherits
     // the idle Rayon workers instead of collapsing to one core at the tail.
+    sink(ProgressEvent::Phase { phase: 2, completed: 0, total, fraction: parse_weight, eta_seconds: Some(analysis_estimate), active_workers: 0, worker_limit: analysis_gate.limit() });
     thread::scope(|scope| {
         for _ in 0..analysis_plan.analysis_job_ceiling {
             let analysis_gate = analysis_gate.clone();
@@ -473,7 +482,7 @@ pub fn run_batch(
                     let elapsed = started.elapsed().as_secs_f64();
                     let completed = analysis_completed.fetch_add(1, Ordering::SeqCst) + 1;
                     let completed_bytes = analysis_completed_bytes.fetch_add(job.parsed_bytes, Ordering::SeqCst).saturating_add(job.parsed_bytes);
-                    sink(ProgressEvent::Phase { phase: 2, completed, total, fraction: 0.5 + completed as f32 / total as f32 * 0.5, eta_seconds: estimated_remaining_seconds(completed_bytes, total_analysis_bytes, analysis_started.elapsed()), active_workers: analysis_gate.active(), worker_limit: analysis_gate.limit() });
+                    sink(ProgressEvent::Phase { phase: 2, completed, total, fraction: (parse_weight + completed_work_fraction(completed_bytes, total_analysis_bytes, completed, total) * (1.0 - parse_weight)).min(0.99), eta_seconds: estimated_remaining_seconds(completed_bytes, total_analysis_bytes, analysis_started.elapsed()), active_workers: analysis_gate.active(), worker_limit: analysis_gate.limit() });
                     emit(format!("[ANALYZE {:03}] complete in {:.1}s; {} candidates", job.order, elapsed, candidates.len()));
                     Ok(())
                 }));
@@ -772,8 +781,17 @@ fn directory_size(path: &Path) -> u64 {
         .sum()
 }
 
+fn completed_work_fraction(completed_bytes: u64, total_bytes: u64, completed: usize, total: usize) -> f32 {
+    if total_bytes > 0 {
+        (completed_bytes as f64 / total_bytes as f64).clamp(0.0, 1.0) as f32
+    } else if total > 0 {
+        (completed as f32 / total as f32).clamp(0.0, 1.0)
+    } else { 0.0 }
+}
+
 fn estimated_remaining_seconds(completed_bytes: u64, total_bytes: u64, elapsed: Duration) -> Option<u64> {
-    if completed_bytes == 0 || total_bytes <= completed_bytes || elapsed.is_zero() {
+    if total_bytes > 0 && completed_bytes >= total_bytes { return Some(0); }
+    if completed_bytes == 0 || elapsed.is_zero() {
         return None;
     }
     let bytes_per_second = completed_bytes as f64 / elapsed.as_secs_f64();
@@ -792,6 +810,15 @@ fn sanitize(value: &str) -> String {
 #[cfg(test)]
 mod preflight_tests {
     use super::*;
+
+    #[test]
+    fn progress_and_eta_follow_completed_bytes_not_demo_count() {
+        assert!((completed_work_fraction(90, 100, 1, 2) - 0.9).abs() < 0.001);
+        assert_eq!(completed_work_fraction(0, 0, 1, 2), 0.5);
+        assert_eq!(estimated_remaining_seconds(25, 100, Duration::from_secs(10)), Some(30));
+        assert_eq!(estimated_remaining_seconds(100, 100, Duration::from_secs(10)), Some(0));
+        assert_eq!(estimated_remaining_seconds(0, 100, Duration::from_secs(10)), None);
+    }
 
     #[test]
     fn parallelism_scaling_keeps_one_worker_exact_and_discounts_contention() {

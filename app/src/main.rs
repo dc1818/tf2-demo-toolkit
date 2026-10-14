@@ -1350,6 +1350,13 @@ fn bind_file_callbacks(ui: &AppWindow, state: &Arc<Mutex<State>>) {
             }
         }
     });
+    ui.on_show_item_schema_help(move || {
+        rfd::MessageDialog::new()
+            .set_title("How to find the item schema")
+            .set_description("Demo Toolkit checks your demo folders and detected TF2 installation automatically.\n\nIn Steam, open Team Fortress 2 > Properties > Installed Files > Browse. Look for tf/scripts/items/items_game.txt, then use Choose file to select it.\n\nIf the file is not present, you can select a standalone items_game.txt you already have, or leave this optional field empty and continue. Some item names may be unavailable without a schema.")
+            .set_level(rfd::MessageLevel::Info)
+            .show();
+    });
     let weak = ui.as_weak();
     ui.on_choose_item_schema(move || {
         if let Some(path) = rfd::FileDialog::new()
@@ -1420,7 +1427,7 @@ fn apply_demo_selection(ui: &AppWindow, state: &Arc<Mutex<State>>, mut files: Ve
     };
     set_imported_demos(ui, &files);
     if let Some(path) = tf2 { ui.set_tf2_path(path.display().to_string().into()); }
-    if let Some(path) = schema { ui.set_item_schema(path.display().to_string().into()); }
+    ui.set_item_schema(schema.map(|path| path.display().to_string()).unwrap_or_default().into());
     update_batch_preflight(ui, state);
     ui.set_status_text(format!("{} demos selected. Continue to set your parsing options.", files.len()).into());
 }
@@ -1502,6 +1509,7 @@ fn bind_batch_callbacks(ui: &AppWindow, state: &Arc<Mutex<State>>) {
         ui.set_all_visible_selected(false);
         ui.set_selected_page(0);
         ui.set_progress_value(0.0);
+        ui.set_parse_time_left("Estimating time remaining...".into());
         ui.set_log_text("".into());
         ui.set_status_text("Preparing Rust resource plan...".into());
         let weak_for_thread = weak.clone();
@@ -2381,10 +2389,11 @@ fn update_progress(weak: &Weak<AppWindow>, event: ProgressEvent) {
             active_workers,
             worker_limit,
         } => {
-            ui.set_progress_value(fraction);
+            ui.set_progress_value(ui.get_progress_value().max(fraction.min(0.99)));
             let eta = eta_seconds
                 .map(format_duration)
                 .unwrap_or_else(|| "estimating…".into());
+            ui.set_parse_time_left(if phase == 2 && completed >= total { "Finalizing results...".into() } else { format!("Estimated time left: {eta}").into() });
             ui.set_status_text(format!("Phase {phase} of 2: {completed}/{total} | active workers {active_workers}/{worker_limit} | ETA {eta}").into());
         }
         ProgressEvent::Complete {
@@ -2393,6 +2402,7 @@ fn update_progress(weak: &Weak<AppWindow>, event: ProgressEvent) {
         } => {
             ui.set_busy(false);
             ui.set_progress_value(1.0);
+            ui.set_parse_time_left("Complete".into());
             ui.set_status_text(
                 format!(
                     "Complete: {candidates} candidates — {}",
@@ -2403,10 +2413,12 @@ fn update_progress(weak: &Weak<AppWindow>, event: ProgressEvent) {
         }
         ProgressEvent::Failed(error) => {
             ui.set_busy(false);
+            ui.set_parse_time_left("Stopped — analysis failed".into());
             ui.set_status_text(format!("Failed: {error}").into());
         }
         ProgressEvent::Cancelled => {
             ui.set_busy(false);
+            ui.set_parse_time_left("Cancelled".into());
             ui.set_status_text("Cancelled; completed exports were retained".into());
         }
     }
@@ -2785,8 +2797,12 @@ fn update_batch_preflight(ui: &AppWindow, state: &Arc<Mutex<State>>) {
     let output = PathBuf::from(ui.get_export_directory().to_string());
     let profile = PerformanceProfile::from_setting(&ui.get_performance_profile().to_string());
     match batch::estimate_batch_preflight(&demos, &output, profile) {
-        Ok(estimate) => ui.set_batch_estimate(estimate.summary().into()),
+        Ok(estimate) => {
+            ui.set_batch_estimate(estimate.summary().into());
+            ui.set_parse_time_left(format!("Estimated total: {}", format_duration(estimate.estimated_parse_seconds.saturating_add(estimate.estimated_analysis_seconds))).into());
+        },
         Err(error) => {
+            ui.set_parse_time_left("Time estimate unavailable".into());
             ui.set_batch_estimate(format!("Pre-flight estimate unavailable: {error}").into())
         }
     }

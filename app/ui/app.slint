@@ -612,6 +612,7 @@ export component AppWindow inherits Window {
     in-out property <int> imported-demo-count: 0;
     in-out property <int> parse-step: 0;
     in-out property <bool> parse-started: false;
+    in-out property <string> parse-time-left: "Not started";
     in-out property <bool> importing-demos: false;
     in-out property <bool> demo-drop-active: false;
     in-out property <string> export-directory;
@@ -743,6 +744,7 @@ export component AppWindow inherits Window {
     in-out property <string> custom-resources;
 
     callback choose-demos(); callback choose-demo-folder(); callback review-parse-options(); callback choose-export-directory(); callback choose-item-schema();
+    callback show-item-schema-help();
     callback start-batch(); callback cancel-batch(); callback load-export(); callback open-export();
     callback refresh-filter(string, int); callback drag-select-candidates(int, float, bool, bool); callback selection-changed(); callback select-all-visible();
     callback set-tag-filter(string); callback toggle-class-filter(string); callback toggle-map-filter(string); callback search-map-filters(string);
@@ -855,7 +857,7 @@ export component AppWindow inherits Window {
                 viewport-height: parse-content.height + 16px;
                 parse-content := Rectangle {
                     x: 4px; y: 4px; width: parse-scroll.width - 24px;
-                    height: Math.max(parse-scroll.height - 16px, root.parse-step == 0 ? (root.imported-demo-count > 0 ? 440px : 330px) : root.parse-step == 1 ? 560px : root.parse-started ? 380px : 560px);
+                    height: Math.max(parse-scroll.height - 16px, root.parse-step == 0 ? (root.imported-demo-count > 0 ? 440px : 330px) : root.parse-step == 1 ? 560px : root.parse-started ? 380px : 590px);
                     if root.parse-step == 0 : VerticalLayout {
                         spacing: 12px;
                         Tf2Heading { height: 36px; font-size: root.compact ? 25px : 30px; text: "Choose your demos"; horizontal-alignment: center; }
@@ -907,8 +909,8 @@ export component AppWindow inherits Window {
                                 padding: 12px; spacing: 6px;
                                 Tf2Heading { height: 24px; text: "2  Item schema (optional)"; }
                                 Tf2Body { height: 30px; text: "Provides weapon and item names. Automatic detection is suitable for most users."; color: Tf2Colors.muted; wrap: word-wrap; }
-                                HorizontalLayout { height: 36px; spacing: 8px; Tf2LineEdit { text <=> root.item-schema; placeholder: "Automatic detection"; } Tf2Button { width: 130px; height: 36px; text: "Choose file"; clicked => { root.choose-item-schema(); } } Tf2Button { width: 110px; height: 36px; text: "Automatic"; clicked => { root.item-schema = ""; } } }
-                                Tf2Body { height: 16px; font-size: 12px; text: "Leave automatic unless you want to supply your own items_game.txt file."; color: Tf2Colors.muted; }
+                                HorizontalLayout { height: 36px; spacing: 8px; Tf2LineEdit { text <=> root.item-schema; placeholder: "Not detected — optional"; } Tf2Button { width: 130px; height: 36px; text: "Choose file"; clicked => { root.choose-item-schema(); } } if root.item-schema == "" : Tf2Button { width: 130px; height: 36px; text: "How to find"; tone: Tf2Colors.gold; hover-tone: Tf2Colors.gold-hover; pressed-tone: Tf2Colors.gold-pressed; clicked => { root.show-item-schema-help(); } } }
+                                Tf2Body { height: 16px; font-size: 12px; text: "Detected automatically when available. Otherwise use How to find, or continue without it."; color: Tf2Colors.muted; }
                             }
                         }
                         Tf2Panel {
@@ -920,13 +922,13 @@ export component AppWindow inherits Window {
                                 HorizontalLayout {
                                     height: 36px; spacing: 10px;
                                     for profile in ["Low", "Medium", "High"] : Tf2Button {
-                                        height: 36px; text: profile;
+                                        height: 36px; text: profile == "Medium" ? "Normal" : profile;
                                         tone: root.performance-profile == profile ? Tf2Colors.blu : Tf2Colors.neutral;
                                         hover-tone: Tf2Colors.blu-hover; pressed-tone: Tf2Colors.blu-pressed;
                                         clicked => { root.performance-profile = profile; }
                                     }
                                 }
-                                Tf2Body { height: 18px; text: root.performance-profile == "Low" ? "Low: leaves more room for other apps." : root.performance-profile == "Medium" ? "Medium: balances speed and responsiveness." : "High: uses more available resources, with memory safeguards."; color: Tf2Colors.muted; font-size: 13px; }
+                                Tf2Body { height: 18px; text: root.performance-profile == "Low" ? "Low: leaves more room for other apps." : root.performance-profile == "Medium" ? "Normal: balances speed and responsiveness." : "High: uses more available resources, with memory safeguards."; color: Tf2Colors.muted; font-size: 13px; }
                             }
                         }
                         Rectangle { vertical-stretch: 1; }
@@ -948,14 +950,14 @@ export component AppWindow inherits Window {
                                     Tf2Label { height: 20px; text: "Export location"; }
                                     Tf2Body { height: 28px; text: root.export-directory; overflow: elide; }
                                     Tf2Label { height: 20px; text: "Item schema"; }
-                                    Tf2Body { height: 28px; text: root.item-schema == "" ? "Automatic detection" : root.item-schema; overflow: elide; }
-                                    Tf2Body { height: 24px; text: "Performance: " + root.performance-profile; }
+                                    Tf2Body { height: 28px; text: root.item-schema == "" ? "Not detected (optional)" : root.item-schema; overflow: elide; }
+                                    Tf2Body { height: 24px; text: "Performance: " + (root.performance-profile == "Medium" ? "Normal" : root.performance-profile); }
                                     Rectangle { vertical-stretch: 1; }
                                     Tf2Button { height: 32px; text: "Edit options"; clicked => { root.parse-step = 1; } }
                                 }
                             }
                         }
-                        Tf2Panel { height: 92px; VerticalLayout { padding: 12px; spacing: 6px; Tf2Heading { height: 24px; text: "What happens next"; } Tf2Body { text: "Each demo is parsed and analyzed for highlight candidates. Progress appears here while it runs. Your original demo files stay unchanged."; color: Tf2Colors.muted; wrap: word-wrap; } } }
+                        Tf2Panel { height: 112px; VerticalLayout { padding: 12px; spacing: 6px; Tf2Heading { height: 24px; text: "What happens next"; } Tf2Body { text: "Reads kills, damage, player movement, weapons, and round events to find multi-kills, airshots, and other highlight moments. It checks the match context, includes bookmarks, then scores and tags candidates for review. Available detail depends on the demo."; color: Tf2Colors.muted; wrap: word-wrap; } } }
                         Tf2Body { height: 42px; text: root.batch-estimate; color: #8ab3cd; font-size: 12px; wrap: word-wrap; }
                         Rectangle { vertical-stretch: 1; }
                     }
@@ -963,7 +965,6 @@ export component AppWindow inherits Window {
                         spacing: 12px;
                         Tf2Heading { height: 34px; font-size: 26px; text: root.busy ? "Parsing your demos" : root.has-export ? "Your candidates are ready" : "Parsing stopped"; }
                         Tf2Body { height: 38px; text: root.status-text; wrap: word-wrap; color: #8ab3cd; }
-                        Tf2Progress { height: 12px; value: root.progress-value; }
                         Tf2Panel { vertical-stretch: 1; VerticalLayout { padding: 12px; spacing: 8px; Tf2Heading { height: 24px; text: "Analysis log"; } AutoScrollLog { vertical-stretch: 1; log-text: root.log-text; } } }
                         Tf2Body { height: 42px; text: root.resource-plan-text; color: Tf2Colors.muted; wrap: word-wrap; font-size: 12px; }
                     }
@@ -973,10 +974,15 @@ export component AppWindow inherits Window {
                 height: 38px; spacing: 10px;
                 if root.parse-step > 0 : Tf2Button { width: 100px; text: "Back"; enabled: !root.busy && !root.importing-demos; clicked => { root.parse-step -= 1; root.parse-started = false; } }
                 if root.parse-step == 2 && root.busy : Tf2Button { width: 110px; text: "Cancel"; clicked => { root.cancel-batch(); } }
-                Rectangle { horizontal-stretch: 1; }
+                if root.parse-step != 2 : Rectangle { horizontal-stretch: 1; }
+                if root.parse-step == 2 : VerticalLayout {
+                    horizontal-stretch: 1; spacing: 3px;
+                    Tf2Body { height: 20px; font-size: 12px; text: root.parse-started ? Math.round(root.progress-value * 100) + "% · " + root.parse-time-left : root.parse-time-left; horizontal-alignment: center; color: Tf2Colors.muted; }
+                    Tf2Progress { height: 10px; value: root.parse-started ? root.progress-value : 0; }
+                }
                 if root.parse-step == 0 : Tf2Button { width: 180px; text: "Continue"; enabled: root.imported-demo-count > 0 && !root.busy && !root.importing-demos; tone: Tf2Colors.red; hover-tone: Tf2Colors.red-hover; pressed-tone: Tf2Colors.red-pressed; clicked => { root.parse-step = 1; } }
                 if root.parse-step == 1 : Tf2Button { width: 210px; text: "Continue to parse"; enabled: root.export-directory != "" && !root.busy; tone: Tf2Colors.red; hover-tone: Tf2Colors.red-hover; pressed-tone: Tf2Colors.red-pressed; clicked => { root.review-parse-options(); } }
-                if root.parse-step == 2 && (!root.parse-started || (!root.busy && !root.has-export)) : Tf2Button { width: 210px; text: root.parse-started ? "Retry parsing" : "Parse " + root.imported-demo-count + " demos"; enabled: !root.busy && root.imported-demo-count > 0; tone: Tf2Colors.red; hover-tone: Tf2Colors.red-hover; pressed-tone: Tf2Colors.red-pressed; clicked => { root.start-batch(); } }
+                if root.parse-step == 2 && (!root.parse-started || root.busy || !root.has-export) : Tf2Button { width: 210px; text: root.busy ? "Parsing..." : root.parse-started ? "Retry parsing" : "Parse " + root.imported-demo-count + " demos"; enabled: !root.busy && root.imported-demo-count > 0; tone: Tf2Colors.red; hover-tone: Tf2Colors.red-hover; pressed-tone: Tf2Colors.red-pressed; clicked => { root.start-batch(); } }
                 if root.parse-step == 2 && root.parse-started && !root.busy && root.has-export : Tf2Button { width: 170px; text: "Open export folder"; clicked => { root.open-export(); } }
                 if root.parse-step == 2 && root.parse-started && !root.busy && root.has-export : Tf2Button { width: 180px; text: "View candidates"; tone: Tf2Colors.red; hover-tone: Tf2Colors.red-hover; pressed-tone: Tf2Colors.red-pressed; clicked => { root.selected-page = 1; } }
             }
