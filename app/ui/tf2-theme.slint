@@ -289,6 +289,7 @@ export component Tf2SpinBox inherits Rectangle {
     in property <int> minimum: 0;
     in property <int> maximum: 100;
     callback edited(int);
+    changed value => { input.text = root.value; }
     height: 30px; min-width: 65px;
     background: Tf2Colors.panel-dark; border-width: 1px; border-color: Tf2Colors.border-bright;
     forward-focus: input;

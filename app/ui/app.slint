@@ -595,7 +595,7 @@ component MirvShortcutPanel inherits Rectangle {
     VerticalLayout {
         padding: root.compact ? 7px : 10px; spacing: 5px;
         HorizontalLayout {
-            height: 27px;
+            height: 27px; spacing: 8px;
             Rectangle { width: 34px; height: 27px; background: Tf2Colors.neutral; border-width: 1px; border-color: Tf2Colors.border-bright; Tf2Heading { width: parent.width; height: parent.height; text: "5"; font-size: 22px; horizontal-alignment: center; } }
             Tf2Heading { text: "MIRV SHORTCUTS"; font-size: 17px; }
             Rectangle { horizontal-stretch: 1; }
@@ -916,6 +916,7 @@ export component AppWindow inherits Window {
                     width: parent.width; height: parent.height;
                     private property <length> status-height: root.importing-demos || (root.status-text != "" && root.status-text != "Ready") ? 26px : 0px;
                     Tf2Panel {
+                        x: 0px; y: 0px;
                         width: root.imported-demo-count > 0 ? (parent.width - 10px) * 0.43 : parent.width;
                         height: parent.height - parent.status-height;
                         background: root.demo-drop-active ? #263b49 : Tf2Colors.panel-dark;
@@ -1187,7 +1188,7 @@ export component AppWindow inherits Window {
                 viewport-y <=> root.recording-scroll-y;
                 settings-content := Rectangle {
                     width: recording-scroll.width - (root.recording-advanced-view ? 16px : 0px);
-                    height: root.recording-advanced-view ? (self.two-columns ? 860px : 1420px) : recording-scroll.visible-height;
+                    height: root.recording-advanced-view ? (self.two-columns ? 876px : 1452px) : recording-scroll.visible-height;
                     private property <bool> two-columns: self.width >= 1280px;
                     if root.recording-advanced-view || root.recording-settings-section == 0 : RecordingCard {
                         x: root.recording-advanced-view && settings-content.two-columns ? 0 * (parent.width + 10px) / 2 : 0px;
@@ -1457,7 +1458,7 @@ export component AppWindow inherits Window {
                         x: root.recording-advanced-view && settings-content.two-columns ? 0 * (parent.width + 10px) / 2 : 0px;
                         y: root.recording-advanced-view ? (settings-content.two-columns ? 280px : 560px) : 0px;
                         width: root.recording-advanced-view && settings-content.two-columns ? (parent.width - 10px) / 2 : parent.width;
-                        height: root.recording-advanced-view ? 270px : parent.height;
+                        height: root.recording-advanced-view ? 286px : parent.height;
                         number: "3";
                         heading: "Encoding";
                         description: "Adjust compression and editing compatibility.";
@@ -1473,7 +1474,7 @@ export component AppWindow inherits Window {
                                         text: "Compatibility";
                                     }
                                     Tf2ComboBox {
-                                        width: parent.width;
+                                        horizontal-stretch: 1;
                                         height: 30px;
                                         model: ["DaVinci Resolve / Universal", "Maximum Color Quality", "Custom"];
                                         current-value <=> root.mp4-compatibility;
@@ -1659,9 +1660,9 @@ export component AppWindow inherits Window {
                     }
                     if root.recording-advanced-view || root.recording-settings-section == 3 : RecordingCard {
                         x: root.recording-advanced-view && settings-content.two-columns ? 1 * (parent.width + 10px) / 2 : 0px;
-                        y: root.recording-advanced-view ? (settings-content.two-columns ? 280px : 840px) : 0px;
+                        y: root.recording-advanced-view ? (settings-content.two-columns ? 280px : 856px) : 0px;
                         width: root.recording-advanced-view && settings-content.two-columns ? (parent.width - 10px) / 2 : parent.width;
-                        height: root.recording-advanced-view ? 270px : parent.height;
+                        height: root.recording-advanced-view ? 286px : parent.height;
                         number: "4";
                         heading: "Recording profile";
                         description: "Choose graphics, HUD elements and sounds for recording.";
@@ -1767,7 +1768,7 @@ export component AppWindow inherits Window {
                     }
                     if root.recording-advanced-view || root.recording-settings-section == 4 : MirvShortcutPanel {
                         x: 0px;
-                        y: root.recording-advanced-view ? (settings-content.two-columns ? 560px : 1120px) : 0px;
+                        y: root.recording-advanced-view ? (settings-content.two-columns ? 576px : 1152px) : 0px;
                         width: parent.width;
                         compact: settings-content.width < 1250px;
                         height: root.recording-advanced-view ? 300px : parent.height;
