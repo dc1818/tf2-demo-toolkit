@@ -59,6 +59,18 @@ impl BatchPreflight {
         Ok(())
     }
 
+    pub fn overview(&self) -> String {
+        format!(
+            "Estimated total time: {} ({} parsing + {} analysis)\nEstimated export size: {} | Required free space: {} | Available: {}",
+            format_duration(self.estimated_parse_seconds.saturating_add(self.estimated_analysis_seconds)),
+            format_duration(self.estimated_parse_seconds),
+            format_duration(self.estimated_analysis_seconds),
+            format_bytes(self.estimated_total_output_bytes as f64),
+            format_bytes(self.required_free_bytes as f64),
+            format_bytes(self.available_free_bytes as f64),
+        )
+    }
+
     pub fn summary(&self) -> String {
         let status = if self.has_enough_space() { "PASS" } else { "BLOCKED — insufficient free space" };
         format!(

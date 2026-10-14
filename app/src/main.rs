@@ -1306,6 +1306,30 @@ fn bind_demo_file_drop(ui: &AppWindow, state: &Arc<Mutex<State>>) {
 }
 
 fn bind_file_callbacks(ui: &AppWindow, state: &Arc<Mutex<State>>) {
+    ui.set_item_schema_available(PathBuf::from(ui.get_item_schema().to_string()).is_file());
+    let weak = ui.as_weak();
+    ui.on_validate_item_schema(move || {
+        if let Some(ui) = weak.upgrade() {
+            ui.set_item_schema_available(PathBuf::from(ui.get_item_schema().to_string()).is_file());
+        }
+    });
+    let weak = ui.as_weak();
+    let estimate_state = state.clone();
+    ui.on_refresh_parse_estimate(move || {
+        if let Some(ui) = weak.upgrade() {
+            if !ui.get_busy() { update_batch_preflight(&ui, &estimate_state); }
+        }
+    });
+    let weak = ui.as_weak();
+    ui.on_show_parse_estimate_details(move || {
+        if let Some(ui) = weak.upgrade() {
+            rfd::MessageDialog::new()
+                .set_title("Time and space estimate")
+                .set_description(ui.get_batch_estimate().to_string())
+                .set_level(rfd::MessageLevel::Info)
+                .show();
+        }
+    });
     let weak = ui.as_weak();
     let demos_state = state.clone();
     ui.on_choose_demos(move || {
@@ -2792,6 +2816,7 @@ fn update_batch_preflight(ui: &AppWindow, state: &Arc<Mutex<State>>) {
     let demos = state.lock().demos.clone();
     if demos.is_empty() {
         ui.set_batch_estimate("Pre-flight estimate: choose one or more demos.".into());
+        ui.set_parse_estimate_overview("Choose demos to calculate time and space estimates.".into());
         return;
     }
     let output = PathBuf::from(ui.get_export_directory().to_string());
@@ -2799,10 +2824,12 @@ fn update_batch_preflight(ui: &AppWindow, state: &Arc<Mutex<State>>) {
     match batch::estimate_batch_preflight(&demos, &output, profile) {
         Ok(estimate) => {
             ui.set_batch_estimate(estimate.summary().into());
+            ui.set_parse_estimate_overview(estimate.overview().into());
             ui.set_parse_time_left(format!("Estimated total: {}", format_duration(estimate.estimated_parse_seconds.saturating_add(estimate.estimated_analysis_seconds))).into());
         },
         Err(error) => {
             ui.set_parse_time_left("Time estimate unavailable".into());
+            ui.set_parse_estimate_overview(format!("Estimate unavailable: {error}").into());
             ui.set_batch_estimate(format!("Pre-flight estimate unavailable: {error}").into())
         }
     }

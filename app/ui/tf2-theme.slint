@@ -116,19 +116,19 @@ export component Tf2Tab inherits Rectangle {
 
     height: 44px;
     min-width: 160px;
-    background: area.pressed ? Tf2Colors.neutral-pressed : area.has-hover ? Tf2Colors.neutral-hover : Tf2Colors.neutral;
+    background: !root.enabled ? Tf2Colors.panel-dark : area.pressed ? Tf2Colors.neutral-pressed : area.has-hover ? Tf2Colors.neutral-hover : Tf2Colors.neutral;
     border-width: 1px;
     border-color: root.active ? Tf2Colors.border-bright : Tf2Colors.border;
     opacity: root.enabled ? 1 : 0.45;
     clip: true;
     Rectangle { x: 1px; y: 1px; width: parent.width - 2px; height: 1px; background: #ffffff22; }
-    Rectangle { x: 0px; y: parent.height - 4px; width: parent.width; height: 4px; background: root.active ? Tf2Colors.blu : #00000000; }
+    Rectangle { x: 0px; y: parent.height - 4px; width: parent.width; height: 4px; background: root.active && root.enabled ? Tf2Colors.blu : #00000000; }
     Text {
         y: area.pressed ? 2px : 0px;
         width: parent.width;
         height: parent.height - 3px;
         text: root.text;
-        color: root.active ? #8ab3cd : Tf2Colors.cream;
+        color: !root.enabled ? Tf2Colors.dim : root.active ? #8ab3cd : Tf2Colors.cream;
         font-family: "TF2 Build";
         font-size: 15px;
         horizontal-alignment: center;
