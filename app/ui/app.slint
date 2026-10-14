@@ -1,0 +1,1901 @@
+import { ScrollView } from "std-widgets.slint";
+import { Tf2Colors, Tf2Panel, Tf2Heading, Tf2Label, Tf2Body, Tf2Button, Tf2Tab, Tf2LineEdit, Tf2CheckBox, Tf2Progress, Tf2ComboBox, Tf2SpinBox } from "tf2-theme.slint";
+
+// A complete tick (or whole-candidate) group. Keeping groups structured lets
+// the table distinguish their origin without turning every individual tag into
+// a separate visual chip.
+export struct CandidateTagGroup {
+    label: string, tags: string, width: int, highlighted: bool, has-separator: bool,
+}
+
+export struct CandidateRow {
+    rank: int, score: string, kills: string, attacker: string, class-name: string, team: string,
+    demo: string, map-name: string, mode: string, demo-type: string, recorded: string, ticks: string,
+    tags: string, tag-width: int, tag-groups: [CandidateTagGroup], selected: bool,
+}
+
+export struct FilterOption {
+    value: string,
+    selected: bool,
+}
+
+component PagedText inherits Rectangle {
+    min-width: 0px; min-height: 0px; preferred-width: 0px; preferred-height: 0px;
+    in property <string> text;
+    in-out property <bool> follow-latest: false;
+    private property <int> page: 0;
+    private property <length> stride: Math.max(24px, viewport.height - 24px);
+    private property <int> pages: Math.max(1, Math.ceil((body.preferred-height - 24px) / root.stride));
+    private property <int> current: root.follow-latest ? root.pages - 1 : Math.min(root.page, root.pages - 1);
+    viewport := Rectangle {
+        width: parent.width; height: parent.height - 32px; clip: true;
+        body := Tf2Body { x: 4px; y: -root.current * root.stride; width: parent.width - 8px; height: self.preferred-height; text: root.text; wrap: word-wrap; font-size: 13px; vertical-alignment: top; }
+    }
+    if root.pages > 1 : HorizontalLayout {
+        y: parent.height - 28px; height: 28px; spacing: 6px;
+        Tf2Button { width: 88px; height: 28px; label-font-size: 12px; text: "Previous"; enabled: root.current > 0; clicked => { root.page = root.current - 1; root.follow-latest = false; } }
+        Tf2Body { text: "Page " + (root.current + 1) + " / " + root.pages; horizontal-alignment: center; font-size: 12px; }
+        Tf2Button { width: 72px; height: 28px; label-font-size: 12px; text: "Next"; enabled: root.current + 1 < root.pages; clicked => { root.page = root.current + 1; } }
+        Tf2Button { width: 72px; height: 28px; label-font-size: 12px; text: "Latest"; clicked => { root.follow-latest = true; } }
+    }
+}
+
+// Bounded lists use pages, so resizing never hides items behind a scrollbar.
+component PagedDemoList inherits Rectangle {
+    min-width: 0px; min-height: 0px; preferred-width: 0px; preferred-height: 0px;
+    in property <[string]> items;
+    in-out property <int> page: 0;
+    private property <int> capacity: Math.max(1, Math.floor((self.height - 32px) / 25px));
+    private property <int> pages: Math.max(1, Math.ceil(root.items.length / root.capacity));
+    private property <int> current: Math.min(root.page, root.pages - 1);
+    clip: true;
+    for row in root.capacity : Tf2Body {
+        x: 6px; y: row * 25px; width: parent.width - 12px; height: 25px;
+        text: root.current * root.capacity + row < root.items.length ? root.items[root.current * root.capacity + row] : "";
+        font-size: 13px; overflow: elide;
+    }
+    if root.pages > 1 : HorizontalLayout {
+        y: parent.height - 28px; height: 28px; spacing: 6px;
+        Tf2Button { width: 88px; height: 28px; label-font-size: 12px; text: "Previous"; enabled: root.current > 0; clicked => { root.page = root.current - 1; } }
+        Tf2Body { text: "Page " + (root.current + 1) + " / " + root.pages; horizontal-alignment: center; font-size: 12px; }
+        Tf2Button { width: 72px; height: 28px; label-font-size: 12px; text: "Next"; enabled: root.current + 1 < root.pages; clicked => { root.page = root.current + 1; } }
+    }
+}
+
+component ParseOptionCard inherits Tf2Panel {
+    in property <string> number;
+    in property <string> heading;
+    in property <string> description;
+    in property <bool> dense;
+    Rectangle { x: 10px; y: 10px; width: 40px; height: 40px; background: Tf2Colors.neutral; border-width: 1px; border-color: Tf2Colors.border-bright;
+        Text { width: parent.width; height: parent.height; text: root.number; font-family: "TF2 Build"; font-size: 30px; color: Tf2Colors.cream; horizontal-alignment: center; vertical-alignment: center; }
+    }
+    Tf2Heading { x: 60px; y: 10px; width: parent.width * 0.40 - 70px; height: 22px; font-size: root.dense ? 14px : 18px; text: root.heading; }
+    Tf2Body { x: 60px; y: 35px; width: parent.width * 0.40 - 70px; height: parent.height - 40px; text: root.description; wrap: word-wrap; vertical-alignment: top; color: Tf2Colors.muted; font-size: root.dense ? 12px : 14px; }
+    Rectangle { x: parent.width * 0.40; y: 10px; width: parent.width * 0.60 - 12px; height: parent.height - 20px; @children }
+}
+
+component RecordingCard inherits Tf2Panel {
+    in property <string> number;
+    in property <string> heading;
+    in property <string> description;
+    Rectangle { x: 10px; y: 9px; width: 38px; height: 38px; background: Tf2Colors.neutral; border-width: 1px; border-color: Tf2Colors.border-bright;
+        Text { width: parent.width; height: parent.height; text: root.number; font-family: "TF2 Build"; font-size: 28px; color: Tf2Colors.cream; horizontal-alignment: center; vertical-alignment: center; }
+    }
+    Tf2Heading { x: 58px; y: 8px; width: parent.width - 70px; height: 22px; font-size: 17px; text: root.heading; }
+    Tf2Body { x: 58px; y: 31px; width: parent.width - 70px; height: 21px; text: root.description; font-size: 12px; color: Tf2Colors.muted; overflow: elide; }
+    Rectangle { x: 12px; y: 59px; width: parent.width - 24px; height: parent.height - 69px; @children }
+}
+
+component SettingField inherits VerticalLayout {
+    in property <string> label;
+    spacing: 3px;
+    Tf2Label { height: 17px; text: root.label; font-size: 13px; }
+    Rectangle { height: 30px; @children }
+}
+
+component AppHeader inherits Rectangle {
+    in property <int> page;
+    in property <bool> compact;
+    in property <bool> has-export;
+    in property <string> frame-debug;
+    in property <string> recording-save-status;
+    in property <string> background-process-status;
+    in property <bool> background-process-active;
+    in-out property <bool> menu-open;
+    callback navigate(int);
+
+    height: root.compact ? 64px : 118px;
+    background: Tf2Colors.header;
+    Rectangle { y: parent.height - 1px; width: parent.width; height: 1px; background: Tf2Colors.border; }
+
+    if !root.compact : VerticalLayout {
+        padding-left: 18px; padding-right: 18px; padding-top: 9px; padding-bottom: 0px;
+        spacing: 6px;
+        HorizontalLayout {
+            height: 48px;
+            Text { text: "Demo Toolkit"; color: Tf2Colors.cream; font-family: "TF2 Build"; font-size: 38px; vertical-alignment: center; }
+            Rectangle { horizontal-stretch: 1; }
+        }
+        HorizontalLayout {
+            spacing: 5px;
+            Tf2Tab { text: "PARSE DEMOS"; active: root.page == 0; clicked => { root.navigate(0); } }
+            Tf2Tab { text: "CANDIDATES"; active: root.page == 1; enabled: root.has-export; clicked => { root.navigate(1); } }
+            Tf2Tab { text: "RECORDING SETTINGS"; active: root.page == 2; enabled: root.has-export; min-width: 225px; clicked => { root.navigate(2); } }
+            Tf2Tab { text: "APPLICATION LOGS"; active: root.page == 3; clicked => { root.navigate(3); } }
+            Rectangle { horizontal-stretch: 1; }
+        }
+    }
+
+    if root.compact : HorizontalLayout {
+        padding-left: 14px; padding-right: 12px; padding-top: 7px; padding-bottom: 7px;
+        spacing: 12px;
+        VerticalLayout {
+            spacing: -2px;
+            Text { text: "Demo Toolkit"; color: Tf2Colors.cream; font-family: "TF2 Build"; font-size: 28px; }
+            Text {
+                text: root.page == 0 ? "PARSE DEMOS" : root.page == 1 ? "CANDIDATES" : root.page == 2 ? "RECORDING SETTINGS" : root.page == 3 ? "APPLICATION LOGS" : "CANDIDATE DETAILS";
+                color: #8ab3cd; font-family: "TF2 Build"; font-size: 12px;
+            }
+        }
+        Rectangle { horizontal-stretch: 1; }
+        Tf2Button { width: 84px; height: 38px; text: root.menu-open ? "CLOSE" : "MENU"; clicked => { root.menu-open = !root.menu-open; } }
+    }
+
+    if root.background-process-status != "" : Text {
+        x: root.compact ? 290px : parent.width - 656px;
+        y: root.compact ? 7px : 9px;
+        width: root.compact ? parent.width - 580px : 420px;
+        height: root.compact ? 38px : 34px;
+        text: root.background-process-active ? "BACKGROUND: " + root.background-process-status : "BACKGROUND: READY";
+        color: root.background-process-active ? Tf2Colors.gold : #8ab3cd;
+        font-family: "TF2 Build";
+        font-size: root.compact ? 10px : 12px;
+        horizontal-alignment: right;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+
+    // Fixed diagnostic readout. It is deliberately outside the header layouts
+    // so stretch calculations cannot hide or truncate it while resizing.
+    Rectangle {
+        x: root.compact ? parent.width - 272px : parent.width - 218px;
+        y: root.compact ? 7px : 9px;
+        width: root.compact ? 164px : 200px;
+        height: root.compact ? 38px : 34px;
+        background: Tf2Colors.neutral;
+        border-width: 1px;
+        border-color: Tf2Colors.border-bright;
+        Text {
+            x: 6px; width: parent.width - 12px; height: parent.height;
+            text: root.frame-debug;
+            color: #8ab3cd;
+            font-family: "Roboto Condensed";
+            font-size: root.compact ? 11px : 12px;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+    }
+}
+
+component CandidateTableRow inherits Rectangle {
+    in property <CandidateRow> entry;
+    in property <int> index;
+    in property <bool> compact;
+    in property <bool> main-columns;
+    in property <bool> extra-columns;
+    in property <length> tag-column-width;
+    callback drag(int, float, bool, bool);
+    callback selection-done();
+
+                height: 30px; clip: true;
+                background: root.entry.selected ? Tf2Colors.gold : (Math.mod(root.index, 2) == 0 ? Tf2Colors.table : Tf2Colors.table-alt);
+                row-focus := FocusScope { }
+                HorizontalLayout {
+                    x: 0px; width: root.width;
+                    padding-left: 8px; padding-right: 8px; spacing: 8px;
+                    if root.main-columns && root.compact : Tf2Body { text: root.entry.score; width: 75px; }
+                    if root.main-columns && root.compact : Tf2Body { text: root.entry.recorded; width: 90px; color: root.entry.recorded == "Recorded" ? Tf2Colors.green : Tf2Colors.cream; horizontal-alignment: center; vertical-alignment: center; }
+                    if root.main-columns && !root.compact : Tf2Body { text: root.entry.recorded; width: 90px; color: root.entry.recorded == "Recorded" ? Tf2Colors.green : Tf2Colors.cream; horizontal-alignment: center; vertical-alignment: center; }
+                    if root.main-columns && !root.compact : Tf2Body { text: root.entry.score; width: 75px; }
+                    if root.main-columns : Tf2Body { text: root.entry.map-name; width: 200px; overflow: elide; }
+                    if root.main-columns : Tf2Body { text: root.entry.class-name; width: 110px; overflow: elide; }
+                    if root.main-columns : Tf2Body { text: root.entry.ticks; width: 160px; overflow: elide; }
+                    if root.extra-columns : Tf2Body { text: root.entry.mode; width: 220px; overflow: elide; }
+                    if root.extra-columns && !root.compact : Tf2Body { text: root.entry.team; width: 90px; overflow: elide; }
+                    if root.extra-columns : Rectangle {
+                        width: root.tag-column-width; height: parent.height; clip: true;
+                        HorizontalLayout {
+                            padding-top: 4px; padding-bottom: 4px; spacing: 4px;
+                            for group in root.entry.tag-groups : HorizontalLayout {
+                                width: (group.width + (group.has-separator ? 18 : 0)) * 1px;
+                                spacing: 4px;
+                                Rectangle {
+                                    width: group.width * 1px;
+                                    background: group.highlighted ? #202a31 : #1b1c1b;
+                                    border-width: 1px;
+                                    border-color: group.highlighted ? #385061 : #343633;
+                                    clip: true;
+                                    HorizontalLayout {
+                                        padding-left: 5px; padding-right: 5px; spacing: 3px;
+                                        Text { text: group.label; color: #8ab3cd; font-family: "Roboto Condensed"; font-size: 12px; vertical-alignment: center; overflow: elide; }
+                                        Text { text: group.tags; color: Tf2Colors.cream; font-family: "Roboto Condensed"; font-size: 12px; vertical-alignment: center; overflow: elide; }
+                                    }
+                                }
+                                if group.has-separator : Rectangle {
+                                    width: 14px; height: parent.height;
+                                    background: #191a19;
+                                    border-width: 1px; border-color: #3c4140;
+                                    Text { width: parent.width; height: parent.height; text: "|"; color: Tf2Colors.muted; font-family: "Roboto Condensed"; font-size: 12px; horizontal-alignment: center; vertical-alignment: center; }
+                                }
+                            }
+                        }
+                    }
+                }
+                drag-area := TouchArea {
+                    property <bool> drag-selecting; property <bool> dragging; property <bool> drag-additive;
+                    pointer-event(event) => {
+                        if (event.button == PointerEventButton.left && event.kind == PointerEventKind.down) {
+                            row-focus.focus();
+                            self.drag-additive = event.modifiers.control;
+                            self.drag-selecting = self.drag-additive ? !root.entry.selected : true;
+                            self.dragging = true;
+                            root.drag(root.index, 0, self.drag-selecting, self.drag-additive);
+                        }
+                        if (event.button == PointerEventButton.left && (event.kind == PointerEventKind.up || event.kind == PointerEventKind.cancel)) {
+                            self.dragging = false; root.selection-done();
+                        }
+                    }
+                    moved => { if (self.dragging) { root.drag(root.index, (self.mouse-y - self.pressed-y) / 1px, self.drag-selecting, self.drag-additive); } }
+                }
+
+}
+
+component CandidateTable inherits Rectangle {
+    min-width: 0px; min-height: 0px; preferred-width: 0px; preferred-height: 0px;
+    in property <[CandidateRow]> rows;
+    in property <bool> compact;
+    in property <int> tags-width-px: 160;
+    in-out property <length> horizontal-offset;
+    callback drag(int, float, bool, bool);
+    callback selection-done();
+
+    background: Tf2Colors.panel-dark;
+    border-width: 1px;
+    border-color: Tf2Colors.border;
+    clip: true;
+    private property <length> content-width: root.width;
+    private property <int> page: 0;
+    private property <int> capacity: Math.max(1, Math.floor((root.height - 66px) / 30px));
+    private property <int> pages: Math.max(1, Math.ceil(root.rows.length / root.capacity));
+    private property <int> current: Math.min(root.page, root.pages - 1);
+    private property <bool> more-columns: false;
+    private property <bool> main-columns: root.width >= 1250px || !root.more-columns;
+    private property <bool> extra-columns: root.width >= 1250px || root.more-columns;
+    private property <length> tag-column-width: Math.max(80px, root.width - (root.width >= 1250px ? (root.compact ? 919px : 1017px) : (root.compact ? 252px : 350px)));
+
+    Rectangle {
+            x: 0px; y: 0px; width: root.width; height: 30px; background: Tf2Colors.neutral; clip: true;
+            HorizontalLayout {
+                x: 0px; width: root.content-width;
+                padding-left: 8px; padding-right: 8px; spacing: 8px;
+                if root.main-columns && root.compact : Text { text: "SCORE"; width: 75px; color: Tf2Colors.cream; font-family: "TF2 Build"; font-size: 12px; vertical-alignment: center; }
+                if root.main-columns && root.compact : Text { text: "RECORDED"; width: 90px; color: Tf2Colors.cream; font-family: "TF2 Build"; font-size: 12px; vertical-alignment: center; horizontal-alignment: center; }
+                if root.main-columns && !root.compact : Text { text: "RECORDED"; width: 90px; color: Tf2Colors.cream; font-family: "TF2 Build"; font-size: 12px; vertical-alignment: center; horizontal-alignment: center; }
+                if root.main-columns && !root.compact : Text { text: "SCORE"; width: 75px; color: Tf2Colors.cream; font-family: "TF2 Build"; font-size: 12px; vertical-alignment: center; }
+                if root.main-columns : Text { text: "MAP"; width: 200px; color: Tf2Colors.cream; font-family: "TF2 Build"; font-size: 12px; vertical-alignment: center; }
+                if root.main-columns : Text { text: "CLASS"; width: 110px; color: Tf2Colors.cream; font-family: "TF2 Build"; font-size: 12px; vertical-alignment: center; }
+                if root.main-columns : Text { text: "KILL TICK"; width: 160px; color: Tf2Colors.cream; font-family: "TF2 Build"; font-size: 12px; vertical-alignment: center; }
+                if root.extra-columns : Text { text: "SERVER TYPE"; width: 220px; color: Tf2Colors.cream; font-family: "TF2 Build"; font-size: 12px; vertical-alignment: center; }
+                if root.extra-columns && !root.compact : Text { text: "TEAM"; width: 90px; color: Tf2Colors.cream; font-family: "TF2 Build"; font-size: 12px; vertical-alignment: center; }
+                if root.extra-columns : Text { text: "TAGS"; width: root.tag-column-width; color: Tf2Colors.cream; font-family: "TF2 Build"; font-size: 12px; vertical-alignment: center; }
+            }
+        }
+        candidate-list := Rectangle {
+            x: 0px; y: 30px; width: root.width; height: Math.max(0px, root.height - 64px);
+            for slot in root.capacity : CandidateTableRow {
+                y: slot * 30px; width: parent.width; height: 30px;
+                index: root.current * root.capacity + slot;
+                entry: root.rows[self.index]; visible: self.index < root.rows.length;
+                compact: root.compact; main-columns: root.main-columns; extra-columns: root.extra-columns; tag-column-width: root.tag-column-width;
+                drag(index, delta, selecting, additive) => { root.drag(index, delta, selecting, additive); }
+                selection-done => { root.selection-done(); }
+            }
+        }
+        Rectangle {
+            x: 0px; y: root.height - 34px; width: root.width; height: 34px;
+            HorizontalLayout { height: 34px; spacing: 6px;
+            if root.width < 1250px : Tf2Button { width: 150px; height: 30px; label-font-size: 12px; text: root.more-columns ? "Main columns" : "Server / tags"; clicked => { root.more-columns = !root.more-columns; } }
+            Rectangle { horizontal-stretch: 1; }
+            Tf2Button { width: 88px; height: 30px; label-font-size: 12px; text: "Previous"; enabled: root.current > 0; clicked => { root.page = root.current - 1; } }
+            Tf2Body { width: 110px; height: 30px; text: "Page " + (root.current + 1) + " / " + root.pages; horizontal-alignment: center; }
+            Tf2Button { width: 72px; height: 30px; label-font-size: 12px; text: "Next"; enabled: root.current + 1 < root.pages; clicked => { root.page = root.current + 1; } }
+        }
+    }
+}
+
+component ClassFilter inherits Rectangle {
+    in property <image> icon;
+    in property <string> label;
+    in property <bool> selected;
+    callback clicked();
+    width: 38px; height: 38px;
+    background: selected ? Tf2Colors.gold : area.pressed ? Tf2Colors.neutral-pressed : area.has-hover ? Tf2Colors.neutral-hover : Tf2Colors.neutral;
+    border-width: 1px; border-color: area.has-hover ? Tf2Colors.border-bright : Tf2Colors.border;
+    if root.label == "" : Image { x: 4px; y: 4px; width: 30px; height: 30px; source: root.icon; image-fit: contain; }
+    if root.label != "" : Text {
+        width: parent.width; height: parent.height;
+        text: root.label;
+        color: Tf2Colors.cream;
+        font-family: "TF2 Build";
+        font-size: 12px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+    class-focus := FocusScope { }
+    area := TouchArea { clicked => { class-focus.focus(); root.clicked(); } }
+}
+
+component SecondsPicker inherits Rectangle {
+    in-out property <int> seconds;
+    private property <int> page: 0;
+    height: 38px;
+    background: area.pressed ? Tf2Colors.neutral-pressed : area.has-hover ? Tf2Colors.neutral-hover : Tf2Colors.panel-dark;
+    border-width: 1px;
+    border-color: area.has-hover ? Tf2Colors.border-bright : Tf2Colors.border;
+    Text { x: 8px; width: parent.width - 24px; height: parent.height; text: root.seconds + "s"; color: Tf2Colors.cream; font-family: "Roboto Condensed"; font-size: 14px; horizontal-alignment: center; vertical-alignment: center; }
+    Text { x: parent.width - 20px; width: 16px; height: parent.height; text: "▼"; color: Tf2Colors.muted; font-size: 10px; horizontal-alignment: center; vertical-alignment: center; }
+    area := TouchArea { clicked => { seconds-popup.show(); } }
+    seconds-popup := PopupWindow {
+        x: 0px; y: root.height; width: Math.max(190px, root.width); height: 250px;
+        Rectangle {
+            background: Tf2Colors.panel;
+            border-width: 1px; border-color: Tf2Colors.border-bright;
+            Rectangle {
+                x: 4px; y: 4px; width: parent.width - 8px; height: 196px;
+                for slot in 7 : Rectangle {
+                    private property <int> second: root.page * 7 + slot;
+                    y: slot * 28px; width: parent.width; height: 28px; visible: second <= 60;
+                    background: root.seconds == second ? Tf2Colors.gold : second-area.has-hover ? Tf2Colors.neutral-hover : Tf2Colors.panel-dark;
+                    Text { width: parent.width; height: parent.height; text: second + "s"; color: Tf2Colors.cream; font-family: "Roboto Condensed"; font-size: 13px; horizontal-alignment: center; vertical-alignment: center; }
+                    second-area := TouchArea { clicked => { root.seconds = second; seconds-popup.close(); } }
+                }
+            }
+            HorizontalLayout { x: 4px; y: 210px; width: parent.width - 8px; height: 28px; spacing: 4px;
+                Tf2Button { width: 58px; height: 28px; text: "Prev"; label-font-size: 11px; enabled: root.page > 0; clicked => { root.page -= 1; } }
+                Tf2Body { text: (root.page + 1) + "/9"; horizontal-alignment: center; }
+                Tf2Button { width: 58px; height: 28px; text: "Next"; label-font-size: 11px; enabled: root.page < 8; clicked => { root.page += 1; } }
+            }
+        }
+    }
+}
+
+component MultiSelectDropdown inherits Rectangle {
+    in property <string> summary;
+    in property <string> search-placeholder;
+    in property <[FilterOption]> options;
+    in property <int> content-width-px: 320;
+    in-out property <string> search-text;
+    callback search-edited(string);
+    callback toggled(string);
+
+    private property <int> page: 0;
+    private property <int> pages: Math.max(1, Math.ceil(root.options.length / 5));
+    private property <int> current: Math.min(root.page, root.pages - 1);
+    height: 34px;
+    background: area.pressed ? Tf2Colors.neutral-pressed : area.has-hover ? Tf2Colors.neutral-hover : Tf2Colors.panel-dark;
+    border-width: 1px;
+    border-color: area.has-hover ? Tf2Colors.border-bright : Tf2Colors.border;
+    Text { x: 9px; width: parent.width - 34px; height: parent.height; text: root.summary; color: Tf2Colors.cream; font-family: "Roboto Condensed"; font-size: 13px; vertical-alignment: center; overflow: elide; }
+    Text { x: parent.width - 26px; width: 18px; height: parent.height; text: "▼"; color: Tf2Colors.muted; font-size: 10px; horizontal-alignment: center; vertical-alignment: center; }
+    area := TouchArea { clicked => { filter-popup.show(); } }
+    filter-popup := PopupWindow {
+        x: 0px; y: root.height; width: Math.max(root.width, Math.max(320px, root.content-width-px * 1px)); height: 290px;
+        close-policy: PopupClosePolicy.close-on-click-outside;
+        Tf2Panel {
+            VerticalLayout {
+                padding: 8px; spacing: 6px;
+                Tf2LineEdit { height: 32px; text <=> root.search-text; placeholder: root.search-placeholder; centered: true; edited(value) => { root.page = 0; root.search-edited(value); } }
+                Rectangle { height: 140px;
+                    for slot in 5 : Tf2CheckBox {
+                        private property <int> index: root.current * 5 + slot;
+                        y: slot * 28px; width: parent.width; height: 28px; visible: index < root.options.length;
+                        text: root.options[index].value; checked: root.options[index].selected; toggled(checked) => { root.toggled(root.options[index].value); }
+                    }
+                }
+                HorizontalLayout { height: 26px; spacing: 5px;
+                    Tf2Button { width: 80px; height: 26px; text: "Previous"; label-font-size: 11px; enabled: root.current > 0; clicked => { root.page = root.current - 1; } }
+                    Tf2Body { text: (root.current + 1) + " / " + root.pages; horizontal-alignment: center; }
+                    Tf2Button { width: 64px; height: 26px; text: "Next"; label-font-size: 11px; enabled: root.current + 1 < root.pages; clicked => { root.page = root.current + 1; } }
+                }
+                Tf2Button { height: 30px; text: "CLOSE"; label-font-size: 12px; clicked => { filter-popup.close(); } }
+            }
+        }
+    }
+}
+
+component ClassMultiSelectDropdown inherits Rectangle {
+    in property <string> summary;
+    in property <bool> scout;
+    in property <bool> soldier;
+    in property <bool> pyro;
+    in property <bool> demoman;
+    in property <bool> heavy;
+    in property <bool> engineer;
+    in property <bool> medic;
+    in property <bool> sniper;
+    in property <bool> spy;
+    callback toggled(string);
+
+    height: 34px;
+    background: area.pressed ? Tf2Colors.neutral-pressed : area.has-hover ? Tf2Colors.neutral-hover : Tf2Colors.panel-dark;
+    border-width: 1px;
+    border-color: area.has-hover ? Tf2Colors.border-bright : Tf2Colors.border;
+    Text { x: 9px; width: parent.width - 34px; height: parent.height; text: root.summary; color: Tf2Colors.cream; font-family: "Roboto Condensed"; font-size: 13px; vertical-alignment: center; overflow: elide; }
+    Text { x: parent.width - 26px; width: 18px; height: parent.height; text: "▼"; color: Tf2Colors.muted; font-size: 10px; horizontal-alignment: center; vertical-alignment: center; }
+    area := TouchArea { clicked => { class-popup.show(); } }
+    class-popup := PopupWindow {
+        x: 0px; y: root.height; width: 238px; height: 200px;
+        close-policy: PopupClosePolicy.close-on-click-outside;
+        Tf2Panel {
+            VerticalLayout {
+                padding: 8px; spacing: 6px;
+                Tf2Label { height: 18px; text: "SELECT CLASSES"; horizontal-alignment: center; }
+                GridLayout {
+                    spacing: 5px;
+                    Row {
+                        ClassFilter { icon: @image-url("assets/classes/all-classes.svg"); selected: !root.scout && !root.soldier && !root.pyro && !root.demoman && !root.heavy && !root.engineer && !root.medic && !root.sniper && !root.spy; clicked => { root.toggled("All"); } }
+                        ClassFilter { icon: @image-url("assets/classes/scout.png"); selected: root.scout; clicked => { root.toggled("Scout"); } }
+                        ClassFilter { icon: @image-url("assets/classes/soldier.png"); selected: root.soldier; clicked => { root.toggled("Soldier"); } }
+                        ClassFilter { icon: @image-url("assets/classes/pyro.png"); selected: root.pyro; clicked => { root.toggled("Pyro"); } }
+                        ClassFilter { icon: @image-url("assets/classes/demoman.png"); selected: root.demoman; clicked => { root.toggled("Demoman"); } }
+                    }
+                    Row {
+                        ClassFilter { icon: @image-url("assets/classes/heavy.png"); selected: root.heavy; clicked => { root.toggled("Heavy"); } }
+                        ClassFilter { icon: @image-url("assets/classes/engineer.png"); selected: root.engineer; clicked => { root.toggled("Engineer"); } }
+                        ClassFilter { icon: @image-url("assets/classes/medic.png"); selected: root.medic; clicked => { root.toggled("Medic"); } }
+                        ClassFilter { icon: @image-url("assets/classes/sniper.png"); selected: root.sniper; clicked => { root.toggled("Sniper"); } }
+                        ClassFilter { icon: @image-url("assets/classes/spy.png"); selected: root.spy; clicked => { root.toggled("Spy"); } }
+                    }
+                }
+                Tf2Button { height: 30px; text: "CLOSE"; label-font-size: 12px; clicked => { class-popup.close(); } }
+            }
+        }
+    }
+}
+
+component MinimumScoreControl inherits Rectangle {
+    in property <string> label;
+    in-out property <int> value;
+    callback edited(int);
+
+    height: 34px;
+    background: #00000000;
+    border-width: 0px;
+    HorizontalLayout {
+        spacing: 5px;
+        Text { width: root.label == "SCORE" ? 55px : 88px; text: root.label; color: Tf2Colors.muted; font-family: "Oswald"; font-weight: 500; font-size: 12px; vertical-alignment: center; }
+        Tf2SpinBox { value <=> root.value; minimum: 0; maximum: 1000; edited(value) => { root.edited(value); } }
+    }
+}
+
+component ShortcutCapture inherits HorizontalLayout {
+    in property <string> label;
+    in-out property <string> binding;
+    in property <length> label-width: 112px;
+    private property <bool> capturing: false;
+    private property <string> capture-message: "";
+    height: 26px;
+    spacing: 6px;
+    Tf2Label { horizontal-stretch: 1; text: root.label; font-family: "Roboto Condensed"; font-size: 13px; overflow: elide; }
+    key-button := Rectangle {
+        width: 68px; height: 26px;
+        background: key-touch.pressed ? Tf2Colors.border : key-touch.has-hover ? #333735 : Tf2Colors.neutral;
+        border-width: 1px;
+        border-color: root.capturing ? #8ab3cd : Tf2Colors.border-bright;
+        Text {
+            x: 4px; width: parent.width - 8px; height: parent.height;
+            text: root.capturing ? (root.capture-message == "" ? "PRESS A KEY..." : root.capture-message) : root.binding;
+            color: root.capturing ? #8ab3cd : Tf2Colors.cream;
+            font-family: "TF2 Build";
+            font-size: root.capturing ? 9px : 12px;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+        key-focus := FocusScope {
+            width: parent.width; height: parent.height;
+            focus-on-click: false;
+            focus-on-tab-navigation: false;
+            key-pressed(event) => {
+                if (event.repeat) {
+                    return accept;
+                }
+                if (event.text == Key.Escape) {
+                    root.capturing = false;
+                    root.capture-message = "";
+                    key-focus.clear-focus();
+                    return accept;
+                }
+                if (event.text == Key.UpArrow || event.text == Key.DownArrow || event.text == Key.LeftArrow || event.text == Key.RightArrow) {
+                    root.capture-message = "ARROWS RESERVED";
+                    return accept;
+                }
+                if (event.text == Key.Shift || event.text == Key.ShiftR || event.text == Key.Control || event.text == Key.ControlR || event.text == Key.Alt || event.text == Key.AltGr || event.text == Key.Meta || event.text == Key.MetaR || event.text == Key.CapsLock) {
+                    root.capture-message = "PRESS ONE KEY";
+                    return accept;
+                }
+                let captured = event.text == Key.Space ? "SPACE"
+                    : event.text == Key.Tab || event.text == Key.Backtab ? "TAB"
+                    : event.text == Key.Return ? "ENTER"
+                    : event.text == Key.Backspace ? "BACKSPACE"
+                    : event.text == Key.Delete ? "DEL"
+                    : event.text == Key.Insert ? "INS"
+                    : event.text == Key.Home ? "HOME"
+                    : event.text == Key.End ? "END"
+                    : event.text == Key.PageUp ? "PGUP"
+                    : event.text == Key.PageDown ? "PGDN"
+                    : event.text == Key.ScrollLock ? "SCROLLLOCK"
+                    : event.text == Key.Pause ? "PAUSE"
+                    : event.text == Key.F1 ? "F1" : event.text == Key.F2 ? "F2"
+                    : event.text == Key.F3 ? "F3" : event.text == Key.F4 ? "F4"
+                    : event.text == Key.F5 ? "F5" : event.text == Key.F6 ? "F6"
+                    : event.text == Key.F7 ? "F7" : event.text == Key.F8 ? "F8"
+                    : event.text == Key.F9 ? "F9" : event.text == Key.F10 ? "F10"
+                    : event.text == Key.F11 ? "F11" : event.text == Key.F12 ? "F12"
+                    : event.text;
+                root.binding = captured;
+                root.capturing = false;
+                root.capture-message = "";
+                key-focus.clear-focus();
+                return accept;
+            }
+            focus-lost(reason) => {
+                root.capturing = false;
+                root.capture-message = "";
+            }
+        }
+        key-touch := TouchArea {
+            clicked => {
+                root.capture-message = "";
+                root.capturing = true;
+                key-focus.focus();
+            }
+        }
+    }
+}
+
+component MirvShortcutPanel inherits Rectangle {
+    in property <bool> compact;
+    in-out property <string> advance-time;
+    in-out property <string> toggle-hud;
+    in-out property <string> show-help;
+    in-out property <string> back-one-second;
+    in-out property <string> safe-restart;
+    in-out property <string> next-kill-tick;
+    in-out property <string> pause-resume;
+    in-out property <string> enter-camera;
+    in-out property <string> add-keyframe;
+    in-out property <string> play-campath;
+    in-out property <string> draw-campath;
+    in-out property <string> start-recording;
+    in-out property <string> stop-recording;
+    in-out property <string> print-keyframes;
+    in-out property <string> save-campath;
+    in-out property <string> load-campath;
+    in-out property <string> execute-director-action;
+    in-out property <string> overlay-panel-toggle;
+    in-out property <string> overlay-interaction-toggle;
+
+    height: root.compact ? 300px : 250px;
+    background: Tf2Colors.panel-dark;
+    border-width: 1px;
+    border-color: Tf2Colors.border;
+    clip: true;
+    VerticalLayout {
+        padding: root.compact ? 7px : 10px; spacing: 5px;
+        HorizontalLayout {
+            height: 27px;
+            Rectangle { width: 34px; height: 27px; background: Tf2Colors.neutral; border-width: 1px; border-color: Tf2Colors.border-bright; Tf2Heading { width: parent.width; height: parent.height; text: "5"; font-size: 22px; horizontal-alignment: center; } }
+            Tf2Heading { text: "MIRV SHORTCUTS"; font-size: 17px; }
+            Rectangle { horizontal-stretch: 1; }
+            Tf2Button {
+                width: root.compact ? 118px : 150px; height: 27px; label-font-size: 11px; text: "RESTORE DEFAULTS";
+                clicked => {
+                    root.advance-time = "["; root.toggle-hud = "]"; root.show-help = "1"; root.back-one-second = "2";
+                    root.safe-restart = "3"; root.next-kill-tick = "4"; root.pause-resume = "5"; root.enter-camera = "6";
+                    root.add-keyframe = "7"; root.play-campath = "8"; root.start-recording = "9"; root.stop-recording = "0";
+                    root.draw-campath = "/"; root.print-keyframes = "-"; root.save-campath = "=";
+                    root.load-campath = "F8";
+                    root.execute-director-action = "'";
+                    root.overlay-panel-toggle = "C";
+                    root.overlay-interaction-toggle = "F11";
+                }
+            }
+        }
+        Tf2Body {
+            height: 18px;
+            text: "Click a bind, then press one keyboard key. Arrow keys are reserved for MIRV camera control.";
+            color: Tf2Colors.muted;
+            font-size: 11px;
+            overflow: elide;
+        }
+        HorizontalLayout { height: 210px; spacing: 14px;
+VerticalLayout { horizontal-stretch: 1; spacing: 2px; Tf2Heading { height: 20px; font-size: 12px; text: "Playback"; }
+ShortcutCapture { label: "Advance 0.25s"; binding <=> root.advance-time; }
+ShortcutCapture { label: "Toggle HUD"; binding <=> root.toggle-hud; }
+ShortcutCapture { label: "Show controls"; binding <=> root.show-help; }
+ShortcutCapture { label: "Back 1 second"; binding <=> root.back-one-second; }
+ShortcutCapture { label: "Safe restart"; binding <=> root.safe-restart; }
+ShortcutCapture { label: "Next frag (1s early)"; binding <=> root.next-kill-tick; }
+ShortcutCapture { label: "Pause / resume"; binding <=> root.pause-resume; }Rectangle { vertical-stretch: 1; } }
+VerticalLayout { horizontal-stretch: 1; spacing: 2px; Tf2Heading { height: 20px; font-size: 12px; text: "Camera & capture"; }
+ShortcutCapture { label: "Enter MIRV camera"; binding <=> root.enter-camera; }
+ShortcutCapture { label: "Add keyframe"; binding <=> root.add-keyframe; }
+ShortcutCapture { label: "Play campath"; binding <=> root.play-campath; }
+ShortcutCapture { label: "Draw campath"; binding <=> root.draw-campath; }
+ShortcutCapture { label: "Start recording"; binding <=> root.start-recording; }
+ShortcutCapture { label: "Stop recording"; binding <=> root.stop-recording; }Rectangle { vertical-stretch: 1; } }
+VerticalLayout { horizontal-stretch: 1; spacing: 2px; Tf2Heading { height: 20px; font-size: 12px; text: "Campath & Director"; }
+ShortcutCapture { label: "Print keyframes"; binding <=> root.print-keyframes; }
+ShortcutCapture { label: "Save campath"; binding <=> root.save-campath; }
+ShortcutCapture { label: "Load campath XML"; binding <=> root.load-campath; }
+ShortcutCapture { label: "Emergency action"; binding <=> root.execute-director-action; }
+ShortcutCapture { label: "Hide/show overlay"; binding <=> root.overlay-panel-toggle; }
+ShortcutCapture { label: "Focus Director / TF2"; binding <=> root.overlay-interaction-toggle; }Rectangle { vertical-stretch: 1; } }
+        }
+        Rectangle { vertical-stretch: 1; }
+    }
+}
+
+export component AppWindow inherits Window {
+    title: "TF2 Demo Toolkit";
+    preferred-width: 1480px; preferred-height: 860px;
+    min-width: 800px; min-height: 480px;
+    background: Tf2Colors.app;
+
+    in-out property <int> selected-page: 0;
+    in-out property <bool> has-export: false;
+    // Updated from the native resize event so the 900x520 frame always enters
+    // the compact application header and settings layout.
+    in-out property <bool> minimal-recording-settings: false;
+    in-out property <string> frame-debug: "FRAME: waiting for native size";
+    in-out property <[string]> imported-demos;
+    in-out property <int> imported-demo-count: 0;
+    in-out property <int> parse-step: 0;
+    in-out property <bool> parse-options-ready: false;
+    in-out property <[string]> log-lines;
+    in-out property <bool> help-dialog-open: false;
+    in-out property <string> help-dialog-title;
+    in-out property <string> help-dialog-body;
+    in-out property <bool> parse-started: false;
+    in-out property <string> parse-time-left: "Not started";
+    in-out property <bool> importing-demos: false;
+    in-out property <bool> demo-drop-active: false;
+    in-out property <string> export-directory;
+    in-out property <string> item-schema;
+    in-out property <bool> item-schema-available: false;
+    in-out property <string> parse-estimate-overview: "Calculating time and space estimates...";
+    in-out property <string> status-text: "Ready";
+    in-out property <string> recording-save-status;
+    in-out property <int> recording-save-generation: 0;
+    in-out property <string> background-process-status: "READY";
+    in-out property <bool> background-process-active: true;
+    in-out property <bool> recording-ready: false;
+    in-out property <bool> recording-settings-syncing: false;
+    in-out property <string> log-text;
+    in-out property <float> progress-value: 0;
+    in-out property <bool> busy: false;
+    in-out property <string> resource-plan-text;
+    in-out property <string> batch-estimate: "Choose demos and an export location to calculate pre-flight estimates.";
+    in-out property <string> performance-profile: "Medium";
+
+    in-out property <[CandidateRow]> candidate-rows;
+    in-out property <string> filter-text;
+    in-out property <string> tag-filter;
+    in-out property <string> map-filter-search;
+    in-out property <string> server-type-filter-search;
+    in-out property <string> recorded-filter: "Any";
+    in-out property <string> map-filter-summary: "All maps";
+    in-out property <string> class-filter-summary: "All classes";
+    in-out property <string> server-type-filter-summary: "All server types";
+    in-out property <int> map-filter-width: 180;
+    in-out property <int> server-type-filter-width: 220;
+    in-out property <[FilterOption]> map-filter-options;
+    in-out property <[FilterOption]> server-type-filter-options;
+    in-out property <bool> selected-scout;
+    in-out property <bool> selected-soldier;
+    in-out property <bool> selected-pyro;
+    in-out property <bool> selected-demoman;
+    in-out property <bool> selected-heavy;
+    in-out property <bool> selected-engineer;
+    in-out property <bool> selected-medic;
+    in-out property <bool> selected-sniper;
+    in-out property <bool> selected-spy;
+    in-out property <int> minimum-score: 0;
+    in-out property <int> candidate-tags-width: 160;
+    in-out property <string> candidate-summary;
+    in-out property <int> selected-count: 0;
+    in-out property <bool> all-visible-selected: false;
+    in-out property <length> candidate-horizontal-offset: 0px;
+    in-out property <int> lead-seconds: 8;
+    in-out property <int> outro-seconds: 3;
+    in-out property <string> capture-fps: "120";
+    in-out property <string> recording-format: "MP4 - Standard";
+    in-out property <int> jpg-quality: 90;
+    in-out property <string> mp4-compatibility: "DaVinci Resolve / Universal";
+    in-out property <string> mp4-video-codec: "H.264 / libx264";
+    in-out property <string> mp4-pixel-format: "yuv420p";
+    in-out property <string> mp4-h264-profile: "High";
+    in-out property <int> mp4-crf: 18;
+    in-out property <string> mp4-encoder-preset: "medium";
+    in-out property <string> mp4-audio-codec: "AAC";
+    in-out property <string> mp4-audio-bitrate: "192";
+    in-out property <string> avi-video-codec: "Original HLAE Raw";
+    in-out property <string> avi-pixel-format: "HLAE Native";
+    in-out property <string> dnxhr-profile: "HQ";
+    in-out property <string> recording-estimate;
+    in-out property <string> recording-output-description;
+    in-out property <string> candidate-detail-player;
+    in-out property <string> candidate-detail-player-meta;
+    in-out property <bool> candidate-detail-has-player;
+    in-out property <string> candidate-detail-map;
+    in-out property <string> candidate-detail-map-meta;
+    in-out property <bool> candidate-detail-has-map;
+    in-out property <string> candidate-detail-demo;
+    in-out property <string> candidate-detail-demo-meta;
+    in-out property <bool> candidate-detail-has-demo;
+    in-out property <string> candidate-detail-score;
+    in-out property <string> candidate-detail-score-meta;
+    in-out property <string> candidate-detail-summary;
+    in-out property <bool> candidate-detail-has-summary;
+    in-out property <string> candidate-detail-kills;
+    in-out property <bool> candidate-detail-has-kills;
+    in-out property <string> candidate-detail-score-breakdown;
+    in-out property <bool> candidate-detail-has-score-breakdown;
+    in-out property <string> candidate-detail-tags;
+    in-out property <bool> candidate-detail-has-tags;
+    in-out property <string> tf2-path;
+    in-out property <string> hlae-path;
+    in-out property <string> ffmpeg-path;
+    in-out property <string> recording-directory;
+    in-out property <string> manual-hlae-launch-options;
+    in-out property <bool> manual-hlae-launch-options-valid: true;
+    in-out property <string> manual-hlae-launch-options-status: "OPTIONAL";
+    in-out property <string> resolution: "2560x1440";
+    in-out property <string> dx-level: "98";
+    in-out property <string> skybox: "Default";
+    in-out property <string> hud: "Kill notices only";
+    in-out property <string> viewmodels: "On";
+    in-out property <int> viewmodel-fov: 70;
+    in-out property <bool> maximum-graphics: true;
+    in-out property <bool> motion-blur: true;
+    in-out property <bool> disable-hit-sounds: true;
+    in-out property <bool> disable-voice-chat: true;
+    in-out property <bool> minimal-hud: true;
+    in-out property <bool> disable-combat-text: true;
+    in-out property <bool> disable-crosshair: true;
+    in-out property <bool> disable-crosshair-switching: true;
+    in-out property <bool> hud-player-model: false;
+    in-out property <bool> disable-announcer: true;
+    in-out property <bool> disable-applause: true;
+    in-out property <bool> disable-domination: true;
+    in-out property <string> mirv-advance-time: "[";
+    in-out property <string> mirv-toggle-hud: "]";
+    in-out property <string> mirv-show-help: "1";
+    in-out property <string> mirv-back-one-second: "2";
+    in-out property <string> mirv-safe-restart: "3";
+    in-out property <string> mirv-next-kill-tick: "4";
+    in-out property <string> mirv-pause-resume: "5";
+    in-out property <string> mirv-enter-camera: "6";
+    in-out property <string> mirv-add-keyframe: "7";
+    in-out property <string> mirv-play-campath: "8";
+    in-out property <string> mirv-draw-campath: "/";
+    in-out property <string> mirv-start-recording: "9";
+    in-out property <string> mirv-stop-recording: "0";
+    in-out property <string> mirv-print-keyframes: "-";
+    in-out property <string> mirv-save-campath: "=";
+    in-out property <string> mirv-load-campath: "F8";
+    in-out property <string> mirv-execute-director-action: "'";
+    in-out property <string> mirv-overlay-panel-toggle: "C";
+    in-out property <string> mirv-overlay-interaction-toggle: "F11";
+
+    callback choose-demos(); callback choose-demo-folder(); callback review-parse-options(); callback choose-export-directory(); callback choose-item-schema();
+    callback show-item-schema-help();
+    callback validate-item-schema();
+    callback detect-item-schema();
+    callback navigate-parse-step(int);
+    callback refresh-parse-estimate();
+    callback show-parse-estimate-details();
+    callback start-batch(); callback cancel-batch(); callback load-export(); callback open-export();
+    callback refresh-filter(string, int); callback drag-select-candidates(int, float, bool, bool); callback selection-changed(); callback select-all-visible();
+    callback set-tag-filter(string); callback toggle-class-filter(string); callback toggle-map-filter(string); callback search-map-filters(string);
+    callback toggle-server-type-filter(string); callback search-server-type-filters(string); callback set-recorded-filter(string);
+    callback preview-selected(); callback launch-manual-hlae(); callback record-selected(); callback choose-setting-path(string); callback recording-settings-changed();
+    callback view-selected-details(); callback view-recording-logs(); callback update-recording-estimate();
+
+    changed tf2-path => { if !root.recording-settings-syncing { root.recording-settings-changed(); } }
+    changed hlae-path => { if !root.recording-settings-syncing { root.recording-settings-changed(); } }
+    changed ffmpeg-path => { if !root.recording-settings-syncing { root.recording-settings-changed(); } }
+    changed recording-directory => { if !root.recording-settings-syncing { root.recording-settings-changed(); } }
+    changed manual-hlae-launch-options => { if !root.recording-settings-syncing { root.recording-settings-changed(); } }
+    changed capture-fps => { if !root.recording-settings-syncing { root.recording-settings-changed(); } }
+    changed recording-format => { if !root.recording-settings-syncing { root.recording-settings-changed(); } }
+    changed jpg-quality => { if !root.recording-settings-syncing { root.recording-settings-changed(); } }
+    changed mp4-compatibility => { if !root.recording-settings-syncing { root.recording-settings-changed(); } }
+    changed mp4-video-codec => { if !root.recording-settings-syncing { root.recording-settings-changed(); } }
+    changed mp4-pixel-format => { if !root.recording-settings-syncing { root.recording-settings-changed(); } }
+    changed mp4-h264-profile => { if !root.recording-settings-syncing { root.recording-settings-changed(); } }
+    changed mp4-crf => { if !root.recording-settings-syncing { root.recording-settings-changed(); } }
+    changed mp4-encoder-preset => { if !root.recording-settings-syncing { root.recording-settings-changed(); } }
+    changed mp4-audio-codec => { if !root.recording-settings-syncing { root.recording-settings-changed(); } }
+    changed mp4-audio-bitrate => { if !root.recording-settings-syncing { root.recording-settings-changed(); } }
+    changed avi-video-codec => { if !root.recording-settings-syncing { root.recording-settings-changed(); } }
+    changed avi-pixel-format => { if !root.recording-settings-syncing { root.recording-settings-changed(); } }
+    changed dnxhr-profile => { if !root.recording-settings-syncing { root.recording-settings-changed(); } }
+    changed resolution => { if !root.recording-settings-syncing { root.recording-settings-changed(); } }
+    changed dx-level => { if !root.recording-settings-syncing { root.recording-settings-changed(); } }
+    changed skybox => { if !root.recording-settings-syncing { root.recording-settings-changed(); } }
+    changed hud => { if !root.recording-settings-syncing { root.recording-settings-changed(); } }
+    changed viewmodels => { if !root.recording-settings-syncing { root.recording-settings-changed(); } }
+    changed viewmodel-fov => { if !root.recording-settings-syncing { root.recording-settings-changed(); } }
+    changed maximum-graphics => { if !root.recording-settings-syncing { root.recording-settings-changed(); } }
+    changed motion-blur => { if !root.recording-settings-syncing { root.recording-settings-changed(); } }
+    changed disable-hit-sounds => { if !root.recording-settings-syncing { root.recording-settings-changed(); } }
+    changed disable-voice-chat => { if !root.recording-settings-syncing { root.recording-settings-changed(); } }
+    changed minimal-hud => { if !root.recording-settings-syncing { root.recording-settings-changed(); } }
+    changed disable-combat-text => { if !root.recording-settings-syncing { root.recording-settings-changed(); } }
+    changed disable-crosshair => { if !root.recording-settings-syncing { root.recording-settings-changed(); } }
+    changed disable-crosshair-switching => { if !root.recording-settings-syncing { root.recording-settings-changed(); } }
+    changed hud-player-model => { if !root.recording-settings-syncing { root.recording-settings-changed(); } }
+    changed disable-announcer => { if !root.recording-settings-syncing { root.recording-settings-changed(); } }
+    changed disable-applause => { if !root.recording-settings-syncing { root.recording-settings-changed(); } }
+    changed disable-domination => { if !root.recording-settings-syncing { root.recording-settings-changed(); } }
+    changed mirv-advance-time => { if !root.recording-settings-syncing { root.recording-settings-changed(); } }
+    changed mirv-toggle-hud => { if !root.recording-settings-syncing { root.recording-settings-changed(); } }
+    changed mirv-show-help => { if !root.recording-settings-syncing { root.recording-settings-changed(); } }
+    changed mirv-back-one-second => { if !root.recording-settings-syncing { root.recording-settings-changed(); } }
+    changed mirv-safe-restart => { if !root.recording-settings-syncing { root.recording-settings-changed(); } }
+    changed mirv-next-kill-tick => { if !root.recording-settings-syncing { root.recording-settings-changed(); } }
+    changed mirv-pause-resume => { if !root.recording-settings-syncing { root.recording-settings-changed(); } }
+    changed mirv-enter-camera => { if !root.recording-settings-syncing { root.recording-settings-changed(); } }
+    changed mirv-add-keyframe => { if !root.recording-settings-syncing { root.recording-settings-changed(); } }
+    changed mirv-play-campath => { if !root.recording-settings-syncing { root.recording-settings-changed(); } }
+    changed mirv-draw-campath => { if !root.recording-settings-syncing { root.recording-settings-changed(); } }
+    changed mirv-start-recording => { if !root.recording-settings-syncing { root.recording-settings-changed(); } }
+    changed mirv-stop-recording => { if !root.recording-settings-syncing { root.recording-settings-changed(); } }
+    changed mirv-print-keyframes => { if !root.recording-settings-syncing { root.recording-settings-changed(); } }
+    changed mirv-save-campath => { if !root.recording-settings-syncing { root.recording-settings-changed(); } }
+    changed mirv-load-campath => { if !root.recording-settings-syncing { root.recording-settings-changed(); } }
+    changed mirv-execute-director-action => { if !root.recording-settings-syncing { root.recording-settings-changed(); } }
+    changed mirv-overlay-panel-toggle => { if !root.recording-settings-syncing { root.recording-settings-changed(); } }
+    changed mirv-overlay-interaction-toggle => { if !root.recording-settings-syncing { root.recording-settings-changed(); } }
+
+    changed item-schema => { root.validate-item-schema(); }
+    changed performance-profile => { root.refresh-parse-estimate(); }
+
+    private property <bool> parse-short: self.height < 760px;
+    private property <bool> compact: self.width <= 1220px || self.height <= 700px;
+    private property <bool> compact-nav-open: false;
+    private property <bool> candidate-filters-open: false;
+    private property <bool> advanced-encoding-open: false;
+    in-out property <int> recording-settings-section: 0;
+    in-out property <bool> recording-advanced-view: false;
+    in-out property <length> recording-scroll-y: 0px;
+    changed recording-settings-section => { root.recording-scroll-y = 0px; }
+    changed recording-advanced-view => { root.recording-scroll-y = 0px; if !root.recording-settings-syncing { root.recording-settings-changed(); } }
+    private property <int> detail-topic: 0;
+    private property <length> recording-advanced-panel-height: !root.advanced-encoding-open ? 44px : (root.mp4-compatibility == "Custom" && (root.recording-format == "MP4 - Standard" || root.recording-format == "MP4 - Compatible") ? (root.compact ? 178px : 166px) : ((root.recording-format == "MP4 - Standard" || root.recording-format == "MP4 - Compatible") ? (root.compact ? 106px : 120px) : (root.recording-format == "AVI - Raw" ? (root.compact ? 106px : 120px) : (root.recording-format == "MOV - DNxHR" ? (root.compact ? 74px : 82px) : 44px))));
+
+    Rectangle {
+        width: root.width; height: root.height;
+        dismiss-area := TouchArea {
+            dismiss-focus := FocusScope { enabled: true; }
+            clicked => { dismiss-focus.focus(); }
+        }
+        AppHeader { x: 0px; y: 0px; width: root.width; page: root.selected-page; compact: root.compact; has-export: root.has-export; frame-debug: root.frame-debug; recording-save-status: root.recording-save-status; background-process-status: root.background-process-status; background-process-active: root.background-process-active; menu-open <=> root.compact-nav-open; navigate(page) => { if root.has-export || (page != 1 && page != 2) { root.selected-page = page; root.compact-nav-open = false; } } }
+
+
+        if root.selected-page == 0 : VerticalLayout {
+            x: 0px; y: root.compact ? 64px : 118px;
+            width: root.width; height: root.height - self.y;
+            padding: root.parse-short ? 8px : 16px; spacing: root.parse-short ? 6px : 10px;
+            HorizontalLayout {
+                height: root.parse-short ? 30px : 40px; spacing: 12px;
+                for label[index] in ["1  Select demos", "2  Set options", "3  Parse"] : Rectangle {
+                    private property <bool> available: index == 0 || (index == 1 ? root.imported-demo-count > 0 : root.parse-options-ready);
+                    background: root.parse-step == index ? Tf2Colors.red : #00000000;
+                    Tf2Heading { x: 8px; width: parent.width - 16px; height: parent.height - 3px; text: label; font-size: root.parse-short ? 14px : 17px; horizontal-alignment: center; color: parent.available ? Tf2Colors.cream : Tf2Colors.dim; }
+                    Rectangle { y: parent.height - 2px; width: parent.width; height: 2px; background: root.parse-step == index ? Tf2Colors.border-bright : Tf2Colors.border; }
+                    TouchArea { enabled: parent.available && !root.busy && !root.importing-demos; mouse-cursor: pointer; clicked => { root.navigate-parse-step(index); } }
+                }
+            }
+            Rectangle {
+                vertical-stretch: 1;
+                if root.parse-step == 0 : Rectangle {
+                    width: parent.width; height: parent.height;
+                    private property <length> status-height: root.importing-demos || (root.status-text != "" && root.status-text != "Ready") ? 26px : 0px;
+                    Tf2Panel {
+                        width: root.imported-demo-count > 0 ? (parent.width - 10px) * 0.43 : parent.width;
+                        height: parent.height - parent.status-height;
+                        background: root.demo-drop-active ? #263b49 : Tf2Colors.panel-dark;
+                        border-color: root.demo-drop-active ? Tf2Colors.blu-hover : Tf2Colors.border;
+                        VerticalLayout {
+                            padding: 14px; spacing: 12px;
+                            Rectangle { vertical-stretch: 1; }
+                            Tf2Heading { height: 58px; text: root.demo-drop-active ? "RELEASE TO ADD DEMOS" : "DROP DEMOS OR A FOLDER HERE"; font-size: root.parse-short ? 19px : 26px; horizontal-alignment: center; }
+                            Tf2Body { height: 36px; text: "Choose demos or a folder. Subfolders are included."; color: Tf2Colors.muted; wrap: word-wrap; horizontal-alignment: center; }
+                            HorizontalLayout { height: 34px; spacing: 8px;
+                                Tf2Button { height: 34px; label-font-size: root.parse-short ? 12px : 14px; text: "Choose demos"; enabled: !root.busy && !root.importing-demos; tone: Tf2Colors.red; hover-tone: Tf2Colors.red-hover; pressed-tone: Tf2Colors.red-pressed; clicked => { root.choose-demos(); } }
+                                Tf2Button { height: 34px; label-font-size: root.parse-short ? 12px : 14px; text: "Choose folder"; enabled: !root.busy && !root.importing-demos; tone: Tf2Colors.blu; hover-tone: Tf2Colors.blu-hover; pressed-tone: Tf2Colors.blu-pressed; clicked => { root.choose-demo-folder(); } }
+                            }
+                            Rectangle { vertical-stretch: 1; }
+                        }
+                    }
+                    if root.imported-demo-count > 0 : Tf2Panel {
+                        x: (parent.width - 10px) * 0.43 + 10px; width: (parent.width - 10px) * 0.57; height: parent.height - parent.status-height;
+                        VerticalLayout { padding: 10px; spacing: 6px;
+                            Tf2Heading { height: 24px; font-size: root.parse-short ? 16px : 19px; text: root.imported-demo-count == 1 ? "1 demo selected" : root.imported-demo-count + " demos selected"; }
+                            PagedDemoList { vertical-stretch: 1; items: root.imported-demos; }
+                        }
+                    }
+                    if self.status-height > 0px : Tf2Body { y: parent.height - 22px; width: parent.width; height: 22px; text: root.importing-demos ? "Scanning folders..." : root.status-text; font-size: 12px; color: Tf2Colors.muted; overflow: elide; }
+                }
+                if root.parse-step == 1 : VerticalLayout {
+                    width: parent.width; height: parent.height; spacing: 8px;
+                    ParseOptionCard {
+                        vertical-stretch: 1;
+                        number: "1"; heading: "Export location"; description: "Parsed data and candidates are saved here."; dense: root.parse-short;
+                        HorizontalLayout { height: 30px; spacing: 8px;
+                            Tf2LineEdit { height: 30px; text <=> root.export-directory; placeholder: "Choose an output folder"; edited(value) => { root.refresh-parse-estimate(); } }
+                            Tf2Button { width: 84px; height: 30px; label-font-size: 12px; text: "Browse"; clicked => { root.choose-export-directory(); } }
+                        }
+                    }
+                    ParseOptionCard {
+                        vertical-stretch: 1.2;
+                        number: "2"; heading: "Item schema (optional)"; description: "Adds weapon names. You can continue without it."; dense: root.parse-short;
+                        VerticalLayout { spacing: 5px;
+                            HorizontalLayout { height: 30px; spacing: 8px;
+                                Tf2LineEdit { height: 30px; text <=> root.item-schema; placeholder: "Optional items_game.txt"; }
+                                Tf2Button { width: 94px; height: 30px; label-font-size: 12px; text: "Choose file"; clicked => { root.choose-item-schema(); } }
+                            }
+                            HorizontalLayout { height: 27px; spacing: 6px;
+                                Tf2Button { width: 178px; height: 27px; label-font-size: 11px; text: "Automatically detect"; tone: Tf2Colors.blu; hover-tone: Tf2Colors.blu-hover; pressed-tone: Tf2Colors.blu-pressed; clicked => { root.detect-item-schema(); } }
+                                if !root.item-schema-available : Tf2Button { width: 124px; height: 27px; label-font-size: 11px; text: "? How to find"; clicked => { root.show-item-schema-help(); } }
+                                Rectangle { horizontal-stretch: 1; }
+                            }
+                            Rectangle { vertical-stretch: 1; }
+                        }
+                    }
+                    ParseOptionCard {
+                        vertical-stretch: 1;
+                        number: "3"; heading: "Performance"; description: "Normal balances speed and responsiveness."; dense: root.parse-short;
+                        VerticalLayout { spacing: 5px;
+                            HorizontalLayout { height: 30px; spacing: 5px;
+                                for profile in ["Low", "Medium", "High"] : Tf2Button { height: 30px; label-font-size: 12px; text: profile == "Medium" ? "Normal" : profile; tone: root.performance-profile == profile ? Tf2Colors.blu : Tf2Colors.neutral; hover-tone: Tf2Colors.blu-hover; pressed-tone: Tf2Colors.blu-pressed; clicked => { root.performance-profile = profile; } }
+                            }
+                            Tf2Body { height: 20px; text: root.performance-profile == "Low" ? "Leaves more resources for other apps." : root.performance-profile == "Medium" ? "Default for every new session." : "Uses more CPU and memory, with safeguards."; color: Tf2Colors.muted; font-size: 12px; overflow: elide; }
+                            Rectangle { vertical-stretch: 1; }
+                        }
+                    }
+                }
+                if root.parse-step == 2 && !root.parse-started : VerticalLayout {
+                    spacing: 6px;
+                    Tf2Heading { height: 26px; text: "Ready to parse"; font-size: 23px; }
+                    HorizontalLayout {
+                        vertical-stretch: 1; spacing: 10px;
+                        Tf2Panel { width: 50%; VerticalLayout { padding: 8px; spacing: 4px;
+                            Tf2Heading { height: 22px; text: "Selected demos (" + root.imported-demo-count + ")"; }
+                            PagedDemoList { vertical-stretch: 1; items: root.imported-demos; }
+                            Tf2Button { height: 28px; label-font-size: 12px; text: "Change selection"; clicked => { root.navigate-parse-step(0); } }
+                        } }
+                        VerticalLayout { spacing: 8px;
+                            Tf2Panel { height: root.parse-short ? 124px : 174px; VerticalLayout { padding: 6px; spacing: 4px;
+                                Tf2Heading { height: 22px; text: "Your settings"; font-size: 16px; }
+                                Tf2Body { height: 16px; font-size: 12px; text: "Export: " + root.export-directory; overflow: elide; }
+                                Tf2Body { height: 16px; font-size: 12px; text: root.item-schema-available ? "Schema: " + root.item-schema : "Schema: optional, not supplied"; overflow: elide; }
+                                Tf2Body { height: 16px; font-size: 12px; text: "Performance: " + (root.performance-profile == "Medium" ? "Normal" : root.performance-profile); }
+                                Tf2Button { height: 24px; label-font-size: 11px; text: "Edit options"; clicked => { root.navigate-parse-step(1); } }
+                            } }
+                            Tf2Panel { vertical-stretch: 1; VerticalLayout { padding: 6px; spacing: 3px;
+                                Tf2Heading { height: 22px; text: "What will be analyzed"; font-size: 14px; }
+                                Tf2Body { text: "Combat: kills, damage, weapons, multi-kills.\nMovement: airshots, speed and highlights.\nMatch context: rounds, bookmarks, scores and tags.\nAvailable detail depends on the demo."; font-size: root.parse-short ? 11px : 14px; color: Tf2Colors.muted; wrap: word-wrap; vertical-alignment: top; }
+                            } }
+                        }
+                    }
+                }
+                if root.parse-step == 2 && root.parse-started : VerticalLayout {
+                    spacing: 6px;
+                    Tf2Heading { height: 28px; text: root.busy ? "Parsing your demos" : root.has-export ? "Your candidates are ready" : "Parsing stopped"; font-size: 24px; }
+                    Tf2Body { height: 26px; text: root.status-text; font-size: 12px; color: #8ab3cd; overflow: elide; }
+                    Tf2Panel { vertical-stretch: 1; VerticalLayout { padding: 8px; spacing: 4px; Tf2Heading { height: 22px; text: "Analysis log"; } PagedText { text: root.log-text; follow-latest: true; vertical-stretch: 1; } } }
+                }
+            }
+            if root.parse-step > 0 : Tf2Panel {
+                height: root.parse-short ? 58px : 68px;
+                HorizontalLayout { padding: 8px; spacing: 10px;
+                    Tf2Body { text: root.parse-estimate-overview; wrap: word-wrap; color: #8ab3cd; font-size: root.parse-short ? 12px : 13px; }
+                    Tf2Button { width: 120px; height: 30px; label-font-size: 12px; text: "More details"; clicked => { root.show-parse-estimate-details(); } }
+                }
+            }
+            HorizontalLayout {
+                height: 36px; spacing: 8px;
+                if root.parse-step == 0 : Tf2Button { width: 264px; height: 36px; label-font-size: 13px; text: "Load previously parsed export"; enabled: !root.busy && !root.importing-demos; tone: Tf2Colors.gold; hover-tone: Tf2Colors.gold-hover; pressed-tone: Tf2Colors.gold-pressed; clicked => { root.load-export(); } }
+                if root.parse-step > 0 : Tf2Button { width: 90px; height: 36px; text: "Back"; enabled: !root.busy && !root.importing-demos; clicked => { root.navigate-parse-step(root.parse-step - 1); } }
+                if root.parse-step == 2 && root.busy : Tf2Button { width: 90px; height: 36px; text: "Cancel"; clicked => { root.cancel-batch(); } }
+                if root.parse-step != 2 : Rectangle { horizontal-stretch: 1; }
+                if root.parse-step == 2 : VerticalLayout { horizontal-stretch: 1; spacing: 3px;
+                    Tf2Body { height: 20px; font-size: 12px; overflow: elide; text: root.parse-started ? Math.round(root.progress-value * 100) + "% · " + root.parse-time-left : root.parse-time-left; horizontal-alignment: center; color: Tf2Colors.muted; }
+                    Tf2Progress { height: 10px; value: root.parse-started ? root.progress-value : 0; }
+                }
+                if root.parse-step < 2 : Tf2Button { width: 170px; height: 36px; text: "Continue"; enabled: !root.busy && !root.importing-demos && (root.parse-step == 0 ? root.imported-demo-count > 0 : root.parse-options-ready); tone: Tf2Colors.red; hover-tone: Tf2Colors.red-hover; pressed-tone: Tf2Colors.red-pressed; clicked => { root.navigate-parse-step(root.parse-step + 1); } }
+                if root.parse-step == 2 && (!root.parse-started || root.busy || !root.has-export) : Tf2Button { width: 190px; height: 36px; text: root.busy ? "Parsing..." : root.parse-started ? "Retry parsing" : "Parse " + root.imported-demo-count + " demos"; enabled: !root.busy && root.parse-options-ready; tone: Tf2Colors.red; hover-tone: Tf2Colors.red-hover; pressed-tone: Tf2Colors.red-pressed; clicked => { root.start-batch(); } }
+                if root.parse-step == 2 && root.parse-started && !root.busy && root.has-export : Tf2Button { width: 150px; height: 36px; label-font-size: 13px; text: "Open export folder"; clicked => { root.open-export(); } }
+                if root.parse-step == 2 && root.parse-started && !root.busy && root.has-export : Tf2Button { width: 160px; height: 36px; text: "View candidates"; tone: Tf2Colors.red; hover-tone: Tf2Colors.red-hover; pressed-tone: Tf2Colors.red-pressed; clicked => { root.selected-page = 1; } }
+            }
+        }
+
+        if root.selected-page == 1 && root.has-export : VerticalLayout {
+            x: 0px; y: root.compact ? 64px : 118px; width: root.width; height: root.height - self.y;
+            padding: root.compact ? 9px : 14px; spacing: root.compact ? 5px : 8px;
+            if !root.compact : HorizontalLayout {
+                height: 38px; spacing: 7px;
+                Tf2LineEdit { text <=> root.tag-filter; placeholder: "ALL TAGS: AIRSHOT, MEDIC PICK"; centered: true; edited(value) => { root.set-tag-filter(value); } }
+                MultiSelectDropdown { width: root.map-filter-width * 1px; content-width-px: root.map-filter-width; summary: root.map-filter-summary; search-placeholder: "Search maps..."; options: root.map-filter-options; search-text <=> root.map-filter-search; search-edited(value) => { root.search-map-filters(value); } toggled(value) => { root.toggle-map-filter(value); } }
+                MultiSelectDropdown { width: root.server-type-filter-width * 1px; content-width-px: root.server-type-filter-width; summary: root.server-type-filter-summary; search-placeholder: "Search server types..."; options: root.server-type-filter-options; search-text <=> root.server-type-filter-search; search-edited(value) => { root.search-server-type-filters(value); } toggled(value) => { root.toggle-server-type-filter(value); } }
+                Tf2Button { width: 120px; text: "REC: " + root.recorded-filter; clicked => { root.recorded-filter = root.recorded-filter == "Any" ? "Yes" : root.recorded-filter == "Yes" ? "No" : "Any"; root.set-recorded-filter(root.recorded-filter); } }
+            }
+            if !root.compact : Rectangle {
+                height: 40px;
+                HorizontalLayout {
+                    x: 0px; y: 0px; width: 710px; height: parent.height; spacing: 5px;
+                    Tf2Label { text: "CLASS"; width: 45px; }
+                    ClassFilter { label: "ALL"; selected: !root.selected-scout && !root.selected-soldier && !root.selected-pyro && !root.selected-demoman && !root.selected-heavy && !root.selected-engineer && !root.selected-medic && !root.selected-sniper && !root.selected-spy; clicked => { root.toggle-class-filter("All"); } }
+                    ClassFilter { icon: @image-url("assets/classes/scout.png"); selected: root.selected-scout; clicked => { root.toggle-class-filter("Scout"); } }
+                    ClassFilter { icon: @image-url("assets/classes/soldier.png"); selected: root.selected-soldier; clicked => { root.toggle-class-filter("Soldier"); } }
+                    ClassFilter { icon: @image-url("assets/classes/pyro.png"); selected: root.selected-pyro; clicked => { root.toggle-class-filter("Pyro"); } }
+                    ClassFilter { icon: @image-url("assets/classes/demoman.png"); selected: root.selected-demoman; clicked => { root.toggle-class-filter("Demoman"); } }
+                    ClassFilter { icon: @image-url("assets/classes/heavy.png"); selected: root.selected-heavy; clicked => { root.toggle-class-filter("Heavy"); } }
+                    ClassFilter { icon: @image-url("assets/classes/engineer.png"); selected: root.selected-engineer; clicked => { root.toggle-class-filter("Engineer"); } }
+                    ClassFilter { icon: @image-url("assets/classes/medic.png"); selected: root.selected-medic; clicked => { root.toggle-class-filter("Medic"); } }
+                    ClassFilter { icon: @image-url("assets/classes/sniper.png"); selected: root.selected-sniper; clicked => { root.toggle-class-filter("Sniper"); } }
+                    ClassFilter { icon: @image-url("assets/classes/spy.png"); selected: root.selected-spy; clicked => { root.toggle-class-filter("Spy"); } }
+                    Rectangle { width: 20px; }
+                    MinimumScoreControl { width: 205px; label: "MINIMUM SCORE"; value <=> root.minimum-score; edited(value) => { root.refresh-filter("", value); } }
+                }
+                HorizontalLayout {
+                    x: parent.width - root.map-filter-width * 1px - root.server-type-filter-width * 1px - 134px;
+                    y: 0px; width: root.map-filter-width * 1px; height: parent.height; spacing: 0px;
+                    Rectangle { horizontal-stretch: 1; }
+                    HorizontalLayout {
+                        width: 168px; spacing: 3px;
+                        Tf2Label { text: "BEFORE FIRST TICK"; width: 95px; font-size: 12px; horizontal-alignment: center; }
+                        SecondsPicker { width: 70px; seconds <=> root.lead-seconds; }
+                    }
+                    Rectangle { horizontal-stretch: 1; }
+                }
+                HorizontalLayout {
+                    x: parent.width - root.server-type-filter-width * 1px - 127px;
+                    y: 0px; width: root.server-type-filter-width * 1px; height: parent.height; spacing: 0px;
+                    Rectangle { horizontal-stretch: 1; }
+                    HorizontalLayout {
+                        width: 168px; spacing: 3px;
+                        Tf2Label { text: "AFTER LAST TICK"; width: 95px; font-size: 12px; horizontal-alignment: center; }
+                        SecondsPicker { width: 70px; seconds <=> root.outro-seconds; }
+                    }
+                    Rectangle { horizontal-stretch: 1; }
+                }
+            }
+            if root.compact : HorizontalLayout {
+                height: 34px; spacing: 5px;
+                Tf2LineEdit { text <=> root.tag-filter; placeholder: "ALL TAGS: AIRSHOT, MEDIC PICK"; centered: true; edited(value) => { root.set-tag-filter(value); } }
+                Tf2Button { width: 98px; height: 32px; text: root.candidate-filters-open ? "CLOSE" : "FILTERS"; clicked => { root.candidate-filters-open = !root.candidate-filters-open; } }
+                Tf2Button { width: 165px; height: 32px; text: "OPEN HLAE"; enabled: root.selected-count == 1 && root.recording-ready; tone: Tf2Colors.gold; hover-tone: Tf2Colors.gold-hover; pressed-tone: Tf2Colors.gold-pressed; clicked => { root.launch-manual-hlae(); } }
+                Tf2Button { width: 120px; height: 32px; text: "PREVIEW"; enabled: root.selected-count == 1; tone: Tf2Colors.blu; hover-tone: Tf2Colors.blu-hover; pressed-tone: Tf2Colors.blu-pressed; clicked => { root.preview-selected(); } }
+                Tf2Button { width: 120px; height: 32px; text: "RECORD"; enabled: root.selected-count > 0 && root.recording-ready; tone: Tf2Colors.red; hover-tone: Tf2Colors.red-hover; pressed-tone: Tf2Colors.red-pressed; clicked => { root.record-selected(); } }
+            }
+            if root.compact && root.candidate-filters-open : Tf2Panel {
+                height: 112px;
+                GridLayout {
+                    padding: 7px; spacing: 5px;
+                    Row {
+                        MultiSelectDropdown { content-width-px: root.map-filter-width; summary: root.map-filter-summary; search-placeholder: "Search maps..."; options: root.map-filter-options; search-text <=> root.map-filter-search; search-edited(value) => { root.search-map-filters(value); } toggled(value) => { root.toggle-map-filter(value); } }
+                        ClassMultiSelectDropdown { summary: root.class-filter-summary; scout: root.selected-scout; soldier: root.selected-soldier; pyro: root.selected-pyro; demoman: root.selected-demoman; heavy: root.selected-heavy; engineer: root.selected-engineer; medic: root.selected-medic; sniper: root.selected-sniper; spy: root.selected-spy; toggled(value) => { root.toggle-class-filter(value); } }
+                        MultiSelectDropdown { content-width-px: root.server-type-filter-width; summary: root.server-type-filter-summary; search-placeholder: "Search server types..."; options: root.server-type-filter-options; search-text <=> root.server-type-filter-search; search-edited(value) => { root.search-server-type-filters(value); } toggled(value) => { root.toggle-server-type-filter(value); } }
+                    }
+                    Row { Tf2Button { height: 31px; text: "REC: " + root.recorded-filter; clicked => { root.recorded-filter = root.recorded-filter == "Any" ? "Yes" : root.recorded-filter == "Yes" ? "No" : "Any"; root.set-recorded-filter(root.recorded-filter); } } MinimumScoreControl { height: 31px; label: "MIN. SCORE"; value <=> root.minimum-score; edited(value) => { root.refresh-filter("", value); } } Tf2Button { height: 31px; text: root.all-visible-selected ? "DESELECT ALL" : "SELECT ALL"; tone: Tf2Colors.gold; hover-tone: Tf2Colors.gold-hover; pressed-tone: Tf2Colors.gold-pressed; clicked => { root.select-all-visible(); } } }
+                }
+            }
+            if !root.compact : HorizontalLayout {
+                height: 40px; spacing: 7px;
+                Tf2Button { width: 170px; text: root.all-visible-selected ? "DESELECT ALL" : "SELECT ALL"; tone: Tf2Colors.gold; hover-tone: Tf2Colors.gold-hover; pressed-tone: Tf2Colors.gold-pressed; clicked => { root.select-all-visible(); } }
+                Tf2Button { width: 190px; text: "PREVIEW IN TF2"; enabled: root.selected-count == 1; tone: Tf2Colors.blu; hover-tone: Tf2Colors.blu-hover; pressed-tone: Tf2Colors.blu-pressed; clicked => { root.preview-selected(); } }
+                Tf2Button { width: 250px; text: "LAUNCH MANUAL MIRV SESSION"; enabled: root.selected-count == 1 && root.recording-ready; tone: Tf2Colors.gold; hover-tone: Tf2Colors.gold-hover; pressed-tone: Tf2Colors.gold-pressed; clicked => { root.launch-manual-hlae(); } }
+                Tf2Button { width: 205px; text: "RECORD WITH HLAE"; enabled: root.selected-count > 0 && root.recording-ready; tone: Tf2Colors.red; hover-tone: Tf2Colors.red-hover; pressed-tone: Tf2Colors.red-pressed; clicked => { root.record-selected(); } }
+                Tf2Button { width: 145px; text: "VIEW DETAILS"; enabled: root.selected-count == 1; clicked => { root.view-selected-details(); } }
+                Rectangle { horizontal-stretch: 1; } Tf2Body { text: root.selected-count + " SELECTED"; color: Tf2Colors.muted; }
+            }
+            CandidateTable { vertical-stretch: 1; rows: root.candidate-rows; compact: root.compact; tags-width-px: root.candidate-tags-width; horizontal-offset <=> root.candidate-horizontal-offset; drag(index, delta, selecting, additive) => { root.drag-select-candidates(index, delta, selecting, additive); } selection-done => { root.selection-changed(); } }
+            HorizontalLayout {
+                height: 21px;
+                Tf2Body { text: root.candidate-summary; color: Tf2Colors.muted; font-size: root.compact ? 11px : 13px; wrap: word-wrap; }
+            }
+        }
+
+        if root.selected-page == 2 && root.has-export : VerticalLayout {
+            x: 0px;
+            y: root.compact ? 64px : 118px;
+            width: root.width;
+            height: root.height - self.y;
+            padding: 8px;
+            spacing: 4px;
+            HorizontalLayout {
+                height: 30px;
+                spacing: 10px;
+                Tf2Heading {
+                    text: "Recording Settings";
+                    font-size: 20px;
+                }
+                Rectangle {
+                    horizontal-stretch: 1;
+                }
+                Tf2Button {
+                    width: 166px;
+                    height: 30px;
+                    label-font-size: 12px;
+                    text: root.recording-advanced-view ? "Guided view" : "Advanced view";
+                    tone: Tf2Colors.blu;
+                    hover-tone: Tf2Colors.blu-hover;
+                    pressed-tone: Tf2Colors.blu-pressed;
+                    clicked => {
+                        root.recording-advanced-view = !root.recording-advanced-view;
+                    }
+                }
+            }
+            if !root.recording-advanced-view : HorizontalLayout {
+                height: 30px;
+                spacing: 6px;
+                for title[index] in ["1  Paths & output", "2  Video & HUD", "3  Encoding", "4  Profile", "5  MIRV shortcuts"] : Rectangle {
+                    background: root.recording-settings-section == index ? Tf2Colors.red : #00000000;
+                    Tf2Heading {
+                        width: parent.width;
+                        height: parent.height - 2px;
+                        text: title;
+                        font-size: 12px;
+                        horizontal-alignment: center;
+                    }
+                    Rectangle {
+                        y: parent.height - 2px;
+                        width: parent.width;
+                        height: 2px;
+                        background: root.recording-settings-section == index ? Tf2Colors.border-bright : Tf2Colors.border;
+                    }
+                    TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => {
+                            root.recording-settings-section = index;
+                        }
+                    }
+                }
+            }
+            recording-scroll := ScrollView {
+                vertical-stretch: 1;
+                horizontal-scrollbar-policy: always-off;
+                vertical-scrollbar-policy: root.recording-advanced-view ? as-needed : always-off;
+                viewport-width: self.width;
+                viewport-height: settings-content.height;
+                viewport-y <=> root.recording-scroll-y;
+                settings-content := Rectangle {
+                    width: recording-scroll.width - (root.recording-advanced-view ? 16px : 0px);
+                    height: root.recording-advanced-view ? (self.two-columns ? 860px : 1420px) : recording-scroll.visible-height;
+                    private property <bool> two-columns: self.width >= 1280px;
+                    if root.recording-advanced-view || root.recording-settings-section == 0 : RecordingCard {
+                        x: root.recording-advanced-view && settings-content.two-columns ? 0 * (parent.width + 10px) / 2 : 0px;
+                        y: root.recording-advanced-view ? (settings-content.two-columns ? 0px : 0px) : 0px;
+                        width: root.recording-advanced-view && settings-content.two-columns ? (parent.width - 10px) / 2 : parent.width;
+                        height: root.recording-advanced-view ? 270px : parent.height;
+                        number: "1";
+                        heading: "Paths & output";
+                        description: "Choose the tools, output folder, format and frame rate.";
+                        HorizontalLayout {
+                            spacing: 18px;
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                spacing: 6px;
+                                Tf2Heading {
+                                    height: 20px;
+                                    font-size: 14px;
+                                    text: "Program paths";
+                                }
+                                SettingField {
+                                    label: "TF2 executable";
+                                    HorizontalLayout {
+                                        spacing: 6px;
+                                        Tf2LineEdit {
+                                            height: 30px;
+                                            text <=> root.tf2-path;
+                                        }
+                                        Tf2Button {
+                                            width: 68px;
+                                            height: 30px;
+                                            label-font-size: 11px;
+                                            text: "Browse";
+                                            clicked => {
+                                                root.choose-setting-path("tf2");
+                                            }
+                                        }
+                                    }
+                                }
+                                SettingField {
+                                    label: "HLAE";
+                                    HorizontalLayout {
+                                        spacing: 6px;
+                                        Tf2LineEdit {
+                                            height: 30px;
+                                            text <=> root.hlae-path;
+                                        }
+                                        Tf2Button {
+                                            width: 68px;
+                                            height: 30px;
+                                            label-font-size: 11px;
+                                            text: "Browse";
+                                            clicked => {
+                                                root.choose-setting-path("hlae");
+                                            }
+                                        }
+                                    }
+                                }
+                                SettingField {
+                                    label: "FFmpeg";
+                                    HorizontalLayout {
+                                        spacing: 6px;
+                                        Tf2LineEdit {
+                                            height: 30px;
+                                            text <=> root.ffmpeg-path;
+                                        }
+                                        Tf2Button {
+                                            width: 68px;
+                                            height: 30px;
+                                            label-font-size: 11px;
+                                            text: "Browse";
+                                            clicked => {
+                                                root.choose-setting-path("ffmpeg");
+                                            }
+                                        }
+                                    }
+                                }
+                                Rectangle {
+                                    vertical-stretch: 1;
+                                }
+                            }
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                spacing: 6px;
+                                Tf2Heading {
+                                    height: 20px;
+                                    font-size: 14px;
+                                    text: "Capture output";
+                                }
+                                SettingField {
+                                    label: "Output folder";
+                                    HorizontalLayout {
+                                        spacing: 6px;
+                                        Tf2LineEdit {
+                                            height: 30px;
+                                            text <=> root.recording-directory;
+                                        }
+                                        Tf2Button {
+                                            width: 68px;
+                                            height: 30px;
+                                            label-font-size: 11px;
+                                            text: "Browse";
+                                            clicked => {
+                                                root.choose-setting-path("recording-output");
+                                            }
+                                        }
+                                    }
+                                }
+                                HorizontalLayout {
+                                    height: 50px;
+                                    spacing: 8px;
+                                    SettingField {
+                                        label: "Format";
+                                        Tf2ComboBox {
+                                            width: parent.width;
+                                            height: 30px;
+                                            model: ["MP4 - Standard", "MP4 - Compatible", "MP4 - Lossless", "MOV - DNxHR", "TGA Image Sequence", "JPG Image Sequence", "AVI - Raw"];
+                                            current-value <=> root.recording-format;
+                                        }
+                                    }
+                                    VerticalLayout {
+                                        width: 76px;
+                                        SettingField {
+                                            label: "FPS";
+                                            Tf2ComboBox {
+                                                width: parent.width;
+                                                height: 30px;
+                                                model: ["120", "60", "240", "480"];
+                                                current-value <=> root.capture-fps;
+                                            }
+                                        }
+                                    }
+                                    if root.recording-format == "JPG Image Sequence" : VerticalLayout {
+                                        width: 70px;
+                                        SettingField {
+                                            label: "JPG quality";
+                                            Tf2SpinBox {
+                                                width: parent.width;
+                                                height: 30px;
+                                                value <=> root.jpg-quality;
+                                                minimum: 1;
+                                                maximum: 100;
+                                            }
+                                        }
+                                    }
+                                }
+                                SettingField {
+                                    label: "Manual launch options · " + root.manual-hlae-launch-options-status;
+                                    Tf2LineEdit {
+                                        width: parent.width;
+                                        height: 30px;
+                                        text <=> root.manual-hlae-launch-options;
+                                        placeholder: "-option or +command value";
+                                    }
+                                }
+                                Rectangle {
+                                    vertical-stretch: 1;
+                                }
+                            }
+                        }
+                    }
+                    if root.recording-advanced-view || root.recording-settings-section == 1 : RecordingCard {
+                        x: root.recording-advanced-view && settings-content.two-columns ? 1 * (parent.width + 10px) / 2 : 0px;
+                        y: root.recording-advanced-view ? (settings-content.two-columns ? 0px : 280px) : 0px;
+                        width: root.recording-advanced-view && settings-content.two-columns ? (parent.width - 10px) / 2 : parent.width;
+                        height: root.recording-advanced-view ? 270px : parent.height;
+                        number: "2";
+                        heading: "Video & HUD";
+                        description: "Choose the recorded image and first-person appearance.";
+                        HorizontalLayout {
+                            spacing: 18px;
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                spacing: 6px;
+                                Tf2Heading {
+                                    height: 20px;
+                                    font-size: 14px;
+                                    text: "Capture picture";
+                                }
+                                HorizontalLayout {
+                                    height: 50px;
+                                    spacing: 8px;
+                                    SettingField {
+                                        label: "Resolution";
+                                        Tf2ComboBox {
+                                            width: parent.width;
+                                            height: 30px;
+                                            model: ["1280x720", "1920x1080", "2560x1440", "3840x2160"];
+                                            current-value <=> root.resolution;
+                                        }
+                                    }
+                                    VerticalLayout {
+                                        width: 90px;
+                                        SettingField {
+                                            label: "DirectX";
+                                            Tf2ComboBox {
+                                                width: parent.width;
+                                                height: 30px;
+                                                model: ["Default", "98", "95", "90", "81", "80"];
+                                                current-value <=> root.dx-level;
+                                            }
+                                        }
+                                    }
+                                }
+                                SettingField {
+                                    label: "Skybox";
+                                    Tf2ComboBox {
+                                        width: parent.width;
+                                        height: 30px;
+                                        model: ["Default", "realsky1", "realsky3", "sky27", "sky41", "sky56", "sky_sky1_01", "sky_sky2_01", "sky_sky3_01", "sky_sky4_01", "sky_sky5_01", "sky_sky6_01"];
+                                        current-value <=> root.skybox;
+                                    }
+                                }
+                                Rectangle {
+                                    vertical-stretch: 1;
+                                }
+                            }
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                spacing: 6px;
+                                Tf2Heading {
+                                    height: 20px;
+                                    font-size: 14px;
+                                    text: "First-person view & HUD";
+                                }
+                                HorizontalLayout {
+                                    height: 50px;
+                                    spacing: 8px;
+                                    SettingField {
+                                        label: "Viewmodels";
+                                        Tf2ComboBox {
+                                            width: parent.width;
+                                            height: 30px;
+                                            model: ["On", "Off"];
+                                            current-value <=> root.viewmodels;
+                                        }
+                                    }
+                                    VerticalLayout {
+                                        width: 105px;
+                                        SettingField {
+                                            label: "Viewmodel FOV";
+                                            Tf2SpinBox {
+                                                width: parent.width;
+                                                height: 30px;
+                                                value <=> root.viewmodel-fov;
+                                                minimum: 1;
+                                                maximum: 179;
+                                            }
+                                        }
+                                    }
+                                }
+                                SettingField {
+                                    label: "HUD";
+                                    Tf2ComboBox {
+                                        width: parent.width;
+                                        height: 30px;
+                                        model: ["Kill notices only", "Keep current", "Default TF2 HUD", "Medic recording HUD"];
+                                        current-value <=> root.hud;
+                                    }
+                                }
+                                Rectangle {
+                                    vertical-stretch: 1;
+                                }
+                            }
+                        }
+                    }
+                    if root.recording-advanced-view || root.recording-settings-section == 2 : RecordingCard {
+                        x: root.recording-advanced-view && settings-content.two-columns ? 0 * (parent.width + 10px) / 2 : 0px;
+                        y: root.recording-advanced-view ? (settings-content.two-columns ? 280px : 560px) : 0px;
+                        width: root.recording-advanced-view && settings-content.two-columns ? (parent.width - 10px) / 2 : parent.width;
+                        height: root.recording-advanced-view ? 270px : parent.height;
+                        number: "3";
+                        heading: "Encoding";
+                        description: "Adjust compression and editing compatibility.";
+                        VerticalLayout {
+                            spacing: 8px;
+                            if root.recording-format == "MP4 - Standard" || root.recording-format == "MP4 - Compatible" : VerticalLayout {
+                                spacing: 8px;
+                                HorizontalLayout {
+                                    height: 30px;
+                                    spacing: 8px;
+                                    Tf2Label {
+                                        width: 100px;
+                                        text: "Compatibility";
+                                    }
+                                    Tf2ComboBox {
+                                        width: parent.width;
+                                        height: 30px;
+                                        model: ["DaVinci Resolve / Universal", "Maximum Color Quality", "Custom"];
+                                        current-value <=> root.mp4-compatibility;
+                                    }
+                                }
+                                HorizontalLayout {
+                                    spacing: 18px;
+                                    if root.mp4-compatibility == "Custom" : VerticalLayout {
+                                        horizontal-stretch: 1;
+                                        spacing: 6px;
+                                        Tf2Heading {
+                                            height: 20px;
+                                            font-size: 14px;
+                                            text: "Video encoding";
+                                        }
+                                        HorizontalLayout {
+                                            height: 50px;
+                                            spacing: 8px;
+                                            SettingField {
+                                                label: "Codec";
+                                                Tf2ComboBox {
+                                                    width: parent.width;
+                                                    height: 30px;
+                                                    model: ["H.264 / libx264"];
+                                                    current-value <=> root.mp4-video-codec;
+                                                }
+                                            }
+                                            SettingField {
+                                                label: "Pixel format";
+                                                Tf2ComboBox {
+                                                    width: parent.width;
+                                                    height: 30px;
+                                                    model: ["yuv420p", "yuv422p", "yuv444p"];
+                                                    current-value <=> root.mp4-pixel-format;
+                                                }
+                                            }
+                                        }
+                                        HorizontalLayout {
+                                            height: 50px;
+                                            spacing: 8px;
+                                            SettingField {
+                                                label: "Profile";
+                                                if root.mp4-pixel-format == "yuv420p" : Tf2ComboBox {
+                                                    width: parent.width;
+                                                    height: 30px;
+                                                    model: ["High"];
+                                                    current-value <=> root.mp4-h264-profile;
+                                                }
+                                                if root.mp4-pixel-format == "yuv422p" : Tf2ComboBox {
+                                                    width: parent.width;
+                                                    height: 30px;
+                                                    model: ["High 4:2:2"];
+                                                    current-value <=> root.mp4-h264-profile;
+                                                }
+                                                if root.mp4-pixel-format == "yuv444p" : Tf2ComboBox {
+                                                    width: parent.width;
+                                                    height: 30px;
+                                                    model: ["High 4:4:4 Predictive"];
+                                                    current-value <=> root.mp4-h264-profile;
+                                                }
+                                            }
+                                            SettingField {
+                                                label: "Quality (CRF)";
+                                                Tf2SpinBox {
+                                                    width: parent.width;
+                                                    height: 30px;
+                                                    value <=> root.mp4-crf;
+                                                    minimum: 0;
+                                                    maximum: 35;
+                                                }
+                                            }
+                                        }
+                                        SettingField {
+                                            label: "Encoder preset";
+                                            Tf2ComboBox {
+                                                width: parent.width;
+                                                height: 30px;
+                                                model: ["veryfast", "faster", "fast", "medium", "slow", "slower"];
+                                                current-value <=> root.mp4-encoder-preset;
+                                            }
+                                        }
+                                        Rectangle {
+                                            vertical-stretch: 1;
+                                        }
+                                    }
+                                    VerticalLayout {
+                                        horizontal-stretch: 1;
+                                        spacing: 6px;
+                                        Tf2Heading {
+                                            height: 20px;
+                                            font-size: 14px;
+                                            text: "Audio";
+                                        }
+                                        HorizontalLayout {
+                                            height: 50px;
+                                            spacing: 8px;
+                                            SettingField {
+                                                label: "Audio codec";
+                                                Tf2ComboBox {
+                                                    width: parent.width;
+                                                    height: 30px;
+                                                    model: ["AAC"];
+                                                    current-value <=> root.mp4-audio-codec;
+                                                }
+                                            }
+                                            SettingField {
+                                                label: "Bitrate (kbps)";
+                                                Tf2ComboBox {
+                                                    width: parent.width;
+                                                    height: 30px;
+                                                    model: ["192", "256", "320"];
+                                                    current-value <=> root.mp4-audio-bitrate;
+                                                }
+                                            }
+                                        }
+                                        Tf2Body {
+                                            text: root.mp4-compatibility == "Custom" ? "Lower CRF increases quality and file size.\nSlower presets take longer to encode." : "The selected compatibility preset configures video encoding automatically.";
+                                            font-size: 13px;
+                                            wrap: word-wrap;
+                                            color: Tf2Colors.muted;
+                                            vertical-alignment: top;
+                                        }
+                                        Rectangle {
+                                            vertical-stretch: 1;
+                                        }
+                                    }
+                                }
+                            }
+                            if root.recording-format == "AVI - Raw" : VerticalLayout {
+                                spacing: 8px;
+                                SettingField {
+                                    label: "AVI codec";
+                                    Tf2ComboBox {
+                                        width: parent.width;
+                                        height: 30px;
+                                        model: ["Original HLAE Raw", "FFV1 Lossless", "HuffYUV Lossless"];
+                                        current-value <=> root.avi-video-codec;
+                                    }
+                                }
+                                SettingField {
+                                    label: "Pixel format";
+                                    if root.avi-video-codec == "Original HLAE Raw" : Tf2ComboBox {
+                                        width: parent.width;
+                                        height: 30px;
+                                        model: ["HLAE Native"];
+                                        current-value <=> root.avi-pixel-format;
+                                    }
+                                    if root.avi-video-codec == "FFV1 Lossless" : Tf2ComboBox {
+                                        width: parent.width;
+                                        height: 30px;
+                                        model: ["bgr0", "yuv422p", "yuv444p"];
+                                        current-value <=> root.avi-pixel-format;
+                                    }
+                                    if root.avi-video-codec == "HuffYUV Lossless" : Tf2ComboBox {
+                                        width: parent.width;
+                                        height: 30px;
+                                        model: ["rgb24", "yuv422p"];
+                                        current-value <=> root.avi-pixel-format;
+                                    }
+                                }
+                                Rectangle {
+                                    vertical-stretch: 1;
+                                }
+                            }
+                            if root.recording-format == "MOV - DNxHR" : SettingField {
+                                label: "DNxHR profile";
+                                Tf2ComboBox {
+                                    width: parent.width;
+                                    height: 30px;
+                                    model: ["LB", "SQ", "HQ", "HQX", "444"];
+                                    current-value <=> root.dnxhr-profile;
+                                }
+                            }
+                            if root.recording-format == "MP4 - Lossless" || root.recording-format == "TGA Image Sequence" || root.recording-format == "JPG Image Sequence" : Tf2Body {
+                                wrap: word-wrap;
+                                text: root.recording-format == "JPG Image Sequence" ? "JPG quality is set beside the format on Paths & output. Images and audio are saved separately." : root.recording-format == "TGA Image Sequence" ? "TGA stores uncompressed frames with separate audio. There are no additional encoding options." : "Lossless MP4 uses the built-in lossless preset. There are no additional encoding options.";
+                                color: Tf2Colors.muted;
+                            }
+                            Rectangle {
+                                vertical-stretch: 1;
+                            }
+                        }
+                    }
+                    if root.recording-advanced-view || root.recording-settings-section == 3 : RecordingCard {
+                        x: root.recording-advanced-view && settings-content.two-columns ? 1 * (parent.width + 10px) / 2 : 0px;
+                        y: root.recording-advanced-view ? (settings-content.two-columns ? 280px : 840px) : 0px;
+                        width: root.recording-advanced-view && settings-content.two-columns ? (parent.width - 10px) / 2 : parent.width;
+                        height: root.recording-advanced-view ? 270px : parent.height;
+                        number: "4";
+                        heading: "Recording profile";
+                        description: "Choose graphics, HUD elements and sounds for recording.";
+                        HorizontalLayout {
+                            spacing: 16px;
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                spacing: 6px;
+                                Tf2Heading {
+                                    height: 20px;
+                                    font-size: 14px;
+                                    text: "Graphics";
+                                }
+                                Tf2CheckBox {
+                                    height: 26px;
+                                    text: "Maximum-quality graphics";
+                                    checked <=> root.maximum-graphics;
+                                }
+                                Tf2CheckBox {
+                                    height: 26px;
+                                    text: "Enable motion blur";
+                                    checked <=> root.motion-blur;
+                                }
+                                Rectangle {
+                                    vertical-stretch: 1;
+                                }
+                            }
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                spacing: 6px;
+                                Tf2Heading {
+                                    height: 20px;
+                                    font-size: 14px;
+                                    text: "HUD & overlays";
+                                }
+                                Tf2CheckBox {
+                                    height: 26px;
+                                    text: "Minimal HUD";
+                                    checked <=> root.minimal-hud;
+                                }
+                                Tf2CheckBox {
+                                    height: 26px;
+                                    text: "Disable combat text";
+                                    checked <=> root.disable-combat-text;
+                                }
+                                Tf2CheckBox {
+                                    height: 26px;
+                                    text: "Disable crosshair";
+                                    checked <=> root.disable-crosshair;
+                                }
+                                Tf2CheckBox {
+                                    height: 26px;
+                                    text: "Disable crosshair switching";
+                                    checked <=> root.disable-crosshair-switching;
+                                }
+                                Tf2CheckBox {
+                                    height: 26px;
+                                    text: "3D player model in HUD";
+                                    checked <=> root.hud-player-model;
+                                }
+                                Rectangle {
+                                    vertical-stretch: 1;
+                                }
+                            }
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                spacing: 6px;
+                                Tf2Heading {
+                                    height: 20px;
+                                    font-size: 14px;
+                                    text: "Sound";
+                                }
+                                Tf2CheckBox {
+                                    height: 26px;
+                                    text: "Disable hit sounds";
+                                    checked <=> root.disable-hit-sounds;
+                                }
+                                Tf2CheckBox {
+                                    height: 26px;
+                                    text: "Disable voice chat";
+                                    checked <=> root.disable-voice-chat;
+                                }
+                                Tf2CheckBox {
+                                    height: 26px;
+                                    text: "Disable announcer";
+                                    checked <=> root.disable-announcer;
+                                }
+                                Tf2CheckBox {
+                                    height: 26px;
+                                    text: "Disable applause";
+                                    checked <=> root.disable-applause;
+                                }
+                                Tf2CheckBox {
+                                    height: 26px;
+                                    text: "Disable domination/revenge";
+                                    checked <=> root.disable-domination;
+                                }
+                                Rectangle {
+                                    vertical-stretch: 1;
+                                }
+                            }
+                        }
+                    }
+                    if root.recording-advanced-view || root.recording-settings-section == 4 : MirvShortcutPanel {
+                        x: 0px;
+                        y: root.recording-advanced-view ? (settings-content.two-columns ? 560px : 1120px) : 0px;
+                        width: parent.width;
+                        compact: settings-content.width < 1250px;
+                        height: root.recording-advanced-view ? 300px : parent.height;
+                        advance-time <=> root.mirv-advance-time;
+                        toggle-hud <=> root.mirv-toggle-hud;
+                        show-help <=> root.mirv-show-help;
+                        back-one-second <=> root.mirv-back-one-second;
+                        safe-restart <=> root.mirv-safe-restart;
+                        next-kill-tick <=> root.mirv-next-kill-tick;
+                        pause-resume <=> root.mirv-pause-resume;
+                        enter-camera <=> root.mirv-enter-camera;
+                        add-keyframe <=> root.mirv-add-keyframe;
+                        play-campath <=> root.mirv-play-campath;
+                        draw-campath <=> root.mirv-draw-campath;
+                        start-recording <=> root.mirv-start-recording;
+                        stop-recording <=> root.mirv-stop-recording;
+                        print-keyframes <=> root.mirv-print-keyframes;
+                        save-campath <=> root.mirv-save-campath;
+                        load-campath <=> root.mirv-load-campath;
+                        execute-director-action <=> root.mirv-execute-director-action;
+                        overlay-panel-toggle <=> root.mirv-overlay-panel-toggle;
+                        overlay-interaction-toggle <=> root.mirv-overlay-interaction-toggle;
+                    }
+                }
+            }
+            HorizontalLayout {
+                height: 32px;
+                spacing: 8px;
+                if !root.recording-advanced-view : Tf2Button {
+                    width: 90px;
+                    height: 32px;
+                    text: "Back";
+                    enabled: root.recording-settings-section > 0;
+                    clicked => {
+                        root.recording-settings-section -= 1;
+                    }
+                }
+                Tf2Body {
+                    text: root.recording-save-status != "" ? root.recording-save-status : "Changes save automatically";
+                    color: #8ab3cd;
+                    font-size: 12px;
+                }
+                Tf2Button {
+                    width: 180px;
+                    height: 32px;
+                    text: root.recording-advanced-view || root.recording-settings-section == 4 ? "View candidates" : "Continue";
+                    tone: Tf2Colors.red;
+                    hover-tone: Tf2Colors.red-hover;
+                    pressed-tone: Tf2Colors.red-pressed;
+                    clicked => {
+                        if root.recording-advanced-view || root.recording-settings-section == 4 {
+                            root.selected-page = 1;
+                        }
+                        else {
+                            root.recording-settings-section += 1;
+                        }
+                    }
+                }
+            }
+        }
+
+        if root.selected-page == 3 : VerticalLayout {
+            x: 0px; y: root.compact ? 64px : 118px; width: root.width; height: root.height - self.y;
+            padding: root.compact ? 9px : 14px; spacing: root.compact ? 5px : 8px;
+            HorizontalLayout {
+                height: root.compact ? 24px : 34px;
+                Tf2Heading { text: "APPLICATION LOGS"; font-size: root.compact ? 15px : 20px; }
+                Rectangle { horizontal-stretch: 1; }
+                Tf2Button { width: root.compact ? 130px : 170px; height: root.compact ? 30px : 36px; text: "OPEN LOG FOLDER"; clicked => { root.view-recording-logs(); } }
+            }
+            HorizontalLayout {
+                spacing: root.compact ? 5px : 9px;
+                Tf2Panel {
+                    width: root.compact ? 31% : 29%;
+                    VerticalLayout {
+                        padding: root.compact ? 7px : 10px; spacing: 6px;
+                        Tf2Heading { height: 22px; text: "RECENT SESSIONS"; font-size: root.compact ? 13px : 17px; }
+                        Rectangle { height: 72px; background: Tf2Colors.gold; border-width: 1px; border-color: Tf2Colors.border-bright; VerticalLayout { padding: 7px; spacing: 2px; Tf2Body { text: "CURRENT SESSION"; } Tf2Body { text: root.status-text; color: Tf2Colors.cream; font-size: 12px; wrap: word-wrap; vertical-stretch: 1; vertical-alignment: center; } } }
+                        Tf2Body { text: "Parser, analyzer, preview, and HLAE events appear in the batch log."; color: Tf2Colors.muted; wrap: word-wrap; vertical-alignment: top; }
+                        Rectangle { vertical-stretch: 1; }
+                    }
+                }
+                Tf2Panel { VerticalLayout { padding: root.compact ? 7px : 10px; spacing: 6px; Tf2Heading { height: 22px; text: "BATCH LOG"; font-size: root.compact ? 13px : 17px; } PagedText { text: root.log-text; follow-latest: true; vertical-stretch: 1; } } }
+            }
+            HorizontalLayout { height: 44px; spacing: 12px; Tf2Body { width: 50%; text: root.status-text; color: #8ab3cd; font-size: root.compact ? 11px : 12px; wrap: word-wrap; vertical-alignment: center; } Tf2Body { width: 50%; text: root.resource-plan-text; color: Tf2Colors.muted; font-size: root.compact ? 11px : 12px; wrap: word-wrap; horizontal-alignment: right; vertical-alignment: center; } }
+        }
+
+        if root.selected-page == 4 : VerticalLayout {
+            x: 0px; y: root.compact ? 64px : 118px; width: root.width; height: root.height - self.y;
+            padding: 12px; spacing: 8px;
+            HorizontalLayout { height: 34px; Tf2Heading { text: "CANDIDATE DETAILS"; } Rectangle { horizontal-stretch: 1; } Tf2Button { width: 190px; height: 34px; text: "Back to candidates"; clicked => { root.selected-page = 1; } } }
+            HorizontalLayout { height: 34px; spacing: 6px;
+                for title[index] in ["Overview", "Summary", "Kills", "Score", "Tags"] : Tf2Button { height: 34px; text: title; tone: root.detail-topic == index ? Tf2Colors.blu : Tf2Colors.neutral; clicked => { root.detail-topic = index; } }
+            }
+            Tf2Panel { vertical-stretch: 1;
+                PagedText { x: 10px; y: 10px; width: parent.width - 20px; height: parent.height - 20px;
+                    text: root.detail-topic == 0 ? "PLAYER\n" + root.candidate-detail-player + "\n" + root.candidate-detail-player-meta + "\n\nMAP\n" + root.candidate-detail-map + "\n" + root.candidate-detail-map-meta + "\n\nSOURCE DEMO\n" + root.candidate-detail-demo + "\n" + root.candidate-detail-demo-meta + "\n\nCANDIDATE SCORE\n" + root.candidate-detail-score + "\n" + root.candidate-detail-score-meta : root.detail-topic == 1 ? root.candidate-detail-summary : root.detail-topic == 2 ? root.candidate-detail-kills : root.detail-topic == 3 ? root.candidate-detail-score-breakdown : root.candidate-detail-tags;
+                }
+            }
+        }
+
+        if root.compact && root.compact-nav-open : Rectangle {
+            x: 0px; y: 64px; width: root.width; height: 48px; background: Tf2Colors.header;
+            HorizontalLayout {
+                padding-left: 10px; padding-right: 10px; padding-top: 5px; padding-bottom: 5px; spacing: 5px;
+                Tf2Button { text: "PARSE"; enabled: root.selected-page != 0; clicked => { root.selected-page = 0; root.compact-nav-open = false; } }
+                Tf2Button { text: "CANDIDATES"; text-color: root.has-export ? Tf2Colors.cream : Tf2Colors.dim; enabled: root.has-export && root.selected-page != 1; clicked => { root.selected-page = 1; root.compact-nav-open = false; } }
+                Tf2Button { text: "RECORDING SETTINGS"; text-color: root.has-export ? Tf2Colors.cream : Tf2Colors.dim; enabled: root.has-export && root.selected-page != 2; clicked => { root.selected-page = 2; root.compact-nav-open = false; } }
+                Tf2Button { text: "APPLICATION LOGS"; enabled: root.selected-page != 3; clicked => { root.selected-page = 3; root.compact-nav-open = false; } }
+            }
+        }
+
+        if root.help-dialog-open : Rectangle {
+            width: root.width; height: root.height; background: #000000aa;
+            TouchArea { clicked => { root.help-dialog-open = false; } }
+            Tf2Panel {
+                x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2;
+                width: Math.min(850px, parent.width - 32px); height: Math.min(340px, parent.height - 48px);
+                border-color: Tf2Colors.border-bright;
+                TouchArea { }
+                VerticalLayout { padding: 18px; spacing: 12px;
+                    Tf2Heading { height: 32px; text: root.help-dialog-title; font-family: "TF2 Build"; font-size: 20px; }
+                    Rectangle { height: 1px; background: Tf2Colors.border; }
+                    PagedText { vertical-stretch: 1; text: root.help-dialog-body; }
+                    HorizontalLayout { height: 34px; Rectangle { horizontal-stretch: 1; } Tf2Button { width: 110px; height: 34px; text: "Close"; tone: Tf2Colors.blu; hover-tone: Tf2Colors.blu-hover; pressed-tone: Tf2Colors.blu-pressed; clicked => { root.help-dialog-open = false; } } }
+                }
+            }
+        }
+
+    }
+}
