@@ -1427,7 +1427,8 @@ fn bind_file_callbacks(ui: &AppWindow, state: &Arc<Mutex<State>>) {
     let weak = ui.as_weak();
     ui.on_show_export_help(move || {
         if let Some(ui) = weak.upgrade() {
-            show_parse_help(&ui, "Which export folder do I select?", "Look for a folder named DemoToolkit_Parse_ followed by a date and time.\n\nExample: DemoToolkit_Parse_20261015_143221\n\nBy default, these folders are inside Demo Toolkit Exports at your chosen location. Open that parent folder, then select the dated parse folder. It contains frag_candidates.ndjson after analysis completes. For a batch, select the top-level dated folder to load all demos.\n\nKeep the whole parse folder together when moving it. Older exports still work, even with their original names.".into());
+            show_parse_help(&ui, "Previously Parsed Exports", "At your saved location, open Demo Toolkit Exports if enabled. Select a dated folder such as:\n\nDemoToolkit_Parse_20261015_143221\n\nSelect the folder containing frag_candidates.ndjson. For a batch, choose the top-level dated folder to load all demos. Older export names also work.".into());
+            ui.set_help_dialog_compact(true);
         }
     });
     refresh_item_schema_validation(ui);
@@ -1548,6 +1549,7 @@ fn bind_file_callbacks(ui: &AppWindow, state: &Arc<Mutex<State>>) {
 }
 
 fn show_parse_help(ui: &AppWindow, title: &str, body: String) {
+    ui.set_help_dialog_compact(false);
     ui.set_help_dialog_title(title.into());
     ui.set_help_dialog_body(body.into());
     ui.set_help_dialog_open(true);

@@ -705,6 +705,7 @@ export component AppWindow inherits Window {
     in-out property <bool> parse-options-ready: false;
     in-out property <[string]> log-lines;
     in-out property <bool> help-dialog-open: false;
+    in-out property <bool> help-dialog-compact: false;
     in-out property <string> help-dialog-title;
     in-out property <string> help-dialog-body;
     in-out property <bool> parse-started: false;
@@ -1070,7 +1071,7 @@ export component AppWindow inherits Window {
             HorizontalLayout {
                 height: (36px * root.guided-scale); spacing: (8px * root.guided-scale);
                 if root.parse-step == 0 : Tf2Button { width: (264px * root.guided-scale); height: (36px * root.guided-scale); label-font-size: (13px * root.guided-scale); text: "Load previously parsed export"; enabled: !root.busy && !root.importing-demos; tone: Tf2Colors.gold; hover-tone: Tf2Colors.gold-hover; pressed-tone: Tf2Colors.gold-pressed; clicked => { root.load-export(); } }
-                if root.parse-step == 0 : Tf2Button { width: (root.width < 1000px ? 110px : 148px) * root.guided-scale; height: (36px * root.guided-scale); label-font-size: (12px * root.guided-scale); text: "? Which folder?"; clicked => { root.show-export-help(); } }
+                if root.parse-step == 0 : Tf2Button { width: 160px * root.guided-scale; height: (36px * root.guided-scale); label-font-size: (12px * root.guided-scale); text: "Previously Parsed?"; clicked => { root.show-export-help(); } }
                 if root.parse-step > 0 : Tf2Button { width: (90px * root.guided-scale); height: (36px * root.guided-scale); text: "Back"; enabled: !root.busy && !root.importing-demos; clicked => { root.navigate-parse-step(root.parse-step - 1); } }
                 if root.parse-step == 2 && root.busy : Tf2Button { width: (90px * root.guided-scale); height: (36px * root.guided-scale); text: "Cancel"; clicked => { root.cancel-batch(); } }
                 if root.parse-step != 2 : Rectangle { horizontal-stretch: 1; }
@@ -1934,13 +1935,14 @@ export component AppWindow inherits Window {
             TouchArea { clicked => { root.help-dialog-open = false; } }
             Tf2Panel {
                 x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2;
-                width: Math.min(850px, parent.width - 32px); height: Math.min(340px, parent.height - 48px);
+                width: Math.min(root.help-dialog-compact ? 600px : 850px, parent.width - 32px); height: Math.min(root.help-dialog-compact ? 280px : 340px, parent.height - 48px);
                 border-color: Tf2Colors.border-bright;
                 TouchArea { }
                 VerticalLayout { padding: 18px; spacing: 12px;
                     Tf2Heading { height: 32px; text: root.help-dialog-title; font-family: "TF2 Build"; font-size: 20px; }
                     Rectangle { height: 1px; background: Tf2Colors.border; }
-                    PagedText { vertical-stretch: 1; text: root.help-dialog-body; }
+                    if root.help-dialog-compact : Tf2Body { vertical-stretch: 1; text: root.help-dialog-body; wrap: word-wrap; font-size: 13px; vertical-alignment: center; }
+                    if !root.help-dialog-compact : PagedText { vertical-stretch: 1; text: root.help-dialog-body; }
                     HorizontalLayout { height: 34px; Rectangle { horizontal-stretch: 1; } Tf2Button { width: 110px; height: 34px; text: "Close"; tone: Tf2Colors.blu; hover-tone: Tf2Colors.blu-hover; pressed-tone: Tf2Colors.blu-pressed; clicked => { root.help-dialog-open = false; } } }
                 }
             }
