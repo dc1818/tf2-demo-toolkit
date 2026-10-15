@@ -279,7 +279,6 @@ pub struct AppSettings {
     pub disable_crosshair: bool,
     pub disable_crosshair_switching: bool,
     pub hud_player_model: bool,
-    pub recording_advanced_view: bool,
     pub disable_announcer_voices: bool,
     pub disable_applause_sounds: bool,
     pub disable_domination_sounds: bool,
@@ -454,7 +453,7 @@ impl Default for AppSettings {
             viewmodels: "On".into(), viewmodel_fov: 70, maximum_graphics: true, motion_blur: true,
             disable_hit_sounds: true, disable_voice_chat: true, minimal_hud: true, disable_combat_text: true,
             disable_crosshair: true, disable_crosshair_switching: true, hud_player_model: false,
-            recording_advanced_view: false, disable_announcer_voices: true, disable_applause_sounds: true,
+            disable_announcer_voices: true, disable_applause_sounds: true,
             disable_domination_sounds: true, mirv_shortcuts: MirvShortcuts::default(),
         }
     }
@@ -573,20 +572,20 @@ impl AppSettings {
 #[cfg(test)]
 mod settings_tests {
     #[test]
-    fn legacy_custom_resource_settings_are_ignored_and_advanced_view_round_trips() {
-        let mut settings: super::AppSettings = serde_json::from_value(serde_json::json!({
+    fn removed_settings_are_ignored_when_loading_older_profiles() {
+        let settings: super::AppSettings = serde_json::from_value(serde_json::json!({
             "custom_resources": ["missing-custom-resource.vpk"],
             "isolate_custom_resources": true,
+            "recording_advanced_view": true,
             "recording_format": "JPG Image Sequence"
         })).unwrap();
-        assert!(!settings.recording_advanced_view);
         assert_eq!(settings.recording_format, "JPG Image Sequence");
-        settings.recording_advanced_view = true;
         let value = serde_json::to_value(&settings).unwrap();
         assert!(value.get("custom_resources").is_none());
         assert!(value.get("isolate_custom_resources").is_none());
+        assert!(value.get("recording_advanced_view").is_none());
         let restored: super::AppSettings = serde_json::from_value(value).unwrap();
-        assert!(restored.recording_advanced_view);
+        assert_eq!(restored.recording_format, "JPG Image Sequence");
     }
 
     use super::*;

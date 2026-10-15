@@ -971,7 +971,7 @@ fn capture_ui_snapshots(directory: PathBuf) -> Result<()> {
     }).collect::<Vec<_>>())));
     ui.set_help_dialog_title("How to find the item schema".into());
     ui.set_help_dialog_body("Demo Toolkit checks the selected demo folders and your TF2 installation automatically.\n\n1. In Steam, open Team Fortress 2 > Properties > Installed Files > Browse.\n2. Look for tf/scripts/items/items_game.txt.\n3. Use Choose file to select it.\n\nThe schema is optional. You can continue without it.".into());
-    let cases = [(800.,480.,0,false), (800.,480.,1,false), (800.,480.,2,false), (800.,480.,1,true), (900.,520.,0,false), (900.,520.,1,false), (900.,520.,2,false), (1280.,720.,1,false), (1480.,860.,0,false), (1480.,860.,1,false), (1480.,860.,2,false), (1920.,1080.,1,false), (800.,480.,4,false), (800.,480.,5,false), (800.,480.,6,false), (800.,480.,7,false), (800.,480.,8,false), (800.,480.,9,false), (1480.,860.,10,false), (800.,480.,10,false), (1920.,1080.,10,false), (800.,480.,11,false), (1280.,720.,4,false), (1280.,720.,7,false), (1280.,720.,8,false), (1280.,720.,9,false), (1280.,720.,5,false), (800.,480.,12,false), (800.,480.,13,false), (800.,480.,14,false), (800.,480.,15,false), (1100.,600.,0,false), (1100.,600.,1,false), (1100.,600.,2,false), (1100.,600.,4,false), (1100.,600.,7,false), (1100.,600.,8,false), (1100.,600.,9,false), (1100.,600.,5,false), (1100.,600.,6,false), (1100.,600.,16,false), (1100.,600.,17,false), (800.,480.,16,false), (1100.,600.,18,false), (1480.,860.,6,false)];
+    let cases = [(800.,480.,0,false), (800.,480.,1,false), (800.,480.,2,false), (800.,480.,1,true), (900.,520.,0,false), (900.,520.,1,false), (900.,520.,2,false), (1280.,720.,1,false), (1480.,860.,0,false), (1480.,860.,1,false), (1480.,860.,2,false), (1920.,1080.,1,false), (800.,480.,4,false), (800.,480.,5,false), (800.,480.,6,false), (800.,480.,7,false), (800.,480.,8,false), (800.,480.,9,false), (1280.,720.,4,false), (1280.,720.,7,false), (1280.,720.,8,false), (1280.,720.,9,false), (1280.,720.,5,false), (800.,480.,12,false), (800.,480.,13,false), (800.,480.,14,false), (800.,480.,15,false), (1100.,600.,0,false), (1100.,600.,1,false), (1100.,600.,2,false), (1100.,600.,4,false), (1100.,600.,7,false), (1100.,600.,8,false), (1100.,600.,9,false), (1100.,600.,5,false), (1100.,600.,6,false), (1100.,600.,16,false), (1100.,600.,17,false), (800.,480.,16,false), (1100.,600.,18,false), (1480.,860.,6,false)];
     let failure = Rc::new(RefCell::new(None::<String>));
     let capture_failure = failure.clone();
     let weak = ui.as_weak();
@@ -989,10 +989,8 @@ fn capture_ui_snapshots(directory: PathBuf) -> Result<()> {
             ui.set_selected_page(if step == 16 { 3 } else if step == 17 { 4 } else if step == 18 { 0 } else if step == 6 { 1 } else if step >= 4 { 2 } else { 0 });
             ui.set_has_export(step >= 4);
             ui.set_recording_settings_section(match step { 5 => 4, 7 => 1, 8 | 12..=15 => 2, 9 => 3, _ => 0 });
-            ui.set_recording_advanced_view(step == 10 || step == 11);
             ui.set_recording_format(match step { 12 => "JPG Image Sequence", 13 => "MOV - DNxHR", 14 => "AVI - Raw", _ => "MP4 - Standard" }.into());
             ui.set_mp4_compatibility(if step == 15 { "DaVinci Resolve / Universal" } else { "Custom" }.into());
-            ui.set_recording_scroll_y(if step == 11 { -1200.0 } else { 0.0 });
             ui.set_parse_step(if step < 3 { step } else { 0 });
             ui.set_help_dialog_open(popup);
         } else {
@@ -1087,7 +1085,6 @@ fn main() -> Result<()> {
     ui.set_disable_crosshair(settings.disable_crosshair);
     ui.set_disable_crosshair_switching(settings.disable_crosshair_switching);
     ui.set_hud_player_model(settings.hud_player_model);
-    ui.set_recording_advanced_view(settings.recording_advanced_view);
     ui.set_disable_announcer(settings.disable_announcer_voices);
     ui.set_disable_applause(settings.disable_applause_sounds);
     ui.set_disable_domination(settings.disable_domination_sounds);
@@ -2766,7 +2763,6 @@ fn sync_settings_from_ui(ui: &AppWindow, settings: &mut AppSettings) {
     settings.disable_crosshair = ui.get_disable_crosshair();
     settings.disable_crosshair_switching = ui.get_disable_crosshair_switching();
     settings.hud_player_model = ui.get_hud_player_model();
-    settings.recording_advanced_view = ui.get_recording_advanced_view();
     settings.disable_announcer_voices = ui.get_disable_announcer();
     settings.disable_applause_sounds = ui.get_disable_applause();
     settings.disable_domination_sounds = ui.get_disable_domination();

@@ -480,15 +480,33 @@ component MinimumScoreControl inherits Rectangle {
     }
 }
 
+component RecordingPadding inherits Tf2Panel {
+    in-out property <int> lead;
+    in-out property <int> tail;
+    height: 64px;
+    VerticalLayout {
+        padding: 6px; spacing: 4px;
+        Tf2Body { height: 16px; font-size: 12px; color: Tf2Colors.muted; text: "Seconds recorded before the first tick and after the last tick."; }
+        HorizontalLayout { height: 30px; spacing: 8px;
+            Tf2Label { width: 100px; text: "BEFORE FIRST TICK"; font-size: 12px; }
+            SecondsPicker { width: 70px; seconds <=> root.lead; }
+            Rectangle { width: 12px; }
+            Tf2Label { width: 94px; text: "AFTER LAST TICK"; font-size: 12px; }
+            SecondsPicker { width: 70px; seconds <=> root.tail; }
+            Rectangle { horizontal-stretch: 1; }
+        }
+    }
+}
+
 component ShortcutCapture inherits HorizontalLayout {
     in property <string> label;
     in-out property <string> binding;
-    in property <length> label-width: 112px;
+    in property <length> label-width: 148px;
     private property <bool> capturing: false;
     private property <string> capture-message: "";
     height: 26px;
     spacing: 6px;
-    Tf2Label { horizontal-stretch: 1; text: root.label; font-family: "Roboto Condensed"; font-size: 13px; overflow: elide; }
+    Tf2Label { width: root.label-width; text: root.label; font-family: "Roboto Condensed"; font-size: 13px; overflow: elide; }
     key-button := Rectangle {
         width: 68px; height: 26px;
         background: key-touch.pressed ? Tf2Colors.border : key-touch.has-hover ? #333735 : Tf2Colors.neutral;
@@ -564,6 +582,7 @@ component ShortcutCapture inherits HorizontalLayout {
             }
         }
     }
+    Rectangle { horizontal-stretch: 1; }
 }
 
 component MirvShortcutPanel inherits Rectangle {
@@ -885,10 +904,6 @@ export component AppWindow inherits Window {
     private property <bool> candidate-filters-open: false;
     private property <bool> advanced-encoding-open: false;
     in-out property <int> recording-settings-section: 0;
-    in-out property <bool> recording-advanced-view: false;
-    in-out property <length> recording-scroll-y: 0px;
-    changed recording-settings-section => { root.recording-scroll-y = 0px; }
-    changed recording-advanced-view => { root.recording-scroll-y = 0px; if !root.recording-settings-syncing { root.recording-settings-changed(); } }
     private property <int> detail-topic: 0;
     private property <length> recording-advanced-panel-height: !root.advanced-encoding-open ? 44px : (root.mp4-compatibility == "Custom" && (root.recording-format == "MP4 - Standard" || root.recording-format == "MP4 - Compatible") ? (root.compact ? 178px : 166px) : ((root.recording-format == "MP4 - Standard" || root.recording-format == "MP4 - Compatible") ? (root.compact ? 106px : 120px) : (root.recording-format == "AVI - Raw" ? (root.compact ? 106px : 120px) : (root.recording-format == "MOV - DNxHR" ? (root.compact ? 74px : 82px) : 44px))));
 
@@ -1052,9 +1067,9 @@ export component AppWindow inherits Window {
                 Tf2Button { width: 120px; text: "REC: " + root.recorded-filter; clicked => { root.recorded-filter = root.recorded-filter == "Any" ? "Yes" : root.recorded-filter == "Yes" ? "No" : "Any"; root.set-recorded-filter(root.recorded-filter); } }
             }
             if !root.compact : Rectangle {
-                height: 40px;
+                height: 64px;
                 HorizontalLayout {
-                    x: 0px; y: 0px; width: 710px; height: parent.height; spacing: 5px;
+                    x: 0px; width: 710px; height: 40px; y: 12px; spacing: 5px;
                     Tf2Label { text: "CLASS"; width: 45px; }
                     ClassFilter { label: "ALL"; selected: !root.selected-scout && !root.selected-soldier && !root.selected-pyro && !root.selected-demoman && !root.selected-heavy && !root.selected-engineer && !root.selected-medic && !root.selected-sniper && !root.selected-spy; clicked => { root.toggle-class-filter("All"); } }
                     ClassFilter { icon: @image-url("assets/classes/scout.png"); selected: root.selected-scout; clicked => { root.toggle-class-filter("Scout"); } }
@@ -1069,28 +1084,7 @@ export component AppWindow inherits Window {
                     Rectangle { width: 20px; }
                     MinimumScoreControl { width: 205px; label: "MINIMUM SCORE"; value <=> root.minimum-score; edited(value) => { root.refresh-filter("", value); } }
                 }
-                HorizontalLayout {
-                    x: parent.width - root.map-filter-width * 1px - root.server-type-filter-width * 1px - 134px;
-                    y: 0px; width: root.map-filter-width * 1px; height: parent.height; spacing: 0px;
-                    Rectangle { horizontal-stretch: 1; }
-                    HorizontalLayout {
-                        width: 168px; spacing: 3px;
-                        Tf2Label { text: "BEFORE FIRST TICK"; width: 95px; font-size: 12px; horizontal-alignment: center; }
-                        SecondsPicker { width: 70px; seconds <=> root.lead-seconds; }
-                    }
-                    Rectangle { horizontal-stretch: 1; }
-                }
-                HorizontalLayout {
-                    x: parent.width - root.server-type-filter-width * 1px - 127px;
-                    y: 0px; width: root.server-type-filter-width * 1px; height: parent.height; spacing: 0px;
-                    Rectangle { horizontal-stretch: 1; }
-                    HorizontalLayout {
-                        width: 168px; spacing: 3px;
-                        Tf2Label { text: "AFTER LAST TICK"; width: 95px; font-size: 12px; horizontal-alignment: center; }
-                        SecondsPicker { width: 70px; seconds <=> root.outro-seconds; }
-                    }
-                    Rectangle { horizontal-stretch: 1; }
-                }
+                RecordingPadding { x: parent.width - 460px; y: 0px; width: 460px; lead <=> root.lead-seconds; tail <=> root.outro-seconds; }
             }
             if root.compact : HorizontalLayout {
                 height: 34px; spacing: 5px;
@@ -1100,6 +1094,7 @@ export component AppWindow inherits Window {
                 Tf2Button { width: 120px; height: 32px; text: "PREVIEW"; enabled: root.selected-count == 1; tone: Tf2Colors.blu; hover-tone: Tf2Colors.blu-hover; pressed-tone: Tf2Colors.blu-pressed; clicked => { root.preview-selected(); } }
                 Tf2Button { width: 120px; height: 32px; text: "RECORD"; enabled: root.selected-count > 0 && root.recording-ready; tone: Tf2Colors.red; hover-tone: Tf2Colors.red-hover; pressed-tone: Tf2Colors.red-pressed; clicked => { root.record-selected(); } }
             }
+            if root.compact : RecordingPadding { lead <=> root.lead-seconds; tail <=> root.outro-seconds; }
             if root.compact && root.candidate-filters-open : Tf2Panel {
                 height: 112px;
                 GridLayout {
@@ -1145,20 +1140,9 @@ export component AppWindow inherits Window {
                 Rectangle {
                     horizontal-stretch: 1;
                 }
-                Tf2Button {
-                    width: 166px;
-                    height: 30px;
-                    label-font-size: 12px;
-                    text: root.recording-advanced-view ? "Guided view" : "Advanced view";
-                    tone: Tf2Colors.blu;
-                    hover-tone: Tf2Colors.blu-hover;
-                    pressed-tone: Tf2Colors.blu-pressed;
-                    clicked => {
-                        root.recording-advanced-view = !root.recording-advanced-view;
-                    }
-                }
+
             }
-            if !root.recording-advanced-view : HorizontalLayout {
+            HorizontalLayout {
                 height: 30px;
                 spacing: 6px;
                 for title[index] in ["1  Paths & output", "2  Video & HUD", "3  Encoding", "4  Profile", "5  MIRV shortcuts"] : Rectangle {
@@ -1184,22 +1168,16 @@ export component AppWindow inherits Window {
                     }
                 }
             }
-            recording-scroll := ScrollView {
+            recording-content := Rectangle {
                 vertical-stretch: 1;
-                horizontal-scrollbar-policy: always-off;
-                vertical-scrollbar-policy: root.recording-advanced-view ? as-needed : always-off;
-                viewport-width: self.width;
-                viewport-height: settings-content.height;
-                viewport-y <=> root.recording-scroll-y;
                 settings-content := Rectangle {
-                    width: recording-scroll.width - (root.recording-advanced-view ? 16px : 0px);
-                    height: root.recording-advanced-view ? (self.two-columns ? 876px : 1452px) : recording-scroll.visible-height;
-                    private property <bool> two-columns: self.width >= 1280px;
-                    if root.recording-advanced-view || root.recording-settings-section == 0 : RecordingCard {
-                        x: root.recording-advanced-view && settings-content.two-columns ? 0 * (parent.width + 10px) / 2 : 0px;
-                        y: root.recording-advanced-view ? (settings-content.two-columns ? 0px : 0px) : 0px;
-                        width: root.recording-advanced-view && settings-content.two-columns ? (parent.width - 10px) / 2 : parent.width;
-                        height: root.recording-advanced-view ? 270px : parent.height;
+                    width: recording-content.width;
+                    height: recording-content.height;
+                    if root.recording-settings-section == 0 : RecordingCard {
+                        x: 0px;
+                        y: 0px;
+                        width: parent.width;
+                        height: parent.height;
                         number: "1";
                         heading: "Paths & output";
                         description: "Choose the tools, output folder, format and frame rate.";
@@ -1354,11 +1332,11 @@ export component AppWindow inherits Window {
                             }
                         }
                     }
-                    if root.recording-advanced-view || root.recording-settings-section == 1 : RecordingCard {
-                        x: root.recording-advanced-view && settings-content.two-columns ? 1 * (parent.width + 10px) / 2 : 0px;
-                        y: root.recording-advanced-view ? (settings-content.two-columns ? 0px : 280px) : 0px;
-                        width: root.recording-advanced-view && settings-content.two-columns ? (parent.width - 10px) / 2 : parent.width;
-                        height: root.recording-advanced-view ? 270px : parent.height;
+                    if root.recording-settings-section == 1 : RecordingCard {
+                        x: 0px;
+                        y: 0px;
+                        width: parent.width;
+                        height: parent.height;
                         number: "2";
                         heading: "Video & HUD";
                         description: "Choose the recorded image and first-person appearance.";
@@ -1459,11 +1437,11 @@ export component AppWindow inherits Window {
                             }
                         }
                     }
-                    if root.recording-advanced-view || root.recording-settings-section == 2 : RecordingCard {
-                        x: root.recording-advanced-view && settings-content.two-columns ? 0 * (parent.width + 10px) / 2 : 0px;
-                        y: root.recording-advanced-view ? (settings-content.two-columns ? 280px : 560px) : 0px;
-                        width: root.recording-advanced-view && settings-content.two-columns ? (parent.width - 10px) / 2 : parent.width;
-                        height: root.recording-advanced-view ? 286px : parent.height;
+                    if root.recording-settings-section == 2 : RecordingCard {
+                        x: 0px;
+                        y: 0px;
+                        width: parent.width;
+                        height: parent.height;
                         number: "3";
                         heading: "Encoding";
                         description: "Adjust compression and editing compatibility.";
@@ -1663,11 +1641,11 @@ export component AppWindow inherits Window {
                             }
                         }
                     }
-                    if root.recording-advanced-view || root.recording-settings-section == 3 : RecordingCard {
-                        x: root.recording-advanced-view && settings-content.two-columns ? 1 * (parent.width + 10px) / 2 : 0px;
-                        y: root.recording-advanced-view ? (settings-content.two-columns ? 280px : 856px) : 0px;
-                        width: root.recording-advanced-view && settings-content.two-columns ? (parent.width - 10px) / 2 : parent.width;
-                        height: root.recording-advanced-view ? 286px : parent.height;
+                    if root.recording-settings-section == 3 : RecordingCard {
+                        x: 0px;
+                        y: 0px;
+                        width: parent.width;
+                        height: parent.height;
                         number: "4";
                         heading: "Recording profile";
                         description: "Choose graphics, HUD elements and sounds for recording.";
@@ -1771,12 +1749,12 @@ export component AppWindow inherits Window {
                             }
                         }
                     }
-                    if root.recording-advanced-view || root.recording-settings-section == 4 : MirvShortcutPanel {
+                    if root.recording-settings-section == 4 : MirvShortcutPanel {
                         x: 0px;
-                        y: root.recording-advanced-view ? (settings-content.two-columns ? 576px : 1152px) : 0px;
+                        y: 0px;
                         width: parent.width;
                         compact: settings-content.width < 1250px;
-                        height: root.recording-advanced-view ? 300px : parent.height;
+                        height: parent.height;
                         advance-time <=> root.mirv-advance-time;
                         toggle-hud <=> root.mirv-toggle-hud;
                         show-help <=> root.mirv-show-help;
@@ -1802,7 +1780,7 @@ export component AppWindow inherits Window {
             HorizontalLayout {
                 height: 32px;
                 spacing: 8px;
-                if !root.recording-advanced-view : Tf2Button {
+                Tf2Button {
                     width: 90px;
                     height: 32px;
                     text: "Back";
@@ -1819,12 +1797,12 @@ export component AppWindow inherits Window {
                 Tf2Button {
                     width: 180px;
                     height: 32px;
-                    text: root.recording-advanced-view || root.recording-settings-section == 4 ? "View candidates" : "Continue";
+                    text: root.recording-settings-section == 4 ? "View candidates" : "Continue";
                     tone: Tf2Colors.red;
                     hover-tone: Tf2Colors.red-hover;
                     pressed-tone: Tf2Colors.red-pressed;
                     clicked => {
-                        if root.recording-advanced-view || root.recording-settings-section == 4 {
+                        if root.recording-settings-section == 4 {
                             root.selected-page = 1;
                         }
                         else {
