@@ -971,7 +971,7 @@ fn capture_ui_snapshots(directory: PathBuf) -> Result<()> {
     }).collect::<Vec<_>>())));
     ui.set_help_dialog_title("How to find the item schema".into());
     ui.set_help_dialog_body("Demo Toolkit checks the selected demo folders and your TF2 installation automatically.\n\n1. In Steam, open Team Fortress 2 > Properties > Installed Files > Browse.\n2. Look for tf/scripts/items/items_game.txt.\n3. Use Choose file to select it.\n\nThe schema is optional. You can continue without it.".into());
-    let cases = [(800.,480.,0,false), (800.,480.,1,false), (800.,480.,2,false), (800.,480.,1,true), (900.,520.,0,false), (900.,520.,1,false), (900.,520.,2,false), (1280.,720.,1,false), (1480.,860.,0,false), (1480.,860.,1,false), (1480.,860.,2,false), (1920.,1080.,1,false), (800.,480.,4,false), (800.,480.,5,false), (800.,480.,6,false), (800.,480.,7,false), (800.,480.,8,false), (800.,480.,9,false), (1480.,860.,10,false), (800.,480.,10,false), (1920.,1080.,10,false), (800.,480.,11,false), (1280.,720.,4,false), (1280.,720.,7,false), (1280.,720.,8,false), (1280.,720.,9,false), (1280.,720.,5,false), (800.,480.,12,false), (800.,480.,13,false), (800.,480.,14,false), (800.,480.,15,false), (1100.,600.,0,false), (1100.,600.,1,false), (1100.,600.,2,false), (1100.,600.,4,false), (1100.,600.,7,false), (1100.,600.,8,false), (1100.,600.,9,false), (1100.,600.,5,false), (1100.,600.,6,false), (1100.,600.,16,false), (1100.,600.,17,false), (800.,480.,16,false), (1100.,600.,18,false)];
+    let cases = [(800.,480.,0,false), (800.,480.,1,false), (800.,480.,2,false), (800.,480.,1,true), (900.,520.,0,false), (900.,520.,1,false), (900.,520.,2,false), (1280.,720.,1,false), (1480.,860.,0,false), (1480.,860.,1,false), (1480.,860.,2,false), (1920.,1080.,1,false), (800.,480.,4,false), (800.,480.,5,false), (800.,480.,6,false), (800.,480.,7,false), (800.,480.,8,false), (800.,480.,9,false), (1480.,860.,10,false), (800.,480.,10,false), (1920.,1080.,10,false), (800.,480.,11,false), (1280.,720.,4,false), (1280.,720.,7,false), (1280.,720.,8,false), (1280.,720.,9,false), (1280.,720.,5,false), (800.,480.,12,false), (800.,480.,13,false), (800.,480.,14,false), (800.,480.,15,false), (1100.,600.,0,false), (1100.,600.,1,false), (1100.,600.,2,false), (1100.,600.,4,false), (1100.,600.,7,false), (1100.,600.,8,false), (1100.,600.,9,false), (1100.,600.,5,false), (1100.,600.,6,false), (1100.,600.,16,false), (1100.,600.,17,false), (800.,480.,16,false), (1100.,600.,18,false), (1480.,860.,6,false)];
     let failure = Rc::new(RefCell::new(None::<String>));
     let capture_failure = failure.clone();
     let weak = ui.as_weak();
@@ -1142,6 +1142,7 @@ fn main() -> Result<()> {
     bind_settings_callbacks(&ui, &state);
     bind_demo_file_drop(&ui, &state);
     start_recording_recovery(&ui, &state);
+    bind_page_window_size(&ui);
     center_window_on_startup(&ui);
     ui.run()?;
     if let Err(error) = shutdown_active_recording() {
@@ -1158,6 +1159,42 @@ fn main() -> Result<()> {
 /// Position the window once the native Slint/winit window is available.
 ///
 /// This deliberately runs on the event loop rather than at construction time:
+/// Candidates keeps its original wide workspace; other pages return to the
+/// user's previous window size. Never resize a maximized window.
+fn bind_page_window_size(ui: &AppWindow) {
+    let weak = ui.as_weak();
+    let previous_size = std::rc::Rc::new(std::cell::RefCell::new(None::<(f64, f64)>));
+    ui.on_page_layout_changed(move |page| {
+        let Some(ui) = weak.upgrade() else { return };
+        let _ = ui.window().with_winit_window(|window| {
+            if window.is_maximized() { return; }
+            // Candidate details belongs to the same wide workspace.
+            if page == 4 { return; }
+            let Some(monitor) = window.current_monitor()
+                .or_else(|| window.available_monitors().next()) else { return };
+            let scale = window.scale_factor();
+            let screen = monitor.size().to_logical::<f64>(scale);
+            let current = window.inner_size().to_logical::<f64>(scale);
+            let requested = if page == 1 {
+                if previous_size.borrow().is_some() { return; }
+                *previous_size.borrow_mut() = Some((current.width, current.height));
+                (current.width.max(1480.0), current.height.max(860.0))
+            } else {
+                let Some(size) = previous_size.borrow_mut().take() else { return };
+                size
+            };
+            let width = requested.0.min((screen.width - 48.0).max(800.0));
+            let height = requested.1.min((screen.height - 100.0).max(480.0));
+            let _ = window.request_inner_size(winit::dpi::LogicalSize::new(width, height));
+            let origin = monitor.position();
+            window.set_outer_position(winit::dpi::PhysicalPosition::new(
+                origin.x + (((screen.width - width) / 2.0).max(0.0) * scale) as i32,
+                origin.y + (((screen.height - height) / 4.0).max(0.0) * scale) as i32,
+            ));
+        });
+    });
+}
+
 /// winit only exposes the monitor and the decorated outer size after the window
 /// has been created. The window is horizontally centered and placed in the
 /// upper half of the display selected by the operating system at launch.

@@ -105,12 +105,13 @@ component AppHeader inherits Rectangle {
     in-out property <bool> menu-open;
     callback navigate(int);
 
-    height: root.compact ? 64px : 96px;
+    // Desktop: 9px top + 42px title + 6px gap + 44px tabs + 7px bottom.
+    height: root.compact ? 64px : 108px;
     background: Tf2Colors.header;
     Rectangle { y: parent.height - 1px; width: parent.width; height: 1px; background: Tf2Colors.border; }
 
     if !root.compact : VerticalLayout {
-        padding-left: 18px; padding-right: 18px; padding-top: 9px; padding-bottom: 0px;
+        padding-left: 18px; padding-right: 18px; padding-top: 9px; padding-bottom: 7px;
         spacing: 6px;
         HorizontalLayout {
             height: 42px;
@@ -118,7 +119,7 @@ component AppHeader inherits Rectangle {
             Rectangle { horizontal-stretch: 1; }
         }
         HorizontalLayout {
-            spacing: 5px;
+            height: 44px; spacing: 5px;
             Tf2Tab { text: "PARSE DEMOS"; active: root.page == 0; clicked => { root.navigate(0); } }
             Tf2Tab { text: "CANDIDATES"; active: root.page == 1; enabled: root.has-export; clicked => { root.navigate(1); } }
             Tf2Tab { text: "RECORDING SETTINGS"; active: root.page == 2; enabled: root.has-export; min-width: 225px; clicked => { root.navigate(2); } }
@@ -655,6 +656,8 @@ export component AppWindow inherits Window {
     background: Tf2Colors.app;
 
     in-out property <int> selected-page: 0;
+    callback page-layout-changed(int);
+    changed selected-page => { root.page-layout-changed(root.selected-page); }
     in-out property <bool> has-export: false;
     // Updated from the native resize event so the 900x520 frame always enters
     // the compact application header and settings layout.
@@ -877,7 +880,7 @@ export component AppWindow inherits Window {
     private property <bool> parse-short: self.height < 760px;
     private property <bool> compact: self.width <= 1220px || self.height <= 700px;
     private property <bool> compact-header: self.width < 1000px || self.height < 560px;
-    private property <length> header-height: root.compact-header ? 64px : 96px;
+    private property <length> header-height: app-header.y + app-header.height;
     private property <bool> compact-nav-open: false;
     private property <bool> candidate-filters-open: false;
     private property <bool> advanced-encoding-open: false;
@@ -895,7 +898,7 @@ export component AppWindow inherits Window {
             dismiss-focus := FocusScope { enabled: true; }
             clicked => { dismiss-focus.focus(); }
         }
-        AppHeader { x: 0px; y: 0px; width: root.width; page: root.selected-page; compact: root.compact-header; has-export: root.has-export; frame-debug: root.frame-debug; recording-save-status: root.recording-save-status; background-process-status: root.background-process-status; background-process-active: root.background-process-active; menu-open <=> root.compact-nav-open; navigate(page) => { if root.has-export || (page != 1 && page != 2) { root.selected-page = page; root.compact-nav-open = false; } } }
+        app-header := AppHeader { x: 0px; y: 0px; width: root.width; page: root.selected-page; compact: root.compact-header; has-export: root.has-export; frame-debug: root.frame-debug; recording-save-status: root.recording-save-status; background-process-status: root.background-process-status; background-process-active: root.background-process-active; menu-open <=> root.compact-nav-open; navigate(page) => { if root.has-export || (page != 1 && page != 2) { root.selected-page = page; root.compact-nav-open = false; } } }
 
 
         if root.selected-page == 0 : VerticalLayout {
@@ -926,7 +929,7 @@ export component AppWindow inherits Window {
                             padding: 10px; spacing: 6px;
                             Rectangle { vertical-stretch: 1; }
                             Tf2Heading { height: 25px; text: root.demo-drop-active ? "RELEASE TO ADD DEMOS" : "DROP DEMOS OR A FOLDER HERE"; font-size: 20px; horizontal-alignment: center; }
-                            Tf2Body { height: 18px; text: "Folders include demos in subfolders."; color: Tf2Colors.muted; font-size: 12px; horizontal-alignment: center; }
+                            Tf2Body { height: 18px; text: root.importing-demos ? "Scanning folders..." : "Folders include demos in subfolders."; color: Tf2Colors.muted; font-size: 12px; horizontal-alignment: center; }
                             HorizontalLayout { height: 32px; spacing: 8px;
                                 Rectangle { horizontal-stretch: 1; }
                                 Tf2Button { width: 174px; height: 32px; label-font-size: 13px; text: "Choose demos"; enabled: !root.busy && !root.importing-demos; tone: Tf2Colors.red; hover-tone: Tf2Colors.red-hover; pressed-tone: Tf2Colors.red-pressed; clicked => { root.choose-demos(); } }
@@ -943,7 +946,6 @@ export component AppWindow inherits Window {
                             PagedDemoList { vertical-stretch: 1; items: root.imported-demos; }
                         }
                     }
-                    if root.importing-demos || (root.status-text != "" && root.status-text != "Ready") : Tf2Body { height: 20px; text: root.importing-demos ? "Scanning folders..." : root.status-text; font-size: 12px; color: Tf2Colors.muted; overflow: elide; }
                 }
                 if root.parse-step == 1 : VerticalLayout {
                     width: parent.width; height: parent.height; spacing: 8px;
@@ -1874,7 +1876,7 @@ export component AppWindow inherits Window {
         }
 
         if root.compact-header && root.compact-nav-open : Rectangle {
-            x: 0px; y: 64px; width: root.width; height: 48px; background: Tf2Colors.header;
+            x: 0px; y: root.header-height; width: root.width; height: 48px; background: Tf2Colors.header;
             HorizontalLayout {
                 padding-left: 10px; padding-right: 10px; padding-top: 5px; padding-bottom: 5px; spacing: 5px;
                 Tf2Button { text: "PARSE"; enabled: root.selected-page != 0; clicked => { root.selected-page = 0; root.compact-nav-open = false; } }
