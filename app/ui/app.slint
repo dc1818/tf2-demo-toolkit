@@ -616,6 +616,8 @@ component MirvShortcutPanel inherits Rectangle {
     border-color: Tf2Colors.border;
     clip: true;
     VerticalLayout {
+ Rectangle { vertical-stretch: 1; }
+
         padding: root.compact ? (7px * root.ui-scale) : (10px * root.ui-scale); spacing: (5px * root.ui-scale);
         HorizontalLayout {
             height: (27px * root.ui-scale); spacing: (8px * root.ui-scale);
@@ -645,7 +647,9 @@ component MirvShortcutPanel inherits Rectangle {
         }
         HorizontalLayout { height: (224px * root.ui-scale); spacing: (14px * root.ui-scale);
 Tf2Panel { horizontal-stretch: 1; background: Tf2Colors.panel-dark;
- VerticalLayout { padding: 6px * root.ui-scale;  spacing: (1px * root.ui-scale); Tf2Heading { height: (18px * root.ui-scale); font-size: (12px * root.ui-scale); text: "Playback"; }
+ VerticalLayout {
+ Rectangle { vertical-stretch: 1; }
+ padding: 6px * root.ui-scale;  spacing: (1px * root.ui-scale); Tf2Heading { height: (18px * root.ui-scale); font-size: (12px * root.ui-scale); text: "Playback"; }
 ShortcutCapture { ui-scale: root.ui-scale; label: "Advance 0.25s"; binding <=> root.advance-time; }
 ShortcutCapture { ui-scale: root.ui-scale; label: "Toggle HUD"; binding <=> root.toggle-hud; }
 ShortcutCapture { ui-scale: root.ui-scale; label: "Show controls"; binding <=> root.show-help; }
@@ -655,7 +659,9 @@ ShortcutCapture { ui-scale: root.ui-scale; label: "Next frag (1s early)"; bindin
 ShortcutCapture { ui-scale: root.ui-scale; label: "Pause / resume"; binding <=> root.pause-resume; }Rectangle { vertical-stretch: 1; } }
 }
 Tf2Panel { horizontal-stretch: 1; background: Tf2Colors.panel-dark;
- VerticalLayout { padding: 6px * root.ui-scale;  spacing: (1px * root.ui-scale); Tf2Heading { height: (18px * root.ui-scale); font-size: (12px * root.ui-scale); text: "Camera & capture"; }
+ VerticalLayout {
+ Rectangle { vertical-stretch: 1; }
+ padding: 6px * root.ui-scale;  spacing: (1px * root.ui-scale); Tf2Heading { height: (18px * root.ui-scale); font-size: (12px * root.ui-scale); text: "Camera & capture"; }
 ShortcutCapture { ui-scale: root.ui-scale; label: "Enter MIRV camera"; binding <=> root.enter-camera; }
 ShortcutCapture { ui-scale: root.ui-scale; label: "Add keyframe"; binding <=> root.add-keyframe; }
 ShortcutCapture { ui-scale: root.ui-scale; label: "Play campath"; binding <=> root.play-campath; }
@@ -664,7 +670,9 @@ ShortcutCapture { ui-scale: root.ui-scale; label: "Start recording"; binding <=>
 ShortcutCapture { ui-scale: root.ui-scale; label: "Stop recording"; binding <=> root.stop-recording; }Rectangle { vertical-stretch: 1; } }
 }
 Tf2Panel { horizontal-stretch: 1; background: Tf2Colors.panel-dark;
- VerticalLayout { padding: 6px * root.ui-scale;  spacing: (1px * root.ui-scale); Tf2Heading { height: (18px * root.ui-scale); font-size: (12px * root.ui-scale); text: "Campath & Director"; }
+ VerticalLayout {
+ Rectangle { vertical-stretch: 1; }
+ padding: 6px * root.ui-scale;  spacing: (1px * root.ui-scale); Tf2Heading { height: (18px * root.ui-scale); font-size: (12px * root.ui-scale); text: "Campath & Director"; }
 ShortcutCapture { ui-scale: root.ui-scale; label: "Print keyframes"; binding <=> root.print-keyframes; }
 ShortcutCapture { ui-scale: root.ui-scale; label: "Save campath"; binding <=> root.save-campath; }
 ShortcutCapture { ui-scale: root.ui-scale; label: "Load campath XML"; binding <=> root.load-campath; }
@@ -1196,7 +1204,9 @@ export component AppWindow inherits Window {
                         HorizontalLayout {
                             spacing: (18px * root.guided-scale);
                             Tf2Panel { horizontal-stretch: 1; background: Tf2Colors.panel-dark;
- VerticalLayout { padding: 8px * root.guided-scale;
+ VerticalLayout {
+ Rectangle { vertical-stretch: 1; }
+ padding: 8px * root.guided-scale;
 
                                 spacing: (6px * root.guided-scale);
                                 Tf2Heading {
@@ -1267,7 +1277,9 @@ export component AppWindow inherits Window {
                             }
 }
                             Tf2Panel { horizontal-stretch: 1; background: Tf2Colors.panel-dark;
- VerticalLayout { padding: 8px * root.guided-scale;
+ VerticalLayout {
+ Rectangle { vertical-stretch: 1; }
+ padding: 8px * root.guided-scale;
 
                                 spacing: (6px * root.guided-scale);
                                 Tf2Heading {
@@ -1359,7 +1371,9 @@ export component AppWindow inherits Window {
                         HorizontalLayout {
                             spacing: (18px * root.guided-scale);
                             Tf2Panel { horizontal-stretch: 1; background: Tf2Colors.panel-dark;
- VerticalLayout { padding: 8px * root.guided-scale;
+ VerticalLayout {
+ Rectangle { vertical-stretch: 1; }
+ padding: 8px * root.guided-scale;
 
                                 spacing: (6px * root.guided-scale);
                                 Tf2Heading {
@@ -1407,7 +1421,9 @@ export component AppWindow inherits Window {
                             }
 }
                             Tf2Panel { horizontal-stretch: 1; background: Tf2Colors.panel-dark;
- VerticalLayout { padding: 8px * root.guided-scale;
+ VerticalLayout {
+ Rectangle { vertical-stretch: 1; }
+ padding: 8px * root.guided-scale;
 
                                 spacing: (6px * root.guided-scale);
                                 Tf2Heading {
@@ -1466,6 +1482,8 @@ export component AppWindow inherits Window {
                         heading: "Encoding";
                         description: "Adjust compression and editing compatibility.";
                         VerticalLayout {
+ Rectangle { vertical-stretch: 1; }
+
                             spacing: (8px * root.guided-scale);
                             if root.recording-format == "MP4 - Standard" || root.recording-format == "MP4 - Compatible" : VerticalLayout {
                                 spacing: (8px * root.guided-scale);
@@ -1486,6 +1504,8 @@ export component AppWindow inherits Window {
                                 HorizontalLayout {
                                     spacing: (18px * root.guided-scale);
                                     if root.mp4-compatibility == "Custom" : VerticalLayout {
+ Rectangle { vertical-stretch: 1; }
+
                                         horizontal-stretch: 1;
                                         spacing: (6px * root.guided-scale);
                                         Tf2Heading {
@@ -1564,6 +1584,8 @@ export component AppWindow inherits Window {
                                         }
                                     }
                                     VerticalLayout {
+ Rectangle { vertical-stretch: 1; }
+
                                         horizontal-stretch: 1;
                                         spacing: (6px * root.guided-scale);
                                         Tf2Heading {
@@ -1607,6 +1629,8 @@ export component AppWindow inherits Window {
                                 }
                             }
                             if root.recording-format == "AVI - Raw" : VerticalLayout {
+ Rectangle { vertical-stretch: 1; }
+
                                 spacing: (8px * root.guided-scale);
                                 SettingField { ui-scale: root.guided-scale;
                                     label: "AVI codec";
@@ -1672,7 +1696,9 @@ export component AppWindow inherits Window {
                         HorizontalLayout {
                             spacing: (16px * root.guided-scale);
                             Tf2Panel { horizontal-stretch: 1; background: Tf2Colors.panel-dark;
- VerticalLayout { padding: 8px * root.guided-scale;
+ VerticalLayout {
+ Rectangle { vertical-stretch: 1; }
+ padding: 8px * root.guided-scale;
 
                                 spacing: (6px * root.guided-scale);
                                 Tf2Heading {
@@ -1696,7 +1722,9 @@ export component AppWindow inherits Window {
                             }
 }
                             Tf2Panel { horizontal-stretch: 1; background: Tf2Colors.panel-dark;
- VerticalLayout { padding: 8px * root.guided-scale;
+ VerticalLayout {
+ Rectangle { vertical-stretch: 1; }
+ padding: 8px * root.guided-scale;
 
                                 spacing: (6px * root.guided-scale);
                                 Tf2Heading {
@@ -1735,7 +1763,9 @@ export component AppWindow inherits Window {
                             }
 }
                             Tf2Panel { horizontal-stretch: 1; background: Tf2Colors.panel-dark;
- VerticalLayout { padding: 8px * root.guided-scale;
+ VerticalLayout {
+ Rectangle { vertical-stretch: 1; }
+ padding: 8px * root.guided-scale;
 
                                 spacing: (6px * root.guided-scale);
                                 Tf2Heading {

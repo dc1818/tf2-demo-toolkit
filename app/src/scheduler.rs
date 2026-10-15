@@ -37,7 +37,7 @@ impl PerformanceProfile {
     }
 
     pub fn label(self) -> &'static str {
-        match self { Self::Low => "Low", Self::Medium => "Medium", Self::High => "High" }
+        match self { Self::Low => "Low", Self::Medium => "Normal", Self::High => "High" }
     }
 
     fn scale(self, maximum: usize) -> usize {
@@ -78,6 +78,13 @@ impl ResourcePlan {
         let logical = thread::available_parallelism().map(|value| value.get()).unwrap_or(1);
         let total = system.total_memory();
         let available = system.available_memory();
+        Self::from_resources(jobs, performance_profile, logical, total, available)
+    }
+
+    pub(crate) fn from_resources(
+        jobs: &[DemoJob], performance_profile: PerformanceProfile,
+        logical: usize, total: u64, available: u64,
+    ) -> Self {
         // Leave enough room for TF2, the UI, and the operating system, but do
         // not reserve so much that a capable machine is artificially held to
         // one or two workers.  The live gate below rechecks this before every
@@ -452,4 +459,42 @@ fn percentile(mut values: Vec<u64>, percentile: f64) -> u64 {
     values.sort_unstable();
     let index = ((values.len() - 1) as f64 * percentile).ceil() as usize;
     values[index.min(values.len() - 1)]
+}
+
+#[cfg(test)]
+mod plan_tests {
+    use super::*;
+    fn jobs(count: usize) -> Vec<DemoJob> {
+        (0..count).map(|order| DemoJob { order, demo_path: Default::default(),
+            export_directory: Default::default(), source_bytes: 24_834_133, parsed_bytes: 0 }).collect()
+    }
+    #[test]
+    fn profiles_scale_workers_with_workload_and_hardware() {
+        for count in [1, 4, 32] {
+            let jobs = jobs(count);
+            let plans: Vec<_> = [PerformanceProfile::Low, PerformanceProfile::Medium, PerformanceProfile::High]
+                .iter().map(|&p| ResourcePlan::from_resources(&jobs, p, 16, 32*GIB, 24*GIB)).collect();
+            for pair in plans.windows(2) {
+                assert!(pair[0].parse_worker_ceiling <= pair[1].parse_worker_ceiling);
+                assert!(pair[0].analysis_worker_ceiling <= pair[1].analysis_worker_ceiling);
+            }
+            assert!(plans[2].parse_worker_ceiling <= count);
+            assert!(plans[2].analysis_job_ceiling <= count);
+            if count == 1 {
+                assert!(plans.iter().all(|p| p.parse_worker_ceiling == 1));
+                assert!(plans[2].analysis_worker_ceiling > 1);
+            }
+        }
+    }
+    #[test]
+    fn memory_and_cpu_still_limit_high_performance() {
+        let jobs = jobs(64);
+        let ample = ResourcePlan::from_resources(&jobs, PerformanceProfile::High, 16, 32*GIB, 24*GIB);
+        let constrained = ResourcePlan::from_resources(&jobs, PerformanceProfile::High, 16, 32*GIB, 3*GIB);
+        assert!(constrained.parse_worker_ceiling < ample.parse_worker_ceiling);
+        assert!(constrained.analysis_job_ceiling < ample.analysis_job_ceiling);
+        let single_cpu = ResourcePlan::from_resources(&jobs, PerformanceProfile::High, 1, 32*GIB, 24*GIB);
+        assert_eq!(single_cpu.parse_worker_ceiling, 1);
+        assert_eq!(single_cpu.analysis_worker_ceiling, 1);
+    }
 }

@@ -74,7 +74,7 @@ impl BatchPreflight {
     pub fn summary(&self) -> String {
         let status = if self.has_enough_space() { "PASS" } else { "BLOCKED — insufficient free space" };
         format!(
-            "Pre-flight estimate ({status})\n{} demo(s), {} source input\nEstimated time: {} parsing + {} analysis = {} total\nEstimated export: {} parsed data + {} analysis data = {}\nRequired free space with 20% safety headroom: {}\nAvailable on {}: {}\n{} performance: up to {} parser workers and {} analyzer threads\nTiming basis: {}",
+            "Pre-flight estimate ({status})\n{} demo(s), {} source input\nEstimated time: {} parsing + {} analysis = {} total\nEstimated export: {} parsed data + {} analysis data = {}\nRequired free space with 20% safety headroom: {}\nAvailable on {}: {}\n{} performance: up to {} parser workers and {} analyzer threads\nTiming basis: {}\nParser workers process separate demos; analysis threads can cooperate on one demo. Actual time depends on live CPU, memory and disk load.",
             self.demo_count,
             format_bytes(self.input_bytes as f64),
             format_duration(self.estimated_parse_seconds),
@@ -90,7 +90,7 @@ impl BatchPreflight {
             self.plan.parse_worker_ceiling,
             self.plan.analysis_worker_ceiling,
             if self.history_samples > 0 {
-                format!("{} successful same-machine run(s)", self.history_samples)
+                format!("{} successful same-machine run(s), shared across modes and normalized by worker count", self.history_samples)
             } else {
                 "supplied benchmark defaults; this computer will self-calibrate after successful runs".into()
             },
@@ -252,19 +252,9 @@ fn estimate_batch_preflight_from_jobs(
     if input_bytes == 0 {
         bail!("the selected demos are empty");
     }
-    let mut matching_history = timing_history()
-        .into_iter()
-        .filter(|sample| {
-            sample.machine == machine_signature(&plan)
-                && sample.performance_profile == plan.performance_profile.label()
-                && sample.input_bytes > 0
-                && sample.parse_output_bytes > 0
-        })
-        .collect::<Vec<_>>();
-    if matching_history.len() > 20 {
-        let excess = matching_history.len() - 20;
-        matching_history.drain(..excess);
-    }
+    // Every mode must use the same machine baseline. Profile-specific histories
+    // compare different past workloads and can make High appear slower than Low.
+    let matching_history = matching_timing_history(timing_history(), &plan);
     let observed_ratios = matching_history
         .iter()
         .map(|sample| sample.parse_output_bytes as f64 / sample.input_bytes as f64)
@@ -278,24 +268,7 @@ fn estimate_batch_preflight_from_jobs(
     let required_free_bytes = estimated_total_output_bytes.saturating_add(safety_headroom_bytes);
     let disk = disk_space_for(output_parent)?;
 
-    let parse_rates = matching_history.iter().filter_map(|sample| {
-        let gib = sample.input_bytes as f64 / GIB;
-        (gib > 0.0 && sample.parse_wall_seconds > 0.0).then(|| {
-            sample.parse_wall_seconds * effective_parallelism(sample.parse_workers, 0.82) / gib
-        })
-    }).collect::<Vec<_>>();
-    let analysis_rates = matching_history.iter().filter_map(|sample| {
-        let gib = sample.parse_output_bytes as f64 / GIB;
-        (gib > 0.0 && sample.analysis_wall_seconds > 0.0).then(|| {
-            sample.analysis_wall_seconds * effective_parallelism(sample.analysis_threads, 0.70) / gib
-        })
-    }).collect::<Vec<_>>();
-    let parse_rate = median_f64(&parse_rates).unwrap_or(DEFAULT_PARSE_WORKER_SECONDS_PER_GIB);
-    let analysis_rate = median_f64(&analysis_rates).unwrap_or(DEFAULT_ANALYSIS_THREAD_SECONDS_PER_GIB);
-    let parse_seconds = input_bytes as f64 / GIB * parse_rate
-        / effective_parallelism(plan.parse_worker_ceiling, 0.82);
-    let analysis_seconds = estimated_parse_bytes as f64 / GIB * analysis_rate
-        / effective_parallelism(plan.analysis_worker_ceiling, 0.70);
+    let (parse_seconds, analysis_seconds) = calibrated_timing(jobs, estimated_parse_bytes, &plan, &matching_history);
 
     Ok(BatchPreflight {
         demo_count: jobs.len(),
@@ -312,6 +285,42 @@ fn estimate_batch_preflight_from_jobs(
         history_samples: matching_history.len(),
         plan,
     })
+}
+
+fn matching_timing_history(history: Vec<TimingSample>, plan: &ResourcePlan) -> Vec<TimingSample> {
+    let signature = machine_signature(plan);
+    let mut matching: Vec<_> = history.into_iter().filter(|sample| {
+        sample.machine == signature && sample.input_bytes > 0 && sample.parse_output_bytes > 0
+            && sample.parse_wall_seconds.is_finite() && sample.parse_wall_seconds > 0.0
+            && sample.analysis_wall_seconds.is_finite() && sample.analysis_wall_seconds > 0.0
+    }).collect();
+    if matching.len() > 20 { let excess = matching.len() - 20; matching.drain(..excess); }
+    matching
+}
+
+fn calibrated_timing(jobs: &[DemoJob], estimated_parse_bytes: u64, plan: &ResourcePlan, history: &[TimingSample]) -> (f64, f64) {
+    let input_bytes = jobs.iter().map(|job| job.source_bytes).sum::<u64>();
+    let parse_rates = history.iter().filter_map(|sample| {
+        let gib = sample.input_bytes as f64 / GIB;
+        (gib > 0.0 && sample.parse_wall_seconds > 0.0).then(|| {
+            sample.parse_wall_seconds * effective_parallelism(sample.parse_workers, 0.82) / gib
+        })
+    }).collect::<Vec<_>>();
+    let analysis_rates = history.iter().filter_map(|sample| {
+        let gib = sample.parse_output_bytes as f64 / GIB;
+        (gib > 0.0 && sample.analysis_wall_seconds > 0.0).then(|| {
+            sample.analysis_wall_seconds * effective_parallelism(sample.analysis_threads, 0.70) / gib
+        })
+    }).collect::<Vec<_>>();
+    let parse_rate = median_f64(&parse_rates).unwrap_or(DEFAULT_PARSE_WORKER_SECONDS_PER_GIB);
+    let analysis_rate = median_f64(&analysis_rates).unwrap_or(DEFAULT_ANALYSIS_THREAD_SECONDS_PER_GIB);
+    // A parser job is sequential: idle workers cannot split the largest demo.
+    let largest = jobs.iter().map(|job| job.source_bytes).max().unwrap_or(0) as f64;
+    let parse_seconds = (input_bytes as f64 / effective_parallelism(plan.parse_worker_ceiling, 0.82))
+        .max(largest) / GIB * parse_rate;
+    let analysis_seconds = estimated_parse_bytes as f64 / GIB * analysis_rate
+        / effective_parallelism(plan.analysis_worker_ceiling, 0.70);
+    (parse_seconds, analysis_seconds)
 }
 
 pub fn run_batch(
@@ -828,6 +837,51 @@ fn sanitize(value: &str) -> String {
 #[cfg(test)]
 mod preflight_tests {
     use super::*;
+
+    fn demo_jobs(sizes: &[u64]) -> Vec<DemoJob> {
+        sizes.iter().enumerate().map(|(order, &source_bytes)| DemoJob {
+            order, demo_path: PathBuf::new(), export_directory: PathBuf::new(), source_bytes, parsed_bytes: 0,
+        }).collect()
+    }
+
+    #[test]
+    fn same_demo_estimate_does_not_reverse_modes_with_different_history() {
+        // Byte size of the uploaded cp_freaky_fair demo; no demo content needed
+        // because preflight estimates only inspect file sizes, hardware and history.
+        let jobs = demo_jobs(&[24_834_133]);
+        let profiles = [PerformanceProfile::Low, PerformanceProfile::Medium, PerformanceProfile::High];
+        let plans: Vec<_> = profiles.iter().map(|&p| ResourcePlan::from_resources(&jobs, p, 16, 32*(GIB as u64), 24*(GIB as u64))).collect();
+        let output_bytes = (24_834_133.0 * DEFAULT_PARSE_EXPANSION_RATIO) as u64;
+        let samples: Vec<_> = plans.iter().zip([3.0, 5.0, 8.0]).map(|(p, seconds)| TimingSample {
+            machine: machine_signature(p), performance_profile: p.performance_profile.label().into(),
+            input_bytes: 24_834_133, parse_output_bytes: output_bytes, parse_workers: 1,
+            analysis_threads: p.analysis_worker_ceiling, parse_wall_seconds: seconds, analysis_wall_seconds: seconds/2.0,
+        }).collect();
+        let times: Vec<_> = plans.iter().map(|p| {
+            let history = matching_timing_history(samples.clone(), p);
+            assert_eq!(history.len(), 3);
+            calibrated_timing(&jobs, output_bytes, p, &history)
+        }).collect();
+        for pair in times.windows(2) {
+            assert_eq!(pair[0].0, pair[1].0); // one parser job in every mode
+            assert!(pair[1].1 <= pair[0].1);
+        }
+    }
+
+    #[test]
+    fn batch_estimate_respects_largest_sequential_parser_job() {
+        let jobs = demo_jobs(&[GIB as u64, 1, 1, 1, 1, 1, 1, 1]);
+        let plan = ResourcePlan::from_resources(&jobs, PerformanceProfile::High, 16, 32*(GIB as u64), 24*(GIB as u64));
+        let (parse, _) = calibrated_timing(&jobs, 32*(GIB as u64), &plan, &[]);
+        assert!(parse >= DEFAULT_PARSE_WORKER_SECONDS_PER_GIB);
+        let balanced = demo_jobs(&[GIB as u64; 8]);
+        let times: Vec<_> = [PerformanceProfile::Low, PerformanceProfile::Medium, PerformanceProfile::High].iter().map(|&p| {
+            let plan = ResourcePlan::from_resources(&balanced, p, 16, 32*(GIB as u64), 24*(GIB as u64));
+            calibrated_timing(&balanced, 256*(GIB as u64), &plan, &[])
+        }).collect();
+        assert!(times[2].0 < times[1].0 && times[1].0 < times[0].0);
+        assert!(times[2].1 < times[1].1 && times[1].1 < times[0].1);
+    }
 
     #[test]
     fn progress_and_eta_follow_completed_bytes_not_demo_count() {
