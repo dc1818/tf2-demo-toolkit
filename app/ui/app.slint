@@ -55,7 +55,7 @@ component DemoList inherits Rectangle {
         for item[index] in root.items : Tf2Body {
             x: 6px * root.ui-scale; y: index * 25px * root.ui-scale;
             width: demo-scroll.visible-width - 12px * root.ui-scale; height: 25px * root.ui-scale;
-            text: item; font-size: 13px * root.ui-scale; overflow: elide;
+            text: (index + 1) + ". " + item; font-size: 13px * root.ui-scale; overflow: elide;
         }
     }
 }
@@ -919,7 +919,7 @@ export component AppWindow inherits Window {
     changed performance-profile => { root.refresh-parse-estimate(); }
 
     private property <float> guided-scale: self.width >= 1250px && (self.height >= 540px || (root.selected-page == 0 && root.parse-step == 0 && root.imported-demo-count == 0)) ? 1.2 : 1;
-    out property <int> preferred-guided-height: root.selected-page == 0 ? (root.parse-step == 2 && !root.parse-started ? 524 : 580) : root.selected-page == 2 ? (root.recording-settings-section == 1 ? 480 : root.recording-settings-section == 3 ? 520 : root.recording-settings-section == 2 ? ((root.mp4-compatibility == "Custom" && (root.recording-format == "MP4 - Standard" || root.recording-format == "MP4 - Compatible")) ? 560 : 500) : 540) : 600;
+    out property <int> preferred-guided-height: root.selected-page == 0 ? 580 : root.selected-page == 2 ? (root.recording-settings-section == 1 ? 480 : root.recording-settings-section == 3 ? 520 : root.recording-settings-section == 2 ? ((root.mp4-compatibility == "Custom" && (root.recording-format == "MP4 - Standard" || root.recording-format == "MP4 - Compatible")) ? 560 : 500) : 540) : 600;
     changed preferred-guided-height => { root.page-layout-changed(root.selected-page); }
     private property <bool> parse-short: self.height < 760px;
     private property <bool> compact: self.width <= 1220px || self.height <= 700px;
@@ -968,12 +968,12 @@ export component AppWindow inherits Window {
                         VerticalLayout {
                             padding: (10px * root.guided-scale); spacing: (6px * root.guided-scale);
                             Rectangle { vertical-stretch: 1; }
-                            Tf2Heading { height: (25px * root.guided-scale); text: root.demo-drop-active ? "RELEASE TO ADD DEMOS" : "DROP DEMOS OR A FOLDER HERE"; font-size: (20px * root.guided-scale); horizontal-alignment: center; }
+                            Tf2Heading { height: (25px * root.guided-scale); text: root.demo-drop-active ? "RELEASE TO ADD DEMOS" : "DROP DEMOS OR A DEMOS FOLDER HERE"; font-size: (20px * root.guided-scale); horizontal-alignment: center; }
                             Tf2Body { height: (18px * root.guided-scale); text: root.importing-demos ? "Scanning folders..." : "Folders include demos in subfolders."; color: Tf2Colors.muted; font-size: (12px * root.guided-scale); horizontal-alignment: center; }
                             HorizontalLayout { height: (32px * root.guided-scale); spacing: (8px * root.guided-scale);
                                 Rectangle { horizontal-stretch: 1; }
                                 Tf2Button { width: (174px * root.guided-scale); height: (32px * root.guided-scale); label-font-size: (13px * root.guided-scale); text: "Choose demos"; enabled: !root.busy && !root.importing-demos; tone: Tf2Colors.red; hover-tone: Tf2Colors.red-hover; pressed-tone: Tf2Colors.red-pressed; clicked => { root.choose-demos(); } }
-                                Tf2Button { width: (174px * root.guided-scale); height: (32px * root.guided-scale); label-font-size: (13px * root.guided-scale); text: "Choose folder"; enabled: !root.busy && !root.importing-demos; tone: Tf2Colors.blu; hover-tone: Tf2Colors.blu-hover; pressed-tone: Tf2Colors.blu-pressed; clicked => { root.choose-demo-folder(); } }
+                                Tf2Button { width: (174px * root.guided-scale); height: (32px * root.guided-scale); label-font-size: (13px * root.guided-scale); text: "Choose demos folder"; enabled: !root.busy && !root.importing-demos; tone: Tf2Colors.blu; hover-tone: Tf2Colors.blu-hover; pressed-tone: Tf2Colors.blu-pressed; clicked => { root.choose-demo-folder(); } }
                                 Rectangle { horizontal-stretch: 1; }
                             }
                             Rectangle { vertical-stretch: 1; }
@@ -997,7 +997,7 @@ export component AppWindow inherits Window {
                                 Tf2LineEdit { text-size: 14px * root.guided-scale; height: (30px * root.guided-scale); text <=> root.export-directory; placeholder: "Choose an output folder"; edited(value) => { root.parse-options-ready = false; } focus-lost => { root.commit-export-location(); } }
                                 Tf2Button { width: (84px * root.guided-scale); height: (30px * root.guided-scale); label-font-size: (12px * root.guided-scale); text: "Browse"; clicked => { root.choose-export-directory(); } }
                             }
-                            Tf2CheckBox { height: (27px * root.guided-scale); label-font-size: (12px * root.guided-scale); text: "Group in Demo Toolkit Exports subfolder"; checked: root.group-parse-exports; toggled(value) => { root.toggle-export-group(value); } }
+                            Tf2CheckBox { height: (27px * root.guided-scale); label-font-size: (12px * root.guided-scale); text: "Save parses inside a Demo Toolkit Exports folder"; checked: root.group-parse-exports; toggled(value) => { root.toggle-export-group(value); } }
                         }
                     }
                     ParseOptionCard { ui-scale: root.guided-scale;
