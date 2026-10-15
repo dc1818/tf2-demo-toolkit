@@ -237,6 +237,7 @@ pub struct DemoJob {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(default)]
 pub struct AppSettings {
+    pub last_demo_directory: PathBuf,
     pub output_directory: PathBuf,
     pub item_schema: PathBuf,
     pub tf2_executable: PathBuf,
@@ -441,7 +442,7 @@ impl MirvShortcuts {
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
-            output_directory: PathBuf::new(), item_schema: PathBuf::new(), tf2_executable: PathBuf::new(),
+            last_demo_directory: PathBuf::new(), output_directory: PathBuf::new(), item_schema: PathBuf::new(), tf2_executable: PathBuf::new(),
             hlae_executable: PathBuf::new(), ffmpeg_executable: PathBuf::new(), recording_output_directory: PathBuf::new(), manual_hlae_launch_options: String::new(), performance_profile: "Medium".into(),
             lead_seconds: 8, outro_seconds: 3,
             capture_fps: 120, jpg_quality: 90, recording_format: "MP4 - Standard".into(), resolution: "2560x1440".into(),

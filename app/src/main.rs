@@ -2,6 +2,7 @@
 #![recursion_limit = "256"]
 
 mod analyzer;
+mod item_schema;
 mod batch;
 mod models;
 mod preflight;
@@ -1370,12 +1371,23 @@ fn bind_demo_file_drop(ui: &AppWindow, state: &Arc<Mutex<State>>) {
     });
 }
 
+fn refresh_item_schema_validation(ui: &AppWindow) {
+    let text = ui.get_item_schema().to_string();
+    let result = item_schema::validate(Path::new(text.trim()));
+    ui.set_item_schema_available(result.is_ok());
+    ui.set_item_schema_message(if text.trim().is_empty() {
+        "No item schema provided. Optional; detect or choose a file.".into()
+    } else {
+        result.err().unwrap_or_else(|| "Valid TF2 item schema selected.".into()).into()
+    });
+}
+
 fn bind_file_callbacks(ui: &AppWindow, state: &Arc<Mutex<State>>) {
-    ui.set_item_schema_available(PathBuf::from(ui.get_item_schema().to_string()).is_file());
+    refresh_item_schema_validation(ui);
     let weak = ui.as_weak();
     ui.on_validate_item_schema(move || {
         if let Some(ui) = weak.upgrade() {
-            ui.set_item_schema_available(PathBuf::from(ui.get_item_schema().to_string()).is_file());
+            refresh_item_schema_validation(&ui);
         }
     });
     let weak = ui.as_weak();
@@ -1414,7 +1426,7 @@ fn bind_file_callbacks(ui: &AppWindow, state: &Arc<Mutex<State>>) {
         match discover_item_schema(&demos, tf2.as_deref()) {
             Some(path) => {
                 ui.set_item_schema(path.display().to_string().into());
-                ui.set_item_schema_available(true);
+                refresh_item_schema_validation(&ui);
             }
             None => show_parse_help(&ui, "No item schema found", "Checked the selected demo folders and detected TF2 installation. You can use ? How to find to select items_game.txt manually, or continue without it. The item schema is optional.".into()),
         }
@@ -1422,7 +1434,7 @@ fn bind_file_callbacks(ui: &AppWindow, state: &Arc<Mutex<State>>) {
     let weak = ui.as_weak();
     let demos_state = state.clone();
     ui.on_choose_demos(move || {
-        let files = rfd::FileDialog::new()
+        let files = demo_file_dialog(&demos_state)
             .add_filter("TF2 demos", &["dem"])
             .pick_files()
             .unwrap_or_default();
@@ -1430,6 +1442,9 @@ fn bind_file_callbacks(ui: &AppWindow, state: &Arc<Mutex<State>>) {
             return;
         }
         if let Some(ui) = weak.upgrade() {
+            if let Some(folder) = files.first().and_then(|file| file.parent()) {
+                remember_demo_directory(&demos_state, folder);
+            }
             apply_demo_selection(&ui, &demos_state, files);
         }
     });
@@ -1438,7 +1453,7 @@ fn bind_file_callbacks(ui: &AppWindow, state: &Arc<Mutex<State>>) {
     ui.on_choose_demo_folder(move || {
         let Some(ui) = weak.upgrade() else { return };
         if ui.get_busy() || ui.get_importing_demos() { return; }
-        let Some(folder) = rfd::FileDialog::new().pick_folder() else { return };
+        let Some(folder) = demo_file_dialog(&folder_state).pick_folder() else { return };
         import_demo_folder(&ui, &folder_state, folder, false);
     });
     let weak = ui.as_weak();
@@ -1488,7 +1503,34 @@ fn show_parse_help(ui: &AppWindow, title: &str, body: String) {
     ui.set_help_dialog_open(true);
 }
 
+fn demo_file_dialog(state: &Arc<Mutex<State>>) -> rfd::FileDialog {
+    let remembered = state.lock().settings.last_demo_directory.clone();
+    let defaults = if cfg!(target_os = "windows") {
+        vec![PathBuf::from(r"C:\Program Files (x86)\Steam\steamapps\common\Team Fortress 2\tf\demos"),
+             PathBuf::from(r"C:\Program Files\Steam\steamapps\common\Team Fortress 2\tf\demos")]
+    } else { Vec::new() };
+    let mut dialog = rfd::FileDialog::new();
+    if let Some(folder) = demo_picker_directory(&remembered, &defaults) {
+        dialog = dialog.set_directory(folder);
+    }
+    dialog
+}
+
+fn demo_picker_directory(remembered: &Path, defaults: &[PathBuf]) -> Option<PathBuf> {
+    std::iter::once(remembered).chain(defaults.iter().map(PathBuf::as_path))
+        .find(|path| !path.as_os_str().is_empty() && path.is_dir()).map(Path::to_path_buf)
+}
+
+fn remember_demo_directory(state: &Arc<Mutex<State>>, folder: &Path) {
+    if folder.is_dir() {
+        let mut current = state.lock();
+        current.settings.last_demo_directory = folder.to_path_buf();
+        let _ = current.settings.save();
+    }
+}
+
 fn import_demo_folder(ui: &AppWindow, state: &Arc<Mutex<State>>, folder: PathBuf, append: bool) {
+    remember_demo_directory(state, &folder);
     ui.set_importing_demos(true);
     ui.set_status_text("Scanning folder for .dem files...".into());
     let weak = ui.as_weak();
@@ -1536,7 +1578,7 @@ fn apply_demo_selection(ui: &AppWindow, state: &Arc<Mutex<State>>, mut files: Ve
             .then(|| current.settings.tf2_executable.clone())
             .or_else(|| discover_tf2_executable(&files));
         if let Some(path) = &tf2 { current.settings.tf2_executable = path.clone(); }
-        let schema = current.settings.item_schema.is_file()
+        let schema = item_schema::validate(&current.settings.item_schema).is_ok()
             .then(|| current.settings.item_schema.clone())
             .or_else(|| discover_item_schema(&files, tf2.as_deref()));
         if let Some(path) = &schema { current.settings.item_schema = path.clone(); }
@@ -1584,7 +1626,8 @@ fn bind_batch_callbacks(ui: &AppWindow, state: &Arc<Mutex<State>>) {
         }
         let output = PathBuf::from(ui.get_export_directory().to_string());
         let schema_text = ui.get_item_schema().to_string();
-        let mut schema = (!schema_text.trim().is_empty()).then(|| PathBuf::from(schema_text)).filter(|path| path.is_file());
+        let mut schema = (!schema_text.trim().is_empty()).then(|| PathBuf::from(schema_text.trim())).filter(|path| item_schema::validate(path).is_ok());
+        refresh_item_schema_validation(&ui);
         if schema.is_none() {
             let tf2 = PathBuf::from(ui.get_tf2_path().to_string());
             schema = discover_item_schema(&demos, tf2.is_file().then_some(tf2.as_path()));
@@ -3032,7 +3075,7 @@ fn discover_item_schema(demos: &[PathBuf], tf2: Option<&Path>) -> Option<PathBuf
                 root.join("tf/scripts/items/items_game.txt"),
             ]
         })
-        .find(|path| path.is_file())
+        .find(|path| item_schema::validate(path).is_ok())
 }
 
 fn open_path(path: &Path) -> Result<()> {
@@ -3049,6 +3092,20 @@ fn open_path(path: &Path) -> Result<()> {
 mod detail_tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn demo_picker_prefers_remembered_directory_then_existing_default() {
+        let root = std::env::temp_dir().join(format!("demo-picker-{}", std::process::id()));
+        let saved = root.join("saved");
+        let default = root.join("default");
+        fs::create_dir_all(&saved).unwrap();
+        fs::create_dir_all(&default).unwrap();
+        assert_eq!(demo_picker_directory(&saved, &[default.clone()]), Some(saved.clone()));
+        assert_eq!(demo_picker_directory(&root.join("missing"), &[default.clone()]), Some(default.clone()));
+        assert_eq!(demo_picker_directory(Path::new(""), &[default]), Some(root.join("default")));
+        assert_eq!(demo_picker_directory(&root.join("missing"), &[]), None);
+        fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn demo_folder_scan_handles_nested_files_case_and_empty_folders() {

@@ -714,6 +714,7 @@ export component AppWindow inherits Window {
     in-out property <string> export-directory;
     in-out property <string> item-schema;
     in-out property <bool> item-schema-available: false;
+    in-out property <string> item-schema-message: "No item schema provided. Optional; detect or choose a file.";
     in-out property <string> parse-estimate-overview: "Calculating time and space estimates...";
     in-out property <string> status-text: "Ready";
     in-out property <string> recording-save-status;
@@ -994,7 +995,7 @@ export component AppWindow inherits Window {
                     }
                     ParseOptionCard { ui-scale: root.guided-scale;
                         vertical-stretch: 1.2;
-                        number: "2"; heading: "Item schema (optional)"; description: "Adds weapon names. You can continue without it."; dense: root.parse-short;
+                        number: "2"; heading: "Item schema (optional)"; description: root.item-schema-message; dense: root.parse-short;
                         VerticalLayout { spacing: (5px * root.guided-scale);
                             HorizontalLayout { height: (30px * root.guided-scale); spacing: (8px * root.guided-scale);
                                 Tf2LineEdit { text-size: 14px * root.guided-scale; height: (30px * root.guided-scale); text <=> root.item-schema; placeholder: "Optional items_game.txt"; }
