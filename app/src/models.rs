@@ -239,6 +239,7 @@ pub struct DemoJob {
 pub struct AppSettings {
     pub last_demo_directory: PathBuf,
     pub output_directory: PathBuf,
+    pub group_parse_exports: bool,
     pub item_schema: PathBuf,
     pub tf2_executable: PathBuf,
     pub hlae_executable: PathBuf,
@@ -442,7 +443,7 @@ impl MirvShortcuts {
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
-            last_demo_directory: PathBuf::new(), output_directory: PathBuf::new(), item_schema: PathBuf::new(), tf2_executable: PathBuf::new(),
+            last_demo_directory: PathBuf::new(), output_directory: crate::parse_exports::default_location(), group_parse_exports: true, item_schema: PathBuf::new(), tf2_executable: PathBuf::new(),
             hlae_executable: PathBuf::new(), ffmpeg_executable: PathBuf::new(), recording_output_directory: PathBuf::new(), manual_hlae_launch_options: String::new(), performance_profile: "Medium".into(),
             lead_seconds: 8, outro_seconds: 3,
             capture_fps: 120, jpg_quality: 90, recording_format: "MP4 - Standard".into(), resolution: "2560x1440".into(),
@@ -473,6 +474,12 @@ impl AppSettings {
             .ok()
             .and_then(|bytes| serde_json::from_slice(&bytes).ok())
             .unwrap_or_default();
+        if settings.output_directory.as_os_str().is_empty() {
+            settings.output_directory = crate::parse_exports::default_location();
+            if !settings.group_parse_exports { settings.output_directory.pop(); }
+        } else {
+            settings.output_directory = crate::parse_exports::destination(&settings.output_directory, settings.group_parse_exports);
+        }
         settings.normalize_encoding_options();
         settings.normalize_recording_options();
         settings

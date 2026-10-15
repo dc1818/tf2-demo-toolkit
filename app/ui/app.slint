@@ -71,7 +71,7 @@ component ParseOptionCard inherits Tf2Panel {
     }
     Tf2Heading { x: (60px * root.ui-scale); y: (parent.height - (56px * root.ui-scale)) / 2; width: parent.width * 0.40 - (70px * root.ui-scale); height: (22px * root.ui-scale); font-size: root.dense ? (14px * root.ui-scale) : (18px * root.ui-scale); text: root.heading; }
     Tf2Body { x: (60px * root.ui-scale); y: (parent.height - (56px * root.ui-scale)) / 2 + (25px * root.ui-scale); width: parent.width * 0.40 - (70px * root.ui-scale); height: (32px * root.ui-scale); text: root.description; wrap: word-wrap; vertical-alignment: top; color: Tf2Colors.muted; font-size: root.dense ? (12px * root.ui-scale) : (14px * root.ui-scale); }
-    Rectangle { x: parent.width * 0.40; y: (parent.height - self.height) / 2; width: parent.width * 0.60 - (12px * root.ui-scale); height: root.number == "1" ? (30px * root.ui-scale) : (62px * root.ui-scale); @children }
+    Rectangle { x: parent.width * 0.40; y: (parent.height - self.height) / 2; width: parent.width * 0.60 - (12px * root.ui-scale); height: (62px * root.ui-scale); @children }
 }
 
 component RecordingCard inherits Tf2Panel {
@@ -712,6 +712,7 @@ export component AppWindow inherits Window {
     in-out property <bool> importing-demos: false;
     in-out property <bool> demo-drop-active: false;
     in-out property <string> export-directory;
+    in-out property <bool> group-parse-exports: true;
     in-out property <string> item-schema;
     in-out property <bool> item-schema-available: false;
     in-out property <string> item-schema-message: "No item schema provided. Optional; detect or choose a file.";
@@ -840,6 +841,9 @@ export component AppWindow inherits Window {
     in-out property <string> mirv-overlay-panel-toggle: "C";
     in-out property <string> mirv-overlay-interaction-toggle: "F11";
 
+    callback commit-export-location();
+    callback toggle-export-group(bool);
+    callback show-export-help();
     callback choose-demos(); callback choose-demo-folder(); callback review-parse-options(); callback choose-export-directory(); callback choose-item-schema();
     callback show-item-schema-help();
     callback validate-item-schema();
@@ -987,10 +991,13 @@ export component AppWindow inherits Window {
                     width: parent.width; height: parent.height; spacing: (8px * root.guided-scale);
                     ParseOptionCard { ui-scale: root.guided-scale;
                         vertical-stretch: 1;
-                        number: "1"; heading: "Export location"; description: "Parsed data and candidates are saved here."; dense: root.parse-short;
-                        HorizontalLayout { y: (0px * root.guided-scale); height: (30px * root.guided-scale); spacing: (8px * root.guided-scale);
-                            Tf2LineEdit { text-size: 14px * root.guided-scale; height: (30px * root.guided-scale); text <=> root.export-directory; placeholder: "Choose an output folder"; edited(value) => { root.refresh-parse-estimate(); } }
-                            Tf2Button { width: (84px * root.guided-scale); height: (30px * root.guided-scale); label-font-size: (12px * root.guided-scale); text: "Browse"; clicked => { root.choose-export-directory(); } }
+                        number: "1"; heading: "Export location"; description: "Creates a dated DemoToolkit_Parse_ folder here."; dense: root.parse-short;
+                        VerticalLayout { spacing: (5px * root.guided-scale);
+                            HorizontalLayout { height: (30px * root.guided-scale); spacing: (8px * root.guided-scale);
+                                Tf2LineEdit { text-size: 14px * root.guided-scale; height: (30px * root.guided-scale); text <=> root.export-directory; placeholder: "Choose an output folder"; edited(value) => { root.parse-options-ready = false; } focus-lost => { root.commit-export-location(); } }
+                                Tf2Button { width: (84px * root.guided-scale); height: (30px * root.guided-scale); label-font-size: (12px * root.guided-scale); text: "Browse"; clicked => { root.choose-export-directory(); } }
+                            }
+                            Tf2CheckBox { height: (27px * root.guided-scale); label-font-size: (12px * root.guided-scale); text: "Group in Demo Toolkit Exports subfolder"; checked: root.group-parse-exports; toggled(value) => { root.toggle-export-group(value); } }
                         }
                     }
                     ParseOptionCard { ui-scale: root.guided-scale;
@@ -1063,6 +1070,7 @@ export component AppWindow inherits Window {
             HorizontalLayout {
                 height: (36px * root.guided-scale); spacing: (8px * root.guided-scale);
                 if root.parse-step == 0 : Tf2Button { width: (264px * root.guided-scale); height: (36px * root.guided-scale); label-font-size: (13px * root.guided-scale); text: "Load previously parsed export"; enabled: !root.busy && !root.importing-demos; tone: Tf2Colors.gold; hover-tone: Tf2Colors.gold-hover; pressed-tone: Tf2Colors.gold-pressed; clicked => { root.load-export(); } }
+                if root.parse-step == 0 : Tf2Button { width: (root.width < 1000px ? 110px : 148px) * root.guided-scale; height: (36px * root.guided-scale); label-font-size: (12px * root.guided-scale); text: "? Which folder?"; clicked => { root.show-export-help(); } }
                 if root.parse-step > 0 : Tf2Button { width: (90px * root.guided-scale); height: (36px * root.guided-scale); text: "Back"; enabled: !root.busy && !root.importing-demos; clicked => { root.navigate-parse-step(root.parse-step - 1); } }
                 if root.parse-step == 2 && root.busy : Tf2Button { width: (90px * root.guided-scale); height: (36px * root.guided-scale); text: "Cancel"; clicked => { root.cancel-batch(); } }
                 if root.parse-step != 2 : Rectangle { horizontal-stretch: 1; }

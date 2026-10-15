@@ -6,6 +6,7 @@ mod item_schema;
 mod batch;
 mod models;
 mod preflight;
+mod parse_exports;
 mod recording;
 mod scheduler;
 
@@ -961,7 +962,7 @@ fn capture_ui_snapshots(directory: PathBuf) -> Result<()> {
     let ui = AppWindow::new()?;
     ui.set_imported_demo_count(12);
     ui.set_imported_demos(ModelRc::new(VecModel::from((1..=12).map(|n| SharedString::from(format!("cp_process_match_{n:02}.dem"))).collect::<Vec<_>>())));
-    ui.set_export_directory("D:/TF2/Parsed".into());
+    ui.set_export_directory("D:/TF2/Parsed/Demo Toolkit Exports".into());
     ui.set_performance_profile("Medium".into());
     ui.set_parse_options_ready(true);
     ui.set_parse_estimate_overview("Estimated total time: 3m 20s (2m 10s parsing + 1m 10s analysis)\nEstimated export size: 2.1 GiB | Required free space: 2.5 GiB | Available: 120 GiB".into());
@@ -1043,6 +1044,7 @@ fn main() -> Result<()> {
     // disk immediately. All later Recording Settings changes remain autosaved.
     let _ = settings.save();
     ui.set_export_directory(settings.output_directory.display().to_string().into());
+    ui.set_group_parse_exports(settings.group_parse_exports);
     ui.set_item_schema(settings.item_schema.display().to_string().into());
     ui.set_tf2_path(settings.tf2_executable.display().to_string().into());
     ui.set_hlae_path(settings.hlae_executable.display().to_string().into());
@@ -1382,7 +1384,52 @@ fn refresh_item_schema_validation(ui: &AppWindow) {
     });
 }
 
+fn commit_export_location(ui: &AppWindow, state: &Arc<Mutex<State>>) {
+    let path = parse_exports::destination(Path::new(ui.get_export_directory().trim()), ui.get_group_parse_exports());
+    ui.set_export_directory(path.display().to_string().into());
+    let mut current = state.lock();
+    current.settings.output_directory = path;
+    current.settings.group_parse_exports = ui.get_group_parse_exports();
+    if let Err(error) = current.settings.save() {
+        ui.set_status_text(format!("Could not save export preferences: {error}").into());
+    }
+}
+
+fn export_folder_dialog(path: &Path, title: &str) -> rfd::FileDialog {
+    let mut dialog = rfd::FileDialog::new().set_title(title);
+    if let Some(folder) = parse_exports::existing_picker_folder(path) {
+        dialog = dialog.set_directory(folder);
+    }
+    dialog
+}
+
 fn bind_file_callbacks(ui: &AppWindow, state: &Arc<Mutex<State>>) {
+    let weak = ui.as_weak();
+    let output_state = state.clone();
+    ui.on_commit_export_location(move || {
+        if let Some(ui) = weak.upgrade() {
+            commit_export_location(&ui, &output_state);
+            update_batch_preflight(&ui, &output_state);
+        }
+    });
+    let weak = ui.as_weak();
+    let output_state = state.clone();
+    ui.on_toggle_export_group(move |grouped| {
+        if let Some(ui) = weak.upgrade() {
+            let mut path = PathBuf::from(ui.get_export_directory().trim());
+            if !grouped && parse_exports::is_group_folder(&path) { path.pop(); }
+            ui.set_export_directory(path.display().to_string().into());
+            ui.set_group_parse_exports(grouped);
+            commit_export_location(&ui, &output_state);
+            update_batch_preflight(&ui, &output_state);
+        }
+    });
+    let weak = ui.as_weak();
+    ui.on_show_export_help(move || {
+        if let Some(ui) = weak.upgrade() {
+            show_parse_help(&ui, "Which export folder do I select?", "Look for a folder named DemoToolkit_Parse_ followed by a date and time.\n\nExample: DemoToolkit_Parse_20261015_143221\n\nBy default, these folders are inside Demo Toolkit Exports at your chosen location. Open that parent folder, then select the dated parse folder. It contains frag_candidates.ndjson after analysis completes. For a batch, select the top-level dated folder to load all demos.\n\nKeep the whole parse folder together when moving it. Older exports still work, even with their original names.".into());
+        }
+    });
     refresh_item_schema_validation(ui);
     let weak = ui.as_weak();
     ui.on_validate_item_schema(move || {
@@ -1410,6 +1457,7 @@ fn bind_file_callbacks(ui: &AppWindow, state: &Arc<Mutex<State>>) {
         if ui.get_busy() || ui.get_importing_demos() || !(0..=2).contains(&step) { return; }
         if step > 0 && ui.get_imported_demo_count() == 0 { return; }
         if step == 2 {
+            commit_export_location(&ui, &navigation_state);
             update_batch_preflight(&ui, &navigation_state);
             if !ui.get_parse_options_ready() { return; }
         }
@@ -1471,11 +1519,13 @@ fn bind_file_callbacks(ui: &AppWindow, state: &Arc<Mutex<State>>) {
     let weak = ui.as_weak();
     let output_state = state.clone();
     ui.on_choose_export_directory(move || {
-        if let Some(path) = rfd::FileDialog::new().pick_folder() {
-            if let Some(ui) = weak.upgrade() {
-                ui.set_export_directory(path.display().to_string().into());
-                update_batch_preflight(&ui, &output_state);
-            }
+        let Some(ui) = weak.upgrade() else { return };
+        let current = PathBuf::from(ui.get_export_directory().to_string());
+        let title = if ui.get_group_parse_exports() { "Choose location — Demo Toolkit Exports will be created inside" } else { "Choose location for DemoToolkit_Parse_ folders" };
+        if let Some(path) = export_folder_dialog(&current, title).pick_folder() {
+            ui.set_export_directory(path.display().to_string().into());
+            commit_export_location(&ui, &output_state);
+            update_batch_preflight(&ui, &output_state);
         }
     });
     let weak = ui.as_weak();
@@ -1619,6 +1669,7 @@ fn bind_batch_callbacks(ui: &AppWindow, state: &Arc<Mutex<State>>) {
             ui.set_status_text("Choose an export location before parsing.".into());
             return;
         }
+        commit_export_location(&ui, &state_for_start);
         let demos = state_for_start.lock().demos.clone();
         if demos.is_empty() {
             ui.set_status_text("Choose one or more .dem files".into());
@@ -1654,7 +1705,7 @@ fn bind_batch_callbacks(ui: &AppWindow, state: &Arc<Mutex<State>>) {
         }
         let confirmation = rfd::MessageDialog::new()
             .set_title("Parse and Analyze Pre-flight")
-            .set_description(format!("{}\n\nStart parsing and analysis now?", preflight.summary()))
+            .set_description(format!("{}\n\nSave in: {}\nA new DemoToolkit_Parse_<date>_<time> folder will be created.\n\nStart parsing and analysis now?", preflight.summary(), output.display()))
             .set_buttons(rfd::MessageButtons::YesNo)
             .show();
         if confirmation != rfd::MessageDialogResult::Yes {
@@ -1759,8 +1810,13 @@ fn bind_batch_callbacks(ui: &AppWindow, state: &Arc<Mutex<State>>) {
     let weak = ui.as_weak();
     let state_for_load = state.clone();
     ui.on_load_export(move || {
-        let Some(root) = rfd::FileDialog::new().pick_folder() else { return };
-        let path = if root.join("frag_candidates.ndjson").is_file() { root.join("frag_candidates.ndjson") } else { return };
+        let Some(ui) = weak.upgrade() else { return };
+        let location = PathBuf::from(ui.get_export_directory().to_string());
+        let Some(root) = export_folder_dialog(&location, "Select a DemoToolkit_Parse_ folder (older exports also work)").pick_folder() else { return };
+        let Some(path) = parse_exports::candidate_file(&root) else {
+            show_parse_help(&ui, "Select the dated parse folder", "This folder does not contain frag_candidates.ndjson.\n\nOpen Demo Toolkit Exports, then select a DemoToolkit_Parse_<date>_<time> folder inside it. For older exports, select the folder containing frag_candidates.ndjson.\n\nIf you already selected a parse folder, its analysis may not have completed.".into());
+            return;
+        };
         if let Some(ui) = weak.upgrade() {
             ui.set_busy(true);
             ui.set_status_text("Loading parsed export: reading candidates…".into());
@@ -2870,6 +2926,7 @@ fn persist_recording_settings(ui: &AppWindow, state: &Arc<Mutex<State>>, report_
     let (save_result, normalized) = {
         let mut state = state.lock();
         state.settings.output_directory = PathBuf::from(ui.get_export_directory().to_string());
+        state.settings.group_parse_exports = ui.get_group_parse_exports();
         state.settings.item_schema = PathBuf::from(ui.get_item_schema().to_string());
         sync_settings_from_ui(ui, &mut state.settings);
         (state.settings.save(), state.settings.clone())

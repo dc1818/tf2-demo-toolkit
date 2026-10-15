@@ -335,19 +335,19 @@ pub fn run_batch(
         bail!("choose at least one .dem file");
     }
     let _priority_guard = ProcessPriorityGuard::below_normal();
-    let timestamp = Local::now().format("%Y%m%d_%H%M%S");
-    let root = if demos.len() == 1 {
-        output_parent.join(format!("{}_export_{timestamp}", file_stem(&demos[0])))
-    } else {
-        output_parent.join(format!("tf2_demo_batch_export_{timestamp}"))
-    };
+    // Check space before reserving the run directory. Names are presentation only;
+    // the loader recognizes both old and new exports by their candidate file.
+    let preflight = estimate_batch_preflight(&demos, &output_parent, performance_profile)?;
+    preflight.ensure_space(&output_parent)?;
+    let timestamp = Local::now().format("%Y%m%d_%H%M%S").to_string();
+    let root = crate::parse_exports::create_run_folder(&output_parent, &timestamp)?;
     let single_demo = demos.len() == 1;
     let mut jobs = Vec::new();
     for (index, demo) in demos.into_iter().enumerate() {
         let export = if single_demo {
             root.clone()
         } else {
-            root.join(format!("{:03}_{}_export", index + 1, sanitize(&file_stem(&demo))))
+            root.join(format!("DemoToolkit_Parse_{:03}_{}", index + 1, sanitize(&file_stem(&demo))))
         };
         jobs.push(DemoJob {
             order: index + 1,
@@ -357,13 +357,10 @@ pub fn run_batch(
             export_directory: export,
         });
     }
-    let plan = ResourcePlan::detect(&jobs, performance_profile);
-    let preflight = estimate_batch_preflight_from_jobs(&jobs, &output_parent, plan.clone())?;
-    preflight.ensure_space(&output_parent)?;
-    fs::create_dir_all(&output_parent)?;
-    fs::create_dir_all(&root)?;
+    let plan = preflight.plan.clone();
     let benchmark = root.join("benchmark");
     fs::create_dir_all(&benchmark)?;
+    fs::write(root.join("LOAD_THIS_FOLDER.txt"), "Demo Toolkit parsed export\n\nIn Demo Toolkit, click Load previously parsed export and select THIS folder.\nKeep the entire folder and its contents together.\nDo not select the outer Demo Toolkit Exports folder.\nThe candidate list is available after parsing and analysis finish.\n")?;
     let log = Arc::new(Mutex::new(File::create(benchmark.join("batch_run.log"))?));
     let emit = |message: String| {
         let _ = writeln!(log.lock(), "{message}");
