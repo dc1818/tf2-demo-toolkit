@@ -139,6 +139,7 @@ export component Tf2Tab inherits Rectangle {
 }
 
 export component Tf2LineEdit inherits Rectangle {
+    in property <length> text-size: 14px;
     in-out property <string> text;
     in property <string> placeholder;
     in property <bool> enabled: true;
@@ -157,7 +158,7 @@ export component Tf2LineEdit inherits Rectangle {
         text: root.placeholder;
         color: Tf2Colors.dim;
         font-family: "Roboto Condensed";
-        font-size: 14px;
+        font-size: root.text-size;
         horizontal-alignment: root.centered ? center : left;
         vertical-alignment: center;
         overflow: elide;
@@ -172,7 +173,7 @@ export component Tf2LineEdit inherits Rectangle {
             selection-background-color: Tf2Colors.blu;
             selection-foreground-color: Tf2Colors.cream;
             font-family: "Roboto Condensed";
-            font-size: 14px;
+            font-size: root.text-size;
             horizontal-alignment: root.centered ? center : left;
             vertical-alignment: center;
             single-line: true;
@@ -239,6 +240,7 @@ export component Tf2Progress inherits Rectangle {
 
 // The same controls on every platform, independent of the OS light/dark theme.
 export component Tf2ComboBox inherits Rectangle {
+    in property <length> text-size: 13px;
     in property <[string]> model;
     in-out property <string> current-value;
     in property <bool> enabled: true;
@@ -256,7 +258,7 @@ export component Tf2ComboBox inherits Rectangle {
         init => { if self.selected { root.selected-index = index; } }
         changed selected => { if self.selected { root.selected-index = index; } }
     }
-    Text { x: 9px; width: parent.width - 30px; height: parent.height; text: root.current-value; color: Tf2Colors.cream; font-family: "Roboto Condensed"; font-size: 13px; vertical-alignment: center; overflow: elide; }
+    Text { x: 9px; width: parent.width - 30px; height: parent.height; text: root.current-value; color: Tf2Colors.cream; font-family: "Roboto Condensed"; font-size: root.text-size; vertical-alignment: center; overflow: elide; }
     Text { x: parent.width - 24px; width: 20px; height: parent.height; text: "▼"; color: Tf2Colors.cream; font-size: 10px; vertical-alignment: center; horizontal-alignment: center; }
     focus := FocusScope {
         enabled: root.enabled;
@@ -277,7 +279,7 @@ export component Tf2ComboBox inherits Rectangle {
             for option[index] in root.model : Rectangle {
                 x: 4px; y: 4px + index * 27px; width: parent.width - 8px; height: 27px;
                 background: root.current-value == option ? Tf2Colors.blu : row-area.has-hover ? Tf2Colors.neutral-hover : Tf2Colors.panel;
-                Text { x: 8px; width: parent.width - 16px; height: parent.height; text: option; color: Tf2Colors.cream; font-family: "Roboto Condensed"; font-size: 13px; vertical-alignment: center; }
+                Text { x: 8px; width: parent.width - 16px; height: parent.height; text: option; color: Tf2Colors.cream; font-family: "Roboto Condensed"; font-size: root.text-size; vertical-alignment: center; }
                 row-area := TouchArea { clicked => { root.selected-index = index; root.current-value = option; choices.close(); } }
             }
         }
@@ -285,6 +287,7 @@ export component Tf2ComboBox inherits Rectangle {
 }
 
 export component Tf2SpinBox inherits Rectangle {
+    in property <length> text-size: 13px;
     in-out property <int> value;
     in property <int> minimum: 0;
     in property <int> maximum: 100;
@@ -296,7 +299,7 @@ export component Tf2SpinBox inherits Rectangle {
     input := TextInput {
         x: 8px; width: parent.width - 38px; height: parent.height;
         text: root.value; input-type: number;
-        color: Tf2Colors.cream; font-family: "Roboto Condensed"; font-size: 13px; vertical-alignment: center;
+        color: Tf2Colors.cream; font-family: "Roboto Condensed"; font-size: root.text-size; vertical-alignment: center;
         edited => { if self.text.is-float() { root.value = Math.max(root.minimum, Math.min(root.maximum, Math.round(self.text.to-float()))); root.edited(root.value); } }
         accepted => { self.text = root.value; }
         changed has-focus => { if !self.has-focus { self.text = root.value; } }
