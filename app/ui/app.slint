@@ -489,10 +489,10 @@ component RecordingPadding inherits Tf2Panel {
         Tf2Body { height: 16px; font-size: 12px; color: Tf2Colors.muted; text: "Seconds recorded before the first tick and after the last tick."; }
         HorizontalLayout { height: 30px; spacing: 8px;
             Tf2Label { width: 100px; text: "BEFORE FIRST TICK"; font-size: 12px; }
-            SecondsPicker { width: 70px; seconds <=> root.lead; }
+            SecondsPicker { width: 70px; height: 30px; seconds <=> root.lead; }
             Rectangle { width: 12px; }
             Tf2Label { width: 94px; text: "AFTER LAST TICK"; font-size: 12px; }
-            SecondsPicker { width: 70px; seconds <=> root.tail; }
+            SecondsPicker { width: 70px; height: 30px; seconds <=> root.tail; }
             Rectangle { horizontal-stretch: 1; }
         }
     }
