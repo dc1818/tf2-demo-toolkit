@@ -971,7 +971,7 @@ fn capture_ui_snapshots(directory: PathBuf) -> Result<()> {
     }).collect::<Vec<_>>())));
     ui.set_help_dialog_title("How to find the item schema".into());
     ui.set_help_dialog_body("Demo Toolkit checks the selected demo folders and your TF2 installation automatically.\n\n1. In Steam, open Team Fortress 2 > Properties > Installed Files > Browse.\n2. Look for tf/scripts/items/items_game.txt.\n3. Use Choose file to select it.\n\nThe schema is optional. You can continue without it.".into());
-    let cases = [(800.,480.,0,false), (800.,480.,1,false), (800.,480.,2,false), (800.,480.,1,true), (900.,520.,0,false), (900.,520.,1,false), (900.,520.,2,false), (1280.,720.,1,false), (1480.,860.,0,false), (1480.,860.,1,false), (1480.,860.,2,false), (1920.,1080.,1,false), (800.,480.,4,false), (800.,480.,5,false), (800.,480.,6,false), (800.,480.,7,false), (800.,480.,8,false), (800.,480.,9,false), (1280.,720.,4,false), (1280.,720.,7,false), (1280.,720.,8,false), (1280.,720.,9,false), (1280.,720.,5,false), (800.,480.,12,false), (800.,480.,13,false), (800.,480.,14,false), (800.,480.,15,false), (1100.,600.,0,false), (1100.,600.,1,false), (1100.,600.,2,false), (1100.,600.,4,false), (1100.,600.,7,false), (1100.,600.,8,false), (1100.,600.,9,false), (1100.,600.,5,false), (1100.,600.,6,false), (1100.,600.,16,false), (1100.,600.,17,false), (800.,480.,16,false), (1100.,600.,18,false), (1480.,860.,6,false), (1320.,482.,18,false), (1320.,674.,1,false), (1320.,674.,2,false), (1320.,626.,4,false), (1320.,554.,7,false), (1320.,650.,8,false), (1320.,602.,9,false), (1320.,626.,5,false), (1100.,420.,18,false), (1100.,480.,7,false), (1100.,540.,4,false), (1100.,560.,8,false)];
+    let cases = [(800.,480.,0,false), (800.,480.,1,false), (800.,480.,2,false), (800.,480.,1,true), (900.,520.,0,false), (900.,520.,1,false), (900.,520.,2,false), (1280.,720.,1,false), (1480.,860.,0,false), (1480.,860.,1,false), (1480.,860.,2,false), (1920.,1080.,1,false), (800.,480.,4,false), (800.,480.,5,false), (800.,480.,6,false), (800.,480.,7,false), (800.,480.,8,false), (800.,480.,9,false), (1280.,720.,4,false), (1280.,720.,7,false), (1280.,720.,8,false), (1280.,720.,9,false), (1280.,720.,5,false), (800.,480.,12,false), (800.,480.,13,false), (800.,480.,14,false), (800.,480.,15,false), (1100.,600.,0,false), (1100.,600.,1,false), (1100.,600.,2,false), (1100.,600.,4,false), (1100.,600.,7,false), (1100.,600.,8,false), (1100.,600.,9,false), (1100.,600.,5,false), (1100.,600.,6,false), (1100.,600.,16,false), (1100.,600.,17,false), (800.,480.,16,false), (1100.,600.,18,false), (1480.,860.,6,false), (1320.,674.,18,false), (1320.,674.,1,false), (1320.,607.,2,false), (1320.,626.,4,false), (1320.,554.,7,false), (1320.,650.,8,false), (1320.,602.,9,false), (1320.,626.,5,false), (1100.,580.,18,false), (1100.,480.,7,false), (1100.,540.,4,false), (1100.,560.,8,false), (1320.,674.,19,false)];
     let failure = Rc::new(RefCell::new(None::<String>));
     let capture_failure = failure.clone();
     let weak = ui.as_weak();
@@ -986,12 +986,14 @@ fn capture_ui_snapshots(directory: PathBuf) -> Result<()> {
             ui.window().set_size(slint::LogicalSize::new(width, height));
             ui.set_frame_debug(format!("WINDOW {} x {}", width as u32, height as u32).into());
             ui.set_imported_demo_count(if step == 18 { 0 } else { 12 });
-            ui.set_selected_page(if step == 16 { 3 } else if step == 17 { 4 } else if step == 18 { 0 } else if step == 6 { 1 } else if step >= 4 { 2 } else { 0 });
+            ui.set_item_schema_available(step == 19);
+            ui.set_item_schema(if step == 19 { "D:/TF2/tf/scripts/items/items_game.txt" } else { "" }.into());
+            ui.set_selected_page(if step == 19 { 0 } else if step == 16 { 3 } else if step == 17 { 4 } else if step == 18 { 0 } else if step == 6 { 1 } else if step >= 4 { 2 } else { 0 });
             ui.set_has_export(step >= 4);
             ui.set_recording_settings_section(match step { 5 => 4, 7 => 1, 8 | 12..=15 => 2, 9 => 3, _ => 0 });
             ui.set_recording_format(match step { 12 => "JPG Image Sequence", 13 => "MOV - DNxHR", 14 => "AVI - Raw", _ => "MP4 - Standard" }.into());
             ui.set_mp4_compatibility(if step == 15 { "DaVinci Resolve / Universal" } else { "Custom" }.into());
-            ui.set_parse_step(if step < 3 { step } else { 0 });
+            ui.set_parse_step(if step == 19 { 1 } else if step < 3 { step } else { 0 });
             ui.set_help_dialog_open(popup);
         } else {
             let result = (|| -> Result<()> {
