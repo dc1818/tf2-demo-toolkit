@@ -68,7 +68,7 @@ pub const STEPS: [Step; 39] = [
 ];
 
 pub fn has_encoding_controls(format: &str) -> bool {
-    format.starts_with("MP4") || format.starts_with("AVI") || format.starts_with("MOV")
+    (format.starts_with("MP4") && format != "MP4 - Lossless") || format.starts_with("AVI") || format.starts_with("MOV")
 }
 pub fn next(index: i32, format: &str) -> i32 {
     if index == 26 && !has_encoding_controls(format) { 28 } else { (index + 1).min(LAST_STEP) }
@@ -108,6 +108,7 @@ mod tests {
     }
     #[test] fn image_sequences_skip_hidden_encoding_controls_in_both_directions() {
         assert_eq!(next(26,"TGA Image Sequence"),28);
+        assert_eq!(next(26,"MP4 - Lossless"),28);
         assert_eq!(previous(28,"JPG Image Sequence",true),26);
         assert_eq!(next(26,"MP4 - Standard"),27);
         assert_eq!(next(26,"MOV - DNxHR"),27);

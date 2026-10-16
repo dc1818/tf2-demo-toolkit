@@ -48,7 +48,9 @@ fn encoding_copy(ui: &AppWindow) {
     let index = ui.get_guide_step();
     if !matches!(index, 26 | 27) { return; }
     let format = ui.get_recording_format();
-    let body = if !guide::has_encoding_controls(&format) {
+    let body = if format == "MP4 - Lossless" {
+        "Lossless MP4 uses the built-in lossless preset and produces larger files. There are no additional encoder controls. Continue to Profile."
+    } else if !guide::has_encoding_controls(&format) {
         "Image sequences save individual frames instead of an encoded video. There are no video encoder controls here. JPG quality is on Paths & Output. Continue to Profile."
     } else if format.starts_with("MOV") {
         "DNxHR is an editing format. Choose the profile supported by your editor; higher-quality profiles can create larger files. Continue with the default if you are unsure."
@@ -112,7 +114,15 @@ pub fn results_loaded(ui: &AppWindow, state: &SharedState) {
     // Only a successful result load advances the parse phase. Existing old exports
     // and a failed/cancelled parse must never count as new results.
     if ui.get_guide_open() && ui.get_guide_step() <= 12 {
+        let dialog = ui.get_guide_dialog();
         go(ui, state, 13);
+        ui.set_guide_dialog(dialog);
+    } else if !ui.get_guide_open() {
+        let advance = {
+            let current = state.lock();
+            current.settings.onboarding.resumable() && current.settings.onboarding.resume_step <= 12
+        };
+        if advance { state.lock().settings.onboarding.resume_step = 13; save(ui, state); }
     }
 }
 
@@ -155,7 +165,7 @@ pub fn bind(ui: &AppWindow, state: &SharedState) {
             6 => {
                 state.lock().settings.onboarding.reset_welcome();
                 ui.set_guide_welcome_pending(false); save(&ui, state);
-                ui.set_options_save_status("Welcome reset. Restart the app to test the first-launch guide; your other settings are unchanged.".into());
+                ui.set_options_save_status("Welcome reset. Restart the app to test it. Your other settings are unchanged.".into());
             }
             7 => {
                 ui.set_guide_dialog(0); ui.set_guide_welcome_pending(false); ui.set_guide_queued(false);
@@ -187,6 +197,9 @@ pub fn bind(ui: &AppWindow, state: &SharedState) {
         }
         if page == 0 && ui.get_parse_started() && ui.get_busy() && index <= 12 && index != 12 {
             go(&ui, state, 12); return;
+        }
+        if (2..=12).contains(&index) && ui.get_imported_demo_count() == 0 && !ui.get_busy() {
+            go(&ui, state, 1); return;
         }
         let metadata = guide::step(index);
         let section = if page == 0 { ui.get_parse_step() } else { ui.get_recording_settings_section() };

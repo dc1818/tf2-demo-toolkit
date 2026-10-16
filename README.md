@@ -60,7 +60,7 @@ Set the TF2 executable, HLAE executable, FFmpeg executable, and recording output
 
 ## Find clips
 
-The **Parse Demos** page guides you through **Select demos → Set options → Parse**. Choose or drag one or more files or a folder. Folder scans include subfolders, and the selected demo list shows what will be parsed. Export location, optional item schema, and performance controls appear only after selecting demos and continuing. Each option is explained, and Back preserves your choices. Performance starts at Normal for each new demo selection. Click the step headings to navigate; Parse stays disabled until the demos and export location pass pre-flight checks, while the item schema remains optional. Time and size estimates stay in the footer. Guided views and long lists use sections or pagination instead of scrollbars. The optional Advanced recording view shows every section together and scrolls when needed on smaller windows. The final review shows the selected files and settings; progress and the analysis log appear after parsing starts.
+The **Parse Demos** page guides you through **Select demos → Set options → Parse**. Choose or drag one or more files or a folder. Folder scans include subfolders, and the selected demo list shows what will be parsed. Export location, optional item schema, and performance controls appear only after selecting demos and continuing. Each option is explained, and Back preserves your choices. Performance starts at Normal for each new demo selection. Click the step headings to navigate; Parse stays disabled until the demos and export location pass pre-flight checks, while the item schema remains optional. Time and size estimates stay in the footer. The demo lists scroll inside their boxes while the page controls remain visible. The final review shows the selected files and settings; progress and the analysis log appear after parsing starts.
 
 1. On **Parse Demos**, choose your demos or a folder, or drag them into the window.
 2. Choose an export folder and performance profile. Review the time and space estimate before starting.
@@ -74,7 +74,12 @@ POV demos only contain what was available to the recording player. STV demos can
 
 ## Record clips
 
-**Recording Settings** opens as a guided flow: **Paths & output → Video & HUD → Encoding → Profile → MIRV shortcuts**. Click a step heading or use Back and Continue. Changes save automatically. **Advanced view** shows all five sections together, and this preference is saved. Use **Guided view** to return to the steps.
+**Recording Settings** opens as a guided flow: **Paths & output → Video & HUD → Encoding → Profile → MIRV shortcuts**. Click a step heading or use Back and Continue. Changes save automatically.
+
+**New-user guide:** a one-time welcome offers a tour through demo selection, parse options and progress, candidate search/filters, all five recording settings tabs, and Preview / Manual Camera (MIRV) / Record Selected. Callouts follow the actual controls at desktop and compact window sizes. **Next** only explains or navigates; parsing and recording still require their normal app buttons and confirmations. Loading a previous export skips parsing.
+
+In **Options**, **Start Guide** always starts at Parse Demos → Select Demos. **Skip** or Escape offers Pause or End; **Resume** continues a paused guide. **Show tooltips** separately controls everyday hover/focus help. **Reset Welcome for Next Launch** lets you test the first-launch screen without resetting paths, recording settings or selections. Existing installations will also receive the welcome once when upgrading to this guide version. Application Logs remain available inside Options.
+
 
 Choose the format, resolution, FPS, and lead-in/outro in **Recording Settings**, then select candidates and use **Record with HLAE**.
 

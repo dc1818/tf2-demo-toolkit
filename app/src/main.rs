@@ -1029,6 +1029,16 @@ fn capture_ui_snapshots(directory: PathBuf) -> Result<()> {
                 ui.set_parse_started(step == 112);
                 ui.set_busy(step == 112);
                 guide_ui::show_step(&ui, step - 100);
+                ui.set_guide_note(match step - 100 {
+                    1 => "Add demos to continue, or load a previously parsed export using the gold button.",
+                    8 => "Choose a valid export location. Item schema is optional.",
+                    11 => "Use the app's Parse Demos button. The guide never starts parsing for you.",
+                    12 => "Parsing stopped or results could not be loaded. Check Application Logs, then go Back to retry.",
+                    13 => "This export has no candidates. Go Back to choose other demos, or pause the guide in Options.",
+                    16 => "No rows match. Clear the search or relax Filters before selecting a candidate.",
+                    35..=37 => "Try this when ready, or choose Next. Next never launches TF2 or starts recording.",
+                    _ => "",
+                }.into());
             } else {
                 ui.set_parse_started(false); ui.set_busy(false);
             }
@@ -1041,6 +1051,13 @@ fn capture_ui_snapshots(directory: PathBuf) -> Result<()> {
                     anyhow::bail!("Guide target {} is missing at {}x{}", step - 100, width, height);
                 }
                 let pixels = ui.window().take_snapshot()?;
+                if (101..=139).contains(&step) {
+                    let focus = ui.global::<GuideFocus>();
+                    let (x,y,w,h) = (focus.get_card_left(),focus.get_card_top(),focus.get_card_width(),focus.get_card_height());
+                    let (tx,ty,tw,th) = (focus.get_left(),focus.get_top(),focus.get_target_width(),focus.get_target_height());
+                    anyhow::ensure!(w > 0. && h > 0. && x >= 0. && y >= 0. && x+w <= pixels.width() as f32 + 1. && y+h <= pixels.height() as f32 + 1., "Guide {} leaves the window: ({x},{y},{w},{h})", step-100);
+                    anyhow::ensure!(x+w <= tx || tx+tw <= x || y+h <= ty || ty+th <= y, "Guide {} covers its target: card=({x},{y},{w},{h}), target=({tx},{ty},{tw},{th})", step-100);
+                }
                 let mut file = File::create(directory.join(format!("{:02}-{}x{}-step{}{}.ppm", frame / 2, width as u32, height as u32, step + 1, if popup { "-help" } else { "" })))?;
                 write!(file, "P6\n{} {}\n255\n", pixels.width(), pixels.height())?;
                 let bytes: Vec<u8> = pixels.as_bytes().chunks_exact(4).flat_map(|pixel| pixel[..3].iter().copied()).collect();

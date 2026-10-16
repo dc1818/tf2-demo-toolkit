@@ -734,7 +734,7 @@ export component AppWindow inherits Window {
     callback guide-tick();
     changed guide-open => { GuideFocus.active = root.guide-open; Tf2Tooltips.visible = false; }
     changed guide-step => { GuideFocus.target = root.guide-step; }
-    Timer { interval: 200ms; running: true; triggered => { root.guide-tick(); } }
+    Timer { interval: 200ms; running: root.guide-open || root.guide-welcome-pending || root.guide-queued; triggered => { root.guide-tick(); } }
     in-out property <bool> has-export: false;
     // Updated from the native resize event so the 900x520 frame always enters
     // the compact application header and settings layout.
@@ -1515,7 +1515,7 @@ export component AppWindow inherits Window {
 }
                         }
                     }
-                    if root.recording-settings-section == 2 : RecordingCard { guide-id: GuideFocus.target == 27 ? 27 : 26; guide-width: Math.min(450px, self.width * 0.55); guide-height: Math.min(160px, self.height); ui-scale: root.guided-scale;
+                    if root.recording-settings-section == 2 : RecordingCard { guide-id: GuideFocus.target == 27 ? 27 : (root.recording-format == "MP4 - Standard" || root.recording-format == "MP4 - Compatible") ? 0 : 26; guide-width: Math.min(450px, self.width * 0.55); guide-height: Math.min(160px, self.height); ui-scale: root.guided-scale;
                         x: (0px * root.guided-scale);
                         y: (0px * root.guided-scale);
                         width: parent.width;
@@ -1535,7 +1535,7 @@ export component AppWindow inherits Window {
                                         width: (100px * root.guided-scale);
                                         text: "Compatibility";
                                     }
-                                    Tf2ComboBox { text-size: 14px * root.guided-scale;
+                                    Tf2ComboBox { guide-id: 26; text-size: 14px * root.guided-scale;
                                         horizontal-stretch: 1;
                                         height: (30px * root.guided-scale);
                                         model: ["DaVinci Resolve / Universal", "Maximum Color Quality", "Custom"];

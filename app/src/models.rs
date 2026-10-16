@@ -584,6 +584,24 @@ impl AppSettings {
 #[cfg(test)]
 mod settings_tests {
     #[test]
+    fn guide_upgrade_and_reset_preserve_existing_preferences() {
+        let mut settings: AppSettings = serde_json::from_str(r#"{"show_tooltips":false,"recording_format":"MOV - DNxHR","capture_fps":240}"#).unwrap();
+        assert!(settings.onboarding.should_offer());
+        settings.onboarding.seen_version = crate::guide::VERSION;
+        settings.onboarding.resume_step = 22;
+        let mut before = serde_json::to_value(&settings).unwrap();
+        settings.onboarding.reset_welcome();
+        let mut after = serde_json::to_value(&settings).unwrap();
+        before.as_object_mut().unwrap().remove("onboarding");
+        after.as_object_mut().unwrap().remove("onboarding");
+        assert_eq!(before, after);
+        assert!(!settings.show_tooltips);
+        assert!(settings.onboarding.should_offer());
+        let loaded: AppSettings = serde_json::from_value(serde_json::to_value(&settings).unwrap()).unwrap();
+        assert!(loaded.onboarding.should_offer());
+    }
+
+    #[test]
     fn removed_settings_are_ignored_when_loading_older_profiles() {
         let settings: super::AppSettings = serde_json::from_value(serde_json::json!({
             "custom_resources": ["missing-custom-resource.vpk"],

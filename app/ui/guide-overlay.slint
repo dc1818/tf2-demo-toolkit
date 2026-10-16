@@ -22,9 +22,9 @@ export component GuideOverlay inherits Rectangle {
     private property <length> card-width: root.beside ? Math.min(390px, Math.max(root.left-space, root.right-space)) : Math.min(430px, root.width - 32px);
     private property <bool> below: root.height - root.ty - root.th >= card.height + 20px || root.ty < card.height + 20px;
     // Non-interactive shading lets users operate the highlighted control.
-    Rectangle { width: root.width; height: root.ty; background: #00000088; }
-    Rectangle { y: root.ty + root.th; width: root.width; height: Math.max(0px, root.height - self.y); background: #00000088; }
-    Rectangle { y: root.ty; width: root.tx; height: root.th; background: #00000088; }
+    Rectangle { x: 0px; y: 0px; width: root.width; height: root.ty; background: #00000088; }
+    Rectangle { x: 0px; y: root.ty + root.th; width: root.width; height: Math.max(0px, root.height - self.y); background: #00000088; }
+    Rectangle { x: 0px; y: root.ty; width: root.tx; height: root.th; background: #00000088; }
     Rectangle { x: root.tx + root.tw; y: root.ty; width: Math.max(0px, root.width - self.x); height: root.th; background: #00000088; }
     Rectangle { x: root.tx; y: root.ty; width: root.tw; height: root.th; border-width: 2px; border-radius: 3px; border-color: #e4bc54; }
     card := Tf2Panel {
@@ -54,7 +54,11 @@ export component GuideOverlay inherits Rectangle {
             }
         }
     }
-    // A rotated square makes the same small gold-edged pointer as the approved card.
+    Timer { interval: 60ms; running: true; triggered => {
+        GuideFocus.card-left = card.x; GuideFocus.card-top = card.y;
+        GuideFocus.card-width = card.width; GuideFocus.card-height = card.height;
+    } }
+    // A small gold-edged pointer connects the card to the live control.
     Path {
         width: 12px; height: 12px;
         commands: root.beside ? (root.right-side ? "M 12 0 L 0 6 L 12 12 Z" : "M 0 0 L 12 6 L 0 12 Z") : (root.below ? "M 0 12 L 6 0 L 12 12 Z" : "M 0 0 L 6 12 L 12 0 Z");

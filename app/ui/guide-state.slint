@@ -7,11 +7,17 @@ export global GuideFocus {
     in-out property <length> top;
     in-out property <length> target-width;
     in-out property <length> target-height;
+    // Report measured overlay bounds to debug screenshot assertions.
+    in-out property <length> card-left;
+    in-out property <length> card-top;
+    in-out property <length> card-width;
+    in-out property <length> card-height;
     changed target => { self.available = false; }
     changed active => { self.available = false; }
 }
 
 export component GuideAnchor inherits Rectangle {
+    x: 0px; y: 0px;
     in property <int> target-id;
     // A transparent, non-interactive child: never changes layout or input.
     Timer {
