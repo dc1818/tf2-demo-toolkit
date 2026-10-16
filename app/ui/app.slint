@@ -943,7 +943,7 @@ export component AppWindow inherits Window {
         : root.recording-settings-section == 4 ? 290
         : (root.recording-format == "MP4 - Standard" || root.recording-format == "MP4 - Compatible") ? (root.mp4-compatibility == "Custom" ? 295 : 235)
         : root.recording-format == "AVI - Raw" ? 177 : root.recording-format == "MOV - DNxHR" ? 119 : 139;
-    out property <int> preferred-guided-height: root.selected-page == 0 ? 580 : root.selected-page == 2 ? 194 + root.recording-body-height : root.selected-page == 3 ? 440 : 600;
+    out property <int> preferred-guided-height: root.selected-page == 0 ? 580 : root.selected-page == 2 ? 194 + root.recording-body-height : root.selected-page == 3 ? 400 : 600;
     changed preferred-guided-height => { root.page-layout-changed(root.selected-page); }
     private property <bool> parse-short: self.height < 760px;
     private property <bool> compact: self.width <= 1220px || self.height <= 700px;

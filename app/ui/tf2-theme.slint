@@ -79,7 +79,7 @@ export component Tf2TooltipLayer inherits Rectangle {
     // This layer has no TouchArea: showing help never intercepts a click.
     if Tf2Tooltips.enabled && Tf2Tooltips.visible : Rectangle {
         width: Math.min(root.compact ? 350px : 420px, root.width - 24px);
-        height: root.compact ? 180px : 178px;
+        height: tip-body.preferred-height + tip-footer.preferred-height + 76px;
         x: Math.max(12px, Math.min(Tf2Tooltips.anchor-x - self.width / 2, root.width - self.width - 12px));
         property <bool> above: Tf2Tooltips.anchor-bottom + self.height + 12px > root.height;
         y: Math.max(8px, Math.min(self.above ? Tf2Tooltips.anchor-top - self.height - 4px : Tf2Tooltips.anchor-bottom + 4px, root.height - self.height - 8px));
@@ -90,8 +90,8 @@ export component Tf2TooltipLayer inherits Rectangle {
             VerticalLayout {
                 padding: 14px; spacing: 8px;
                 Tf2Heading { height: 24px; text: Tf2Tooltips.title; font-size: root.compact ? 15px : 17px; }
-                Tf2Body { text: Tf2Tooltips.body; wrap: word-wrap; vertical-stretch: 1; vertical-alignment: top; font-size: 14px; }
-                Tf2Body { height: 32px; text: Tf2Tooltips.footer; color: #8ab3cd; wrap: word-wrap; font-size: 13px; }
+                tip-body := Tf2Body { text: Tf2Tooltips.body; wrap: word-wrap; height: self.preferred-height; vertical-alignment: top; font-size: 14px; }
+                tip-footer := Tf2Body { height: self.preferred-height; text: Tf2Tooltips.footer; color: #8ab3cd; wrap: word-wrap; font-size: 13px; }
             }
         }
         Path {
@@ -273,6 +273,7 @@ export component Tf2CheckBox inherits Rectangle {
     in-out property <bool> checked;
     in property <string> text;
     in property <bool> enabled: true;
+    in property <bool> prominent: false;
     in property <length> label-font-size: 12px;
     callback toggled(bool);
 
@@ -280,8 +281,8 @@ export component Tf2CheckBox inherits Rectangle {
     background: #00000000;
     opacity: root.enabled ? 1 : 0.45;
     Rectangle {
-        x: 0px; y: 4px; width: 18px; height: 18px;
-        background: area.pressed ? Tf2Colors.neutral-pressed : area.has-hover ? Tf2Colors.neutral-hover : Tf2Colors.panel-dark;
+        x: 0px; y: 4px; width: root.prominent ? 24px : 18px; height: root.prominent ? 24px : 18px;
+        background: root.prominent && root.checked ? Tf2Colors.gold : area.pressed ? Tf2Colors.neutral-pressed : area.has-hover ? Tf2Colors.neutral-hover : Tf2Colors.panel-dark;
         border-width: 1px;
         border-color: area.has-hover || check-focus.has-focus ? Tf2Colors.border-bright : Tf2Colors.border;
         Text {
@@ -289,13 +290,13 @@ export component Tf2CheckBox inherits Rectangle {
             text: root.checked ? "X" : "";
             color: Tf2Colors.cream;
             font-family: "TF2 Build";
-            font-size: 13px;
+            font-size: root.prominent ? 17px : 13px;
             horizontal-alignment: center;
             vertical-alignment: center;
         }
     }
     Text {
-        x: 27px; width: parent.width - 27px; height: parent.height;
+        x: root.prominent ? 34px : 27px; width: parent.width - self.x; height: parent.height;
         text: root.text;
         color: Tf2Colors.cream;
         font-family: "Roboto Condensed";

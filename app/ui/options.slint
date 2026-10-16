@@ -8,7 +8,7 @@ component GuidanceOptions inherits Tf2Panel {
     VerticalLayout {
         padding: 14px * root.scale; spacing: 8px * root.scale;
         Tf2Heading { height: 24px * root.scale; text: "HELP & GUIDANCE"; font-size: 18px * root.scale; }
-        Tf2CheckBox { height: 28px * root.scale; text: "Show tooltips"; label-font-size: 16px * root.scale; checked <=> root.show-tooltips; toggled(value) => { root.toggle-tooltips(value); } }
+        Tf2CheckBox { height: 28px * root.scale; text: "Show tooltips"; prominent: true; label-font-size: 16px * root.scale; checked <=> root.show-tooltips; toggled(value) => { root.toggle-tooltips(value); } }
         Tf2Body { height: 32px * root.scale; text: "Explain controls when you hover or use keyboard focus."; font-size: 14px * root.scale; wrap: word-wrap; }
         HorizontalLayout {
             height: 32px * root.scale; spacing: 12px;
