@@ -4,7 +4,10 @@ component GuidanceOptions inherits Tf2Panel {
     in property <float> scale: 1;
     in-out property <bool> show-tooltips;
     callback toggle-tooltips(bool);
+    in property <bool> can-resume;
     callback start-guide();
+    callback resume-guide();
+    callback reset-guide();
     VerticalLayout {
         padding: 14px * root.scale; spacing: 8px * root.scale;
         Tf2Heading { height: 24px * root.scale; text: "HELP & GUIDANCE"; font-size: 18px * root.scale; }
@@ -15,7 +18,10 @@ component GuidanceOptions inherits Tf2Panel {
             Tf2Heading { text: "QUICK GUIDE"; font-size: 15px * root.scale; }
             Tf2Button { width: 140px * root.scale; height: 32px * root.scale; text: "START GUIDE"; label-font-size: 13px * root.scale; clicked => { root.start-guide(); } }
         }
-        Tf2Body { height: 34px * root.scale; text: "Learn how to load demos, find highlights and record clips."; font-size: 14px * root.scale; wrap: word-wrap; }
+        HorizontalLayout { height: 30px * root.scale; spacing: 8px;
+            Tf2Button { text: "RESUME"; enabled: root.can-resume; label-font-size: 11px * root.scale; clicked => { root.resume-guide(); } }
+            Tf2Button { text: "RESET WELCOME FOR NEXT LAUNCH"; horizontal-stretch: 2; label-font-size: 10px * root.scale; clicked => { root.reset-guide(); } }
+        }
     }
 }
 
@@ -49,7 +55,10 @@ export component OptionsPage inherits Rectangle {
     in-out property <bool> show-tooltips;
     in property <string> save-status: "Changes save automatically.";
     callback toggle-tooltips(bool);
+    in property <bool> can-resume;
     callback start-guide();
+    callback resume-guide();
+    callback reset-guide();
     callback view-logs();
     callback open-log-folder();
     // Fixed content heights avoid stretched cards or page scrolling.
@@ -58,7 +67,10 @@ export component OptionsPage inherits Rectangle {
         height: 210px * root.scale;
         scale: root.scale; show-tooltips <=> root.show-tooltips;
         toggle-tooltips(value) => { root.toggle-tooltips(value); }
+        can-resume: root.can-resume;
         start-guide => { root.start-guide(); }
+        resume-guide => { root.resume-guide(); }
+        reset-guide => { root.reset-guide(); }
     }
     logs := LogOptions {
         x: root.compact ? 12px : guidance.x + guidance.width + 12px;

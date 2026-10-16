@@ -1,0 +1,91 @@
+import { GuideFocus } from "guide-state.slint";
+import { Tf2Colors, Tf2Panel, Tf2Heading, Tf2Body, Tf2Button } from "tf2-theme.slint";
+
+export component GuideOverlay inherits Rectangle {
+    in property <string> heading;
+    in property <string> body;
+    in property <string> note;
+    in property <int> position;
+    in property <int> count;
+    in property <int> step;
+    in property <bool> can-next;
+    in property <string> next-label: "NEXT";
+    callback action(int);
+    private property <length> tx: Math.max(6px, Math.min(GuideFocus.left - 4px, root.width - 12px));
+    private property <length> ty: Math.max(6px, Math.min(GuideFocus.top - 4px, root.height - 12px));
+    private property <length> tw: Math.min(GuideFocus.target-width + 8px, root.width - root.tx - 6px);
+    private property <length> th: Math.min(GuideFocus.target-height + 8px, root.height - root.ty - 6px);
+    private property <length> left-space: root.tx - 22px;
+    private property <length> right-space: root.width - root.tx - root.tw - 22px;
+    private property <bool> beside: Math.max(root.left-space, root.right-space) >= 238px;
+    private property <bool> right-side: root.right-space >= root.left-space;
+    private property <length> card-width: root.beside ? Math.min(390px, Math.max(root.left-space, root.right-space)) : Math.min(430px, root.width - 32px);
+    private property <bool> below: root.height - root.ty - root.th >= card.height + 20px || root.ty < card.height + 20px;
+    // Non-interactive shading lets users operate the highlighted control.
+    Rectangle { x: 0px; y: 0px; width: root.width; height: root.ty; background: #00000088; }
+    Rectangle { x: 0px; y: root.ty + root.th; width: root.width; height: Math.max(0px, root.height - self.y); background: #00000088; }
+    Rectangle { x: 0px; y: root.ty; width: root.tx; height: root.th; background: #00000088; }
+    Rectangle { x: root.tx + root.tw; y: root.ty; width: Math.max(0px, root.width - self.x); height: root.th; background: #00000088; }
+    Rectangle { x: root.tx; y: root.ty; width: root.tw; height: root.th; border-width: 2px; border-radius: 3px; border-color: #e4bc54; }
+    card := Tf2Panel {
+        width: root.card-width;
+        height: content.preferred-height;
+        x: root.beside ? (root.right-side ? root.tx + root.tw + 16px : root.tx - self.width - 16px) : Math.max(12px, Math.min(root.tx + root.tw / 2 - self.width / 2, root.width - self.width - 12px));
+        y: root.beside ? Math.max(12px, Math.min(root.ty + root.th / 2 - self.height / 2, root.height - self.height - 12px)) : Math.max(12px, Math.min(root.below ? root.ty + root.th + 16px : root.ty - self.height - 16px, root.height - self.height - 12px));
+        background: #27251f; border-color: #d1b16d; border-width: 1px;
+        TouchArea { }
+        content := VerticalLayout {
+            padding: 14px; spacing: 9px;
+            HorizontalLayout { height: 18px;
+                Tf2Body { text: "GUIDE · " + root.position + " / " + root.count; color: #8ab3cd; font-size: 12px; }
+                Tf2Body { text: root.step + " OF 39"; color: Tf2Colors.muted; font-size: 11px; horizontal-alignment: right; }
+            }
+            Tf2Heading { text: root.heading; font-size: root.card-width < 300px ? 17px : 20px; wrap: word-wrap; }
+            Tf2Body { text: root.body; font-size: root.width < 1000px ? 14px : 15px; wrap: word-wrap; color: #decba9; }
+            if root.note != "" : Tf2Body { text: root.note; font-size: 12px; wrap: word-wrap; color: #8ab3cd; }
+            HorizontalLayout { height: 5px; spacing: 5px;
+                for dot in root.count : Rectangle { width: 5px; height: 5px; border-radius: 3px; background: dot < root.position ? #d1b16d : #575044; }
+                Rectangle { horizontal-stretch: 1; }
+            }
+            HorizontalLayout { height: 30px; spacing: 6px;
+                Tf2Button { text: "BACK"; enabled: root.step > 1; label-font-size: 11px; clicked => { root.action(2); } }
+                Tf2Button { text: "SKIP"; label-font-size: 11px; clicked => { root.action(3); } }
+                Tf2Button { text: root.next-label; enabled: root.can-next; label-font-size: 11px; tone: Tf2Colors.red; hover-tone: Tf2Colors.red-hover; pressed-tone: Tf2Colors.red-pressed; clicked => { root.action(1); } }
+            }
+        }
+    }
+    Timer { interval: 60ms; running: true; triggered => {
+        GuideFocus.card-left = card.x; GuideFocus.card-top = card.y;
+        GuideFocus.card-width = card.width; GuideFocus.card-height = card.height;
+    } }
+    // A small gold-edged pointer connects the card to the live control.
+    Path {
+        width: 12px; height: 12px;
+        commands: root.beside ? (root.right-side ? "M 12 0 L 0 6 L 12 12 Z" : "M 0 0 L 12 6 L 0 12 Z") : (root.below ? "M 0 12 L 6 0 L 12 12 Z" : "M 0 0 L 6 12 L 12 0 Z");
+        x: root.beside ? (root.right-side ? card.x - 6px : card.x + card.width - 6px) : Math.max(card.x + 18px, Math.min(root.tx + root.tw / 2 - 6px, card.x + card.width - 24px));
+        y: root.beside ? Math.max(card.y + 18px, Math.min(root.ty + root.th / 2 - 6px, card.y + card.height - 24px)) : (root.below ? card.y - 6px : card.y + card.height - 6px);
+        fill: #27251f; stroke: #d1b16d; stroke-width: 1px;
+    }
+}
+
+export component GuideDialog inherits Rectangle {
+    in property <int> kind;
+    callback action(int);
+    background: #00000099;
+    TouchArea { }
+    Tf2Panel {
+        width: Math.min(540px, parent.width - 40px); height: layout.preferred-height;
+        x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2;
+        background: #27251f; border-color: #d1b16d;
+        layout := VerticalLayout { padding: 22px; spacing: 15px;
+            Tf2Body { text: "DEMO TOOLKIT · FIELD GUIDE"; color: #8ab3cd; font-size: 13px; }
+            Tf2Heading { text: root.kind == 1 ? "WELCOME TO DEMO TOOLKIT" : root.kind == 2 ? "TAKE A BREAK?" : "A JOB IS STILL RUNNING"; font-size: 24px; wrap: word-wrap; }
+            Tf2Body { font-size: 16px; wrap: word-wrap; text: root.kind == 1 ? "Want a guided tour? Start with your demos, find highlights, set up recording, then learn Preview and Manual Camera (MIRV).\n\nThe guide follows your progress. You can pause and resume from Options." : root.kind == 2 ? "Pause and resume from Options, or end this guide. Your demos, selections and settings will be kept." : "Let the current parse, capture or recovery finish first. You can queue the guide without interrupting your work."; }
+            HorizontalLayout { height: 36px; spacing: 8px;
+                Tf2Button { text: root.kind == 1 ? "NOT NOW" : root.kind == 2 ? "END GUIDE" : "CANCEL"; label-font-size: 12px; clicked => { root.action(root.kind == 2 ? 5 : 7); } }
+                if root.kind == 2 : Tf2Button { text: "PAUSE"; label-font-size: 12px; clicked => { root.action(10); } }
+                Tf2Button { text: root.kind == 1 ? "START GUIDE" : root.kind == 2 ? "RESUME" : "QUEUE GUIDE"; label-font-size: 12px; tone: Tf2Colors.red; hover-tone: Tf2Colors.red-hover; pressed-tone: Tf2Colors.red-pressed; clicked => { root.action(root.kind == 1 ? 0 : root.kind == 2 ? 4 : 8); } }
+            }
+        }
+    }
+}
