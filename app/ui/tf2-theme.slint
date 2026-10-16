@@ -61,6 +61,47 @@ export component Tf2Body inherits Text {
     vertical-alignment: center;
 }
 
+// Rendered once at window level so table/panel clipping cannot cut off help.
+export global Tf2Tooltips {
+    in-out property <bool> enabled: true;
+    in-out property <bool> visible: false;
+    in-out property <int> owner: 0;
+    in-out property <string> title;
+    in-out property <string> body;
+    in-out property <string> footer;
+    in-out property <length> anchor-x;
+    in-out property <length> anchor-top;
+    in-out property <length> anchor-bottom;
+}
+
+export component Tf2TooltipLayer inherits Rectangle {
+    in property <bool> compact: false;
+    // This layer has no TouchArea: showing help never intercepts a click.
+    if Tf2Tooltips.enabled && Tf2Tooltips.visible : Rectangle {
+        width: Math.min(root.compact ? 350px : 420px, root.width - 24px);
+        height: root.compact ? 180px : 178px;
+        x: Math.max(12px, Math.min(Tf2Tooltips.anchor-x - self.width / 2, root.width - self.width - 12px));
+        property <bool> above: Tf2Tooltips.anchor-bottom + self.height + 12px > root.height;
+        y: Math.max(8px, Math.min(self.above ? Tf2Tooltips.anchor-top - self.height - 4px : Tf2Tooltips.anchor-bottom + 4px, root.height - self.height - 8px));
+        property <length> arrow-x: Math.max(16px, Math.min(Tf2Tooltips.anchor-x - self.x - 8px, self.width - 32px));
+        Tf2Panel {
+            y: parent.above ? 0px : 8px; width: parent.width; height: parent.height - 8px;
+            background: Tf2Colors.panel-dark; border-color: Tf2Colors.border-bright;
+            VerticalLayout {
+                padding: 14px; spacing: 8px;
+                Tf2Heading { height: 24px; text: Tf2Tooltips.title; font-size: root.compact ? 15px : 17px; }
+                Tf2Body { text: Tf2Tooltips.body; wrap: word-wrap; vertical-stretch: 1; vertical-alignment: top; font-size: 14px; }
+                Tf2Body { height: 32px; text: Tf2Tooltips.footer; color: #8ab3cd; wrap: word-wrap; font-size: 13px; }
+            }
+        }
+        Path {
+            x: parent.arrow-x; y: parent.above ? parent.height - 9px : 0px; width: 16px; height: 9px;
+            commands: parent.above ? "M 0 0 L 8 9 L 16 0" : "M 0 9 L 8 0 L 16 9";
+            fill: Tf2Colors.panel-dark; stroke: Tf2Colors.border-bright; stroke-width: 1px;
+        }
+    }
+}
+
 export component Tf2Button inherits Rectangle {
     in property <string> text;
     in property <bool> enabled: true;
@@ -69,6 +110,32 @@ export component Tf2Button inherits Rectangle {
     in property <brush> pressed-tone: Tf2Colors.neutral-pressed;
     in property <brush> text-color: Tf2Colors.cream;
     in property <length> label-font-size: 15px;
+    in property <int> tooltip-id: 0;
+    in property <string> tooltip-title;
+    in property <string> tooltip-body;
+    in property <string> tooltip-footer;
+    private property <bool> keyboard-tooltip: false;
+    private property <bool> wants-tooltip: Tf2Tooltips.enabled && root.tooltip-body != "" && (area.has-hover || root.keyboard-tooltip);
+    changed wants-tooltip => {
+        tooltip-delay.running = root.wants-tooltip;
+        if !root.wants-tooltip && Tf2Tooltips.owner == root.tooltip-id { Tf2Tooltips.visible = false; }
+    }
+    tooltip-delay := Timer {
+        interval: 500ms; running: false;
+        triggered => {
+            self.running = false;
+            if root.wants-tooltip {
+                Tf2Tooltips.owner = root.tooltip-id;
+                Tf2Tooltips.title = root.tooltip-title;
+                Tf2Tooltips.body = root.tooltip-body;
+                Tf2Tooltips.footer = root.tooltip-footer;
+                Tf2Tooltips.anchor-x = root.absolute-position.x + root.width / 2;
+                Tf2Tooltips.anchor-top = root.absolute-position.y;
+                Tf2Tooltips.anchor-bottom = root.absolute-position.y + root.height;
+                Tf2Tooltips.visible = true;
+            }
+        }
+    }
     callback clicked();
 
     height: 38px;
@@ -76,7 +143,7 @@ export component Tf2Button inherits Rectangle {
     opacity: root.enabled ? 1 : 0.42;
     background: !root.enabled ? Tf2Colors.neutral-pressed : area.pressed ? root.pressed-tone : area.has-hover ? root.hover-tone : root.tone;
     border-width: 1px;
-    border-color: area.has-hover && root.enabled ? Tf2Colors.border-bright : Tf2Colors.border;
+    border-color: (area.has-hover || button-focus.has-focus) && root.enabled ? Tf2Colors.border-bright : Tf2Colors.border;
     clip: true;
 
     Rectangle {
@@ -100,10 +167,29 @@ export component Tf2Button inherits Rectangle {
         vertical-alignment: center;
         wrap: word-wrap;
     }
-    button-focus := FocusScope { enabled: root.enabled; }
-    area := TouchArea {
+    forward-focus: button-focus;
+    button-focus := FocusScope {
         enabled: root.enabled;
-        clicked => { button-focus.focus(); root.clicked(); }
+        focus-gained(reason) => { root.keyboard-tooltip = !area.has-hover; }
+        focus-lost(reason) => { root.keyboard-tooltip = false; }
+        key-pressed(event) => {
+            if event.text == Key.Escape {
+                Tf2Tooltips.visible = false; tooltip-delay.running = false;
+                return accept;
+            }
+            if event.text == " " || event.text == "\n" {
+                Tf2Tooltips.visible = false; tooltip-delay.running = false;
+                root.clicked(); return accept;
+            }
+            return reject;
+        }
+    }
+    area := TouchArea {
+        // Disabled actions can still explain why they are unavailable.
+        clicked => {
+            Tf2Tooltips.visible = false; tooltip-delay.running = false;
+            if root.enabled { button-focus.focus(); root.clicked(); }
+        }
     }
 }
 
@@ -197,7 +283,7 @@ export component Tf2CheckBox inherits Rectangle {
         x: 0px; y: 4px; width: 18px; height: 18px;
         background: area.pressed ? Tf2Colors.neutral-pressed : area.has-hover ? Tf2Colors.neutral-hover : Tf2Colors.panel-dark;
         border-width: 1px;
-        border-color: area.has-hover ? Tf2Colors.border-bright : Tf2Colors.border;
+        border-color: area.has-hover || check-focus.has-focus ? Tf2Colors.border-bright : Tf2Colors.border;
         Text {
             width: parent.width; height: parent.height;
             text: root.checked ? "X" : "";
@@ -217,9 +303,19 @@ export component Tf2CheckBox inherits Rectangle {
         vertical-alignment: center;
         wrap: word-wrap;
     }
+    forward-focus: check-focus;
+    check-focus := FocusScope {
+        enabled: root.enabled;
+        key-pressed(event) => {
+            if event.text == " " || event.text == "\n" {
+                root.checked = !root.checked; root.toggled(root.checked); return accept;
+            }
+            return reject;
+        }
+    }
     area := TouchArea {
         enabled: root.enabled;
-        clicked => { root.checked = !root.checked; root.toggled(root.checked); }
+        clicked => { check-focus.focus(); root.checked = !root.checked; root.toggled(root.checked); }
     }
 }
 

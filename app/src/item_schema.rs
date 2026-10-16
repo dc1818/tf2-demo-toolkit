@@ -2,7 +2,7 @@
 use std::{fs, path::Path};
 
 pub fn validate(path: &Path) -> Result<(), String> {
-    if !path.is_file() { return Err("File not found. Choose items_game.txt or use Automatically detect.".into()); }
+    if !path.is_file() { return Err("File not found. Choose items_game.txt, use How to find, or continue without a schema.".into()); }
     if !path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("txt")) {
         return Err("Incorrect file type. Select a standalone items_game.txt file.".into());
     }

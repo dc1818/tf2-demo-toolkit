@@ -958,6 +958,7 @@ fn install_panic_logger() {
 #[cfg(debug_assertions)]
 fn capture_ui_snapshots(directory: PathBuf) -> Result<()> {
     use std::{cell::RefCell, rc::Rc};
+    use slint::ComponentHandle;
     fs::create_dir_all(&directory)?;
     let ui = AppWindow::new()?;
     ui.set_imported_demo_count(12);
@@ -973,7 +974,7 @@ fn capture_ui_snapshots(directory: PathBuf) -> Result<()> {
     }).collect::<Vec<_>>())));
     ui.set_help_dialog_title("How to find the item schema".into());
     ui.set_help_dialog_body("Demo Toolkit checks the selected demo folders and your TF2 installation automatically.\n\n1. In Steam, open Team Fortress 2 > Properties > Installed Files > Browse.\n2. Look for tf/scripts/items/items_game.txt.\n3. Use Choose file to select it.\n\nThe schema is optional. You can continue without it.".into());
-    let cases = [(800.,480.,0,false), (800.,480.,1,false), (800.,480.,2,false), (800.,480.,1,true), (900.,520.,0,false), (900.,520.,1,false), (900.,520.,2,false), (1280.,720.,1,false), (1480.,860.,0,false), (1480.,860.,1,false), (1480.,860.,2,false), (1920.,1080.,1,false), (800.,480.,4,false), (800.,480.,5,false), (800.,480.,6,false), (800.,480.,7,false), (800.,480.,8,false), (800.,480.,9,false), (1280.,720.,4,false), (1280.,720.,7,false), (1280.,720.,8,false), (1280.,720.,9,false), (1280.,720.,5,false), (800.,480.,12,false), (800.,480.,13,false), (800.,480.,14,false), (800.,480.,15,false), (1100.,600.,0,false), (1100.,600.,1,false), (1100.,600.,2,false), (1100.,600.,4,false), (1100.,600.,7,false), (1100.,600.,8,false), (1100.,600.,9,false), (1100.,600.,5,false), (1100.,600.,6,false), (1100.,600.,16,false), (1100.,600.,17,false), (800.,480.,16,false), (1100.,600.,18,false), (1480.,860.,6,false), (1320.,674.,18,false), (1320.,674.,1,false), (1320.,607.,2,false), (1320.,539.,4,false), (1320.,472.,7,false), (1320.,565.,8,false), (1320.,530.,9,false), (1320.,557.,5,false), (1100.,580.,18,false), (1100.,411.,7,false), (1100.,467.,4,false), (1100.,489.,8,false), (1320.,674.,19,false)];
+    let cases = [(800.,480.,0,false), (800.,480.,1,false), (800.,480.,2,false), (800.,480.,1,true), (900.,520.,0,false), (900.,520.,1,false), (900.,520.,2,false), (1280.,720.,1,false), (1480.,860.,0,false), (1480.,860.,1,false), (1480.,860.,2,false), (1920.,1080.,1,false), (800.,480.,4,false), (800.,480.,5,false), (800.,480.,6,false), (800.,480.,7,false), (800.,480.,8,false), (800.,480.,9,false), (1280.,720.,4,false), (1280.,720.,7,false), (1280.,720.,8,false), (1280.,720.,9,false), (1280.,720.,5,false), (800.,480.,12,false), (800.,480.,13,false), (800.,480.,14,false), (800.,480.,15,false), (1100.,600.,0,false), (1100.,600.,1,false), (1100.,600.,2,false), (1100.,600.,4,false), (1100.,600.,7,false), (1100.,600.,8,false), (1100.,600.,9,false), (1100.,600.,5,false), (1100.,600.,6,false), (1100.,600.,16,false), (1100.,600.,17,false), (800.,480.,16,false), (1100.,600.,18,false), (1480.,860.,6,false), (1320.,674.,18,false), (1320.,674.,1,false), (1320.,607.,2,false), (1320.,539.,4,false), (1320.,472.,7,false), (1320.,565.,8,false), (1320.,530.,9,false), (1320.,557.,5,false), (1100.,580.,18,false), (1100.,411.,7,false), (1100.,467.,4,false), (1100.,489.,8,false), (1320.,674.,19,false), (1100.,440.,20,false), (1320.,506.,20,false), (800.,480.,20,false), (900.,520.,20,false), (1480.,860.,21,false), (800.,480.,22,false), (1480.,860.,23,false), (800.,480.,24,false), (800.,480.,25,false)];
     let failure = Rc::new(RefCell::new(None::<String>));
     let capture_failure = failure.clone();
     let weak = ui.as_weak();
@@ -990,15 +991,33 @@ fn capture_ui_snapshots(directory: PathBuf) -> Result<()> {
             ui.set_imported_demo_count(if step == 18 { 0 } else { 12 });
             ui.set_item_schema_available(step == 19);
             ui.set_item_schema(if step == 19 { "D:/TF2/tf/scripts/items/items_game.txt" } else { "" }.into());
-            ui.set_selected_page(if step == 19 { 0 } else if step == 16 { 3 } else if step == 17 { 4 } else if step == 18 { 0 } else if step == 6 { 1 } else if step >= 4 { 2 } else { 0 });
+            ui.set_selected_page(if step == 20 || step == 25 { 3 } else if (21..=24).contains(&step) { 1 } else if step == 19 { 0 } else if step == 16 { 5 } else if step == 17 { 4 } else if step == 18 { 0 } else if step == 6 { 1 } else if step >= 4 { 2 } else { 0 });
             ui.set_has_export(step >= 4);
             ui.set_recording_settings_section(match step { 5 => 4, 7 => 1, 8 | 12..=15 => 2, 9 => 3, _ => 0 });
             ui.set_recording_format(match step { 12 => "JPG Image Sequence", 13 => "MOV - DNxHR", 14 => "AVI - Raw", _ => "MP4 - Standard" }.into());
             ui.set_mp4_compatibility(if step == 15 { "DaVinci Resolve / Universal" } else { "Custom" }.into());
             ui.set_parse_step(if step == 19 { 1 } else if step < 3 { step } else { 0 });
             ui.set_help_dialog_open(popup);
+            ui.set_guide_open(step == 25);
+            ui.set_guide_step(5);
+            ui.set_show_tooltips(step != 24);
+            ui.set_recording_ready(true);
+            ui.set_selected_count(if (21..=24).contains(&step) { 1 } else { 0 });
+            let tips = ui.global::<Tf2Tooltips>();
+            tips.set_visible((21..=24).contains(&step));
+            tips.set_anchor_x(if width < 1000. { 459. } else { 763.5 });
+            tips.set_anchor_top(if width < 1000. { 73. } else { 240. });
+            tips.set_anchor_bottom(if width < 1000. { 105. } else { 280. });
+            tips.set_title(match step { 22 => "MANUAL CAMERA (MIRV)", 23 => "PREVIEW IN TF2", _ => "RECORD SELECTED" }.into());
+            tips.set_body(match step {
+                22 => "Choose custom angles and save camera positions as keyframes to create smooth movement. Useful for following a charge or showing an airshot from another angle.",
+                23 => "Opens the selected demo in TF2 near this highlight, including your lead-in time. Watch the moment before deciding what to record.",
+                _ => "Automatically records your selected candidates using your Recording Settings: format, FPS, HUD, graphics and output folder.",
+            }.into());
+            tips.set_footer(match step { 22 => "Opens TF2 paused. You decide when to record.", 23 => "Previewing does not start recording.", _ => "Change these in Recording Settings." }.into());
         } else {
             let result = (|| -> Result<()> {
+                ui.global::<Tf2Tooltips>().set_visible((21..=24).contains(&step));
                 let pixels = ui.window().take_snapshot()?;
                 let mut file = File::create(directory.join(format!("{:02}-{}x{}-step{}{}.ppm", frame / 2, width as u32, height as u32, step + 1, if popup { "-help" } else { "" })))?;
                 write!(file, "P6\n{} {}\n255\n", pixels.width(), pixels.height())?;
@@ -1045,6 +1064,7 @@ fn main() -> Result<()> {
     let _ = settings.save();
     ui.set_export_directory(settings.output_directory.display().to_string().into());
     ui.set_group_parse_exports(settings.group_parse_exports);
+    ui.set_show_tooltips(settings.show_tooltips);
     ui.set_item_schema(settings.item_schema.display().to_string().into());
     ui.set_tf2_path(settings.tf2_executable.display().to_string().into());
     ui.set_hlae_path(settings.hlae_executable.display().to_string().into());
@@ -1378,7 +1398,7 @@ fn refresh_item_schema_validation(ui: &AppWindow) {
     let result = item_schema::validate(Path::new(text.trim()));
     ui.set_item_schema_available(result.is_ok());
     ui.set_item_schema_message(if text.trim().is_empty() {
-        "No item schema provided. Optional; detect or choose a file.".into()
+        "Not found automatically. You can continue without it.".into()
     } else {
         result.err().unwrap_or_else(|| "Valid TF2 item schema selected.".into()).into()
     });
@@ -1404,6 +1424,18 @@ fn export_folder_dialog(path: &Path, title: &str) -> rfd::FileDialog {
 }
 
 fn bind_file_callbacks(ui: &AppWindow, state: &Arc<Mutex<State>>) {
+    let weak = ui.as_weak();
+    let options_state = state.clone();
+    ui.on_toggle_tooltips(move |enabled| {
+        let Some(ui) = weak.upgrade() else { return };
+        ui.set_show_tooltips(enabled);
+        let mut current = options_state.lock();
+        current.settings.show_tooltips = enabled;
+        ui.set_options_save_status(match current.settings.save() {
+            Ok(()) => "Changes save automatically.".into(),
+            Err(error) => format!("Could not save Options: {error}").into(),
+        });
+    });
     let weak = ui.as_weak();
     let output_state = state.clone();
     ui.on_commit_export_location(move || {
@@ -1466,21 +1498,6 @@ fn bind_file_callbacks(ui: &AppWindow, state: &Arc<Mutex<State>>) {
         ui.set_parse_step(step);
     });
     let weak = ui.as_weak();
-    let detection_state = state.clone();
-    ui.on_detect_item_schema(move || {
-        let Some(ui) = weak.upgrade() else { return };
-        let demos = detection_state.lock().demos.clone();
-        let configured = PathBuf::from(ui.get_tf2_path().to_string());
-        let tf2 = configured.is_file().then_some(configured).or_else(|| discover_tf2_executable(&demos));
-        match discover_item_schema(&demos, tf2.as_deref()) {
-            Some(path) => {
-                ui.set_item_schema(path.display().to_string().into());
-                refresh_item_schema_validation(&ui);
-            }
-            None => show_parse_help(&ui, "No item schema found", "Checked the selected demo folders and detected TF2 installation. You can use ? How to find to select items_game.txt manually, or continue without it. The item schema is optional.".into()),
-        }
-    });
-    let weak = ui.as_weak();
     let demos_state = state.clone();
     ui.on_choose_demos(move || {
         let files = demo_file_dialog(&demos_state)
@@ -1532,7 +1549,8 @@ fn bind_file_callbacks(ui: &AppWindow, state: &Arc<Mutex<State>>) {
     let weak = ui.as_weak();
     ui.on_show_item_schema_help(move || {
         if let Some(ui) = weak.upgrade() {
-            show_parse_help(&ui, "How to find the item schema", "Demo Toolkit checks the selected demo folders and your detected TF2 installation automatically.\n\n1. In Steam, open Team Fortress 2 > Properties > Installed Files > Browse.\n2. Look for tf/scripts/items/items_game.txt.\n3. Use Choose file to select it.\n\nIf that file is not present, you may select a standalone items_game.txt you already have, or continue without a schema. It is optional; some item names may be unavailable.".into());
+            show_parse_help(&ui, "How to find the item schema", "1. In Steam, open Team Fortress 2 > Properties.\n2. Choose Installed Files > Browse.\n3. Look for tf/scripts/items/items_game.txt.\n4. Use Choose File to select it.\n\nIf it is not there, continue without it. The schema is optional.".into());
+            ui.set_help_dialog_compact(true);
         }
     });
     let weak = ui.as_weak();

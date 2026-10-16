@@ -237,6 +237,8 @@ pub struct DemoJob {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(default)]
 pub struct AppSettings {
+    /// Application help preference; old settings files keep tooltips enabled.
+    pub show_tooltips: bool,
     pub last_demo_directory: PathBuf,
     pub output_directory: PathBuf,
     pub group_parse_exports: bool,
@@ -443,7 +445,7 @@ impl MirvShortcuts {
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
-            last_demo_directory: PathBuf::new(), output_directory: crate::parse_exports::default_location(), group_parse_exports: true, item_schema: PathBuf::new(), tf2_executable: PathBuf::new(),
+            show_tooltips: true, last_demo_directory: PathBuf::new(), output_directory: crate::parse_exports::default_location(), group_parse_exports: true, item_schema: PathBuf::new(), tf2_executable: PathBuf::new(),
             hlae_executable: PathBuf::new(), ffmpeg_executable: PathBuf::new(), recording_output_directory: PathBuf::new(), manual_hlae_launch_options: String::new(), performance_profile: "Medium".into(),
             lead_seconds: 8, outro_seconds: 3,
             capture_fps: 120, jpg_quality: 90, recording_format: "MP4 - Standard".into(), resolution: "2560x1440".into(),
@@ -769,5 +771,21 @@ mod candidate_tag_tests {
             ..Candidate::default()
         };
         assert_eq!(candidate.inferred_primary_tag(), "future_combo");
+    }
+}
+
+#[cfg(test)]
+mod application_options_tests {
+    use super::AppSettings;
+
+    #[test]
+    fn legacy_preferences_enable_help_and_disabled_tooltips_round_trip() {
+        let mut settings: AppSettings = serde_json::from_str(r#"{"capture_fps":240,"hud":"Off"}"#).unwrap();
+        assert!(settings.show_tooltips);
+        settings.show_tooltips = false;
+        let restored: AppSettings = serde_json::from_slice(&serde_json::to_vec(&settings).unwrap()).unwrap();
+        assert!(!restored.show_tooltips);
+        assert_eq!(restored.capture_fps, 240);
+        assert_eq!(restored.hud, "Off");
     }
 }

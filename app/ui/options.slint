@@ -1,0 +1,75 @@
+import { Tf2Colors, Tf2Panel, Tf2Heading, Tf2Body, Tf2Button, Tf2CheckBox } from "tf2-theme.slint";
+
+component GuidanceOptions inherits Tf2Panel {
+    in property <float> scale: 1;
+    in-out property <bool> show-tooltips;
+    callback toggle-tooltips(bool);
+    callback start-guide();
+    VerticalLayout {
+        padding: 14px * root.scale; spacing: 8px * root.scale;
+        Tf2Heading { height: 24px * root.scale; text: "HELP & GUIDANCE"; font-size: 18px * root.scale; }
+        Tf2CheckBox { height: 28px * root.scale; text: "Show tooltips"; label-font-size: 16px * root.scale; checked <=> root.show-tooltips; toggled(value) => { root.toggle-tooltips(value); } }
+        Tf2Body { height: 32px * root.scale; text: "Explain controls when you hover or use keyboard focus."; font-size: 14px * root.scale; wrap: word-wrap; }
+        HorizontalLayout {
+            height: 32px * root.scale; spacing: 12px;
+            Tf2Heading { text: "QUICK GUIDE"; font-size: 15px * root.scale; }
+            Tf2Button { width: 140px * root.scale; height: 32px * root.scale; text: "START GUIDE"; label-font-size: 13px * root.scale; clicked => { root.start-guide(); } }
+        }
+        Tf2Body { height: 34px * root.scale; text: "Learn how to load demos, find highlights and record clips."; font-size: 14px * root.scale; wrap: word-wrap; }
+    }
+}
+
+component LogOptions inherits Tf2Panel {
+    in property <float> scale: 1;
+    in property <bool> compact;
+    callback view-logs();
+    callback open-log-folder();
+    VerticalLayout {
+        padding: 14px * root.scale; spacing: 8px * root.scale; alignment: start;
+        Tf2Heading { height: 24px * root.scale; text: "APPLICATION LOGS"; font-size: 18px * root.scale; }
+        Tf2Body { height: 32px * root.scale; text: "View messages from parsing, previews and recording."; font-size: 14px * root.scale; wrap: word-wrap; }
+        if root.compact : HorizontalLayout {
+            height: 34px; spacing: 12px;
+            Tf2Button { width: 245px; height: 34px; text: "VIEW APPLICATION LOGS"; label-font-size: 14px; tone: Tf2Colors.blu; hover-tone: Tf2Colors.blu-hover; pressed-tone: Tf2Colors.blu-pressed; clicked => { root.view-logs(); } }
+            Tf2Button { width: 185px; height: 34px; text: "OPEN LOG FOLDER"; label-font-size: 14px; clicked => { root.open-log-folder(); } }
+            Rectangle { horizontal-stretch: 1; }
+        }
+        if !root.compact : VerticalLayout {
+            height: 76px * root.scale; spacing: 8px * root.scale;
+            Tf2Button { height: 34px * root.scale; text: "VIEW APPLICATION LOGS"; label-font-size: 14px * root.scale; tone: Tf2Colors.blu; hover-tone: Tf2Colors.blu-hover; pressed-tone: Tf2Colors.blu-pressed; clicked => { root.view-logs(); } }
+            Tf2Button { height: 34px * root.scale; text: "OPEN LOG FOLDER"; label-font-size: 14px * root.scale; clicked => { root.open-log-folder(); } }
+        }
+        if !root.compact : Tf2Body { height: 18px * root.scale; text: "Useful when troubleshooting a problem."; color: Tf2Colors.muted; font-size: 14px * root.scale; wrap: word-wrap; }
+    }
+}
+
+export component OptionsPage inherits Rectangle {
+    in property <bool> compact;
+    in property <float> scale: 1;
+    in-out property <bool> show-tooltips;
+    in property <string> save-status: "Changes save automatically.";
+    callback toggle-tooltips(bool);
+    callback start-guide();
+    callback view-logs();
+    callback open-log-folder();
+    // Fixed content heights avoid stretched cards or page scrolling.
+    guidance := GuidanceOptions {
+        x: 12px; y: 12px; width: root.compact ? root.width - 24px : (root.width - 36px) / 2;
+        height: 210px * root.scale;
+        scale: root.scale; show-tooltips <=> root.show-tooltips;
+        toggle-tooltips(value) => { root.toggle-tooltips(value); }
+        start-guide => { root.start-guide(); }
+    }
+    logs := LogOptions {
+        x: root.compact ? 12px : guidance.x + guidance.width + 12px;
+        y: root.compact ? guidance.y + guidance.height + 12px : 12px;
+        width: guidance.width; height: root.compact ? 138px : guidance.height;
+        compact: root.compact; scale: root.scale;
+        view-logs => { root.view-logs(); }
+        open-log-folder => { root.open-log-folder(); }
+    }
+    Tf2Body {
+        x: 12px; y: logs.y + logs.height + 10px; width: parent.width - 24px; height: 28px;
+        text: root.save-status; color: #8ab3cd; font-size: 13px * root.scale; wrap: word-wrap;
+    }
+}

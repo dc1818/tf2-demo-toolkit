@@ -1,5 +1,8 @@
 import { ScrollView } from "std-widgets.slint";
-import { Tf2Colors, Tf2Panel, Tf2Heading, Tf2Label, Tf2Body, Tf2Button, Tf2Tab, Tf2LineEdit, Tf2CheckBox, Tf2Progress, Tf2ComboBox, Tf2SpinBox } from "tf2-theme.slint";
+import { Tf2Tooltips, Tf2TooltipLayer, Tf2Colors, Tf2Panel, Tf2Heading, Tf2Label, Tf2Body, Tf2Button, Tf2Tab, Tf2LineEdit, Tf2CheckBox, Tf2Progress, Tf2ComboBox, Tf2SpinBox } from "tf2-theme.slint";
+
+import { OptionsPage } from "options.slint";
+export { Tf2Tooltips } from "tf2-theme.slint";
 
 // A complete tick (or whole-candidate) group. Keeping groups structured lets
 // the table distinguish their origin without turning every individual tag into
@@ -135,7 +138,7 @@ component AppHeader inherits Rectangle {
             Tf2Tab { text: "PARSE DEMOS"; active: root.page == 0; clicked => { root.navigate(0); } }
             Tf2Tab { text: "CANDIDATES"; active: root.page == 1; enabled: root.has-export; clicked => { root.navigate(1); } }
             Tf2Tab { text: "RECORDING SETTINGS"; active: root.page == 2; enabled: root.has-export; min-width: 225px; clicked => { root.navigate(2); } }
-            Tf2Tab { text: "APPLICATION LOGS"; active: root.page == 3; clicked => { root.navigate(3); } }
+            Tf2Tab { text: "OPTIONS"; active: root.page == 3 || root.page == 5; clicked => { root.navigate(3); } }
             Rectangle { horizontal-stretch: 1; }
         }
     }
@@ -147,7 +150,7 @@ component AppHeader inherits Rectangle {
             spacing: -2px;
             Text { text: "Demo Toolkit"; color: Tf2Colors.cream; font-family: "TF2 Build"; font-size: 28px; }
             Text {
-                text: root.page == 0 ? "PARSE DEMOS" : root.page == 1 ? "CANDIDATES" : root.page == 2 ? "RECORDING SETTINGS" : root.page == 3 ? "APPLICATION LOGS" : "CANDIDATE DETAILS";
+                text: root.page == 0 ? "PARSE DEMOS" : root.page == 1 ? "CANDIDATES" : root.page == 2 ? "RECORDING SETTINGS" : root.page == 3 ? "OPTIONS" : root.page == 5 ? "APPLICATION LOGS" : "CANDIDATE DETAILS";
                 color: #8ab3cd; font-family: "TF2 Build"; font-size: 12px;
             }
         }
@@ -694,12 +697,20 @@ ShortcutCapture { ui-scale: root.ui-scale; label: "Focus Director / TF2"; bindin
 export component AppWindow inherits Window {
     title: "TF2 Demo Toolkit";
     preferred-width: 1100px; preferred-height: 580px;
-    min-width: 800px; min-height: root.selected-page == 2 ? root.header-height + (86px + root.recording-body-height * 1px) * (root.width >= 1250px ? 1.2 : 1) : 480px;
+    min-width: 800px; min-height: root.selected-page == 2 ? root.header-height + (86px + root.recording-body-height * 1px) * (root.width >= 1250px ? 1.2 : 1) : root.selected-page == 3 && !root.compact-header ? 400px : 480px;
     background: Tf2Colors.app;
 
     in-out property <int> selected-page: 0;
     callback page-layout-changed(int);
-    changed selected-page => { root.page-layout-changed(root.selected-page); }
+    changed selected-page => { Tf2Tooltips.visible = false; root.page-layout-changed(root.selected-page); }
+    changed width => { Tf2Tooltips.visible = false; }
+    changed height => { Tf2Tooltips.visible = false; }
+    in-out property <bool> show-tooltips: true;
+    changed show-tooltips => { Tf2Tooltips.enabled = root.show-tooltips; Tf2Tooltips.visible = false; }
+    in-out property <string> options-save-status: "Changes save automatically.";
+    callback toggle-tooltips(bool);
+    in-out property <bool> guide-open: false;
+    in-out property <int> guide-step: 0;
     in-out property <bool> has-export: false;
     // Updated from the native resize event so the 900x520 frame always enters
     // the compact application header and settings layout.
@@ -722,7 +733,7 @@ export component AppWindow inherits Window {
     in-out property <bool> group-parse-exports: true;
     in-out property <string> item-schema;
     in-out property <bool> item-schema-available: false;
-    in-out property <string> item-schema-message: "No item schema provided. Optional; detect or choose a file.";
+    in-out property <string> item-schema-message: "Not found automatically. You can continue without it.";
     in-out property <string> parse-estimate-overview: "Calculating time and space estimates...";
     in-out property <string> status-text: "Ready";
     in-out property <string> recording-save-status;
@@ -854,7 +865,7 @@ export component AppWindow inherits Window {
     callback choose-demos(); callback choose-demo-folder(); callback review-parse-options(); callback choose-export-directory(); callback choose-item-schema();
     callback show-item-schema-help();
     callback validate-item-schema();
-    callback detect-item-schema();
+
     callback navigate-parse-step(int);
     callback refresh-parse-estimate();
     callback show-parse-estimate-details();
@@ -932,7 +943,7 @@ export component AppWindow inherits Window {
         : root.recording-settings-section == 4 ? 290
         : (root.recording-format == "MP4 - Standard" || root.recording-format == "MP4 - Compatible") ? (root.mp4-compatibility == "Custom" ? 295 : 235)
         : root.recording-format == "AVI - Raw" ? 177 : root.recording-format == "MOV - DNxHR" ? 119 : 139;
-    out property <int> preferred-guided-height: root.selected-page == 0 ? 580 : root.selected-page == 2 ? 194 + root.recording-body-height : 600;
+    out property <int> preferred-guided-height: root.selected-page == 0 ? 580 : root.selected-page == 2 ? 194 + root.recording-body-height : root.selected-page == 3 ? 440 : 600;
     changed preferred-guided-height => { root.page-layout-changed(root.selected-page); }
     private property <bool> parse-short: self.height < 760px;
     private property <bool> compact: self.width <= 1220px || self.height <= 700px;
@@ -945,8 +956,15 @@ export component AppWindow inherits Window {
     private property <int> detail-topic: 0;
     private property <length> recording-advanced-panel-height: !root.advanced-encoding-open ? 44px : (root.mp4-compatibility == "Custom" && (root.recording-format == "MP4 - Standard" || root.recording-format == "MP4 - Compatible") ? (root.compact ? 178px : 166px) : ((root.recording-format == "MP4 - Standard" || root.recording-format == "MP4 - Compatible") ? (root.compact ? 106px : 120px) : (root.recording-format == "AVI - Raw" ? (root.compact ? 106px : 120px) : (root.recording-format == "MOV - DNxHR" ? (root.compact ? 74px : 82px) : 44px))));
 
-    Rectangle {
+    FocusScope {
         width: root.width; height: root.height;
+        capture-key-pressed(event) => {
+            if event.text == Key.Escape && (root.guide-open || root.help-dialog-open || root.compact-nav-open || Tf2Tooltips.visible) {
+                root.guide-open = false; root.help-dialog-open = false; root.compact-nav-open = false; Tf2Tooltips.visible = false;
+                return accept;
+            }
+            return reject;
+        }
         dismiss-area := TouchArea {
             dismiss-focus := FocusScope { enabled: true; }
             clicked => { dismiss-focus.focus(); }
@@ -1019,10 +1037,9 @@ export component AppWindow inherits Window {
                         VerticalLayout { spacing: (5px * root.guided-scale);
                             HorizontalLayout { height: (30px * root.guided-scale); spacing: (8px * root.guided-scale);
                                 Tf2LineEdit { text-size: 14px * root.guided-scale; height: (30px * root.guided-scale); text <=> root.item-schema; placeholder: "Optional items_game.txt"; }
-                                Tf2Button { width: (94px * root.guided-scale); height: (30px * root.guided-scale); label-font-size: (12px * root.guided-scale); text: "Choose file"; clicked => { root.choose-item-schema(); } }
+                                Tf2Button { width: (94px * root.guided-scale); height: (30px * root.guided-scale); label-font-size: (12px * root.guided-scale); text: "Choose file"; visible: !root.item-schema-available; clicked => { root.choose-item-schema(); } }
                             }
                             HorizontalLayout { height: (27px * root.guided-scale); spacing: (6px * root.guided-scale);
-                                Tf2Button { width: (178px * root.guided-scale); height: (27px * root.guided-scale); label-font-size: (11px * root.guided-scale); text: "Automatically detect"; enabled: !root.item-schema-available; tone: Tf2Colors.blu; hover-tone: Tf2Colors.blu-hover; pressed-tone: Tf2Colors.blu-pressed; clicked => { root.detect-item-schema(); } }
                                 if !root.item-schema-available : Tf2Button { width: (124px * root.guided-scale); height: (27px * root.guided-scale); label-font-size: (11px * root.guided-scale); text: "? How to find"; clicked => { root.show-item-schema-help(); } }
                                 Rectangle { horizontal-stretch: 1; }
                             }
@@ -1061,7 +1078,7 @@ export component AppWindow inherits Window {
                             } }
                             Tf2Panel { height: 94px * root.guided-scale; VerticalLayout { padding: (6px * root.guided-scale); spacing: (3px * root.guided-scale);
                                 Tf2Heading { height: (22px * root.guided-scale); text: "What will be analyzed"; font-size: (14px * root.guided-scale); }
-                                Tf2Body { text: "Combat: kills, damage, weapons, multi-kills.\nMovement: airshots, speed and highlights.\nMatch context: rounds, bookmarks, scores and tags.\nAvailable detail depends on the demo."; font-size: root.parse-short ? (11px * root.guided-scale) : (14px * root.guided-scale); color: Tf2Colors.muted; wrap: word-wrap; vertical-alignment: top; }
+                                Tf2Body { text: "Reads kills, damage, weapons, movement and round events.\nFinds highlights such as multi-kills, airshots and bookmarks.\nScores and tags clips for filtering, previewing and recording.\nAvailable detail depends on the demo."; font-size: root.parse-short ? (11px * root.guided-scale) : (14px * root.guided-scale); color: Tf2Colors.muted; wrap: word-wrap; vertical-alignment: top; }
                             } }
                         }
                     }
@@ -1132,9 +1149,9 @@ export component AppWindow inherits Window {
                 height: 34px; spacing: 5px;
                 Tf2LineEdit { text <=> root.tag-filter; placeholder: "ALL TAGS: AIRSHOT, MEDIC PICK"; centered: true; edited(value) => { root.set-tag-filter(value); } }
                 Tf2Button { width: 98px; height: 32px; text: root.candidate-filters-open ? "CLOSE" : "FILTERS"; clicked => { root.candidate-filters-open = !root.candidate-filters-open; } }
-                Tf2Button { width: 165px; height: 32px; text: "OPEN HLAE"; enabled: root.selected-count == 1 && root.recording-ready; tone: Tf2Colors.gold; hover-tone: Tf2Colors.gold-hover; pressed-tone: Tf2Colors.gold-pressed; clicked => { root.launch-manual-hlae(); } }
-                Tf2Button { width: 120px; height: 32px; text: "PREVIEW"; enabled: root.selected-count == 1; tone: Tf2Colors.blu; hover-tone: Tf2Colors.blu-hover; pressed-tone: Tf2Colors.blu-pressed; clicked => { root.preview-selected(); } }
-                Tf2Button { width: 120px; height: 32px; text: "RECORD"; enabled: root.selected-count > 0 && root.recording-ready; tone: Tf2Colors.red; hover-tone: Tf2Colors.red-hover; pressed-tone: Tf2Colors.red-pressed; clicked => { root.record-selected(); } }
+                Tf2Button { width: 150px; height: 32px; text: "MANUAL CAMERA"; label-font-size: 12px; enabled: root.selected-count == 1 && root.recording-ready; tone: Tf2Colors.gold; hover-tone: Tf2Colors.gold-hover; pressed-tone: Tf2Colors.gold-pressed; tooltip-id: 2; tooltip-title: "MANUAL CAMERA (MIRV)"; tooltip-body: root.selected-count != 1 ? "Select exactly one candidate for this action." : !root.recording-ready ? "Wait for the current recording or recovery process to finish." : "Choose custom angles and save camera positions as keyframes to create smooth movement. Useful for following a charge or showing an airshot from another angle."; tooltip-footer: "Opens TF2 paused. You decide when to record."; clicked => { root.launch-manual-hlae(); } }
+                Tf2Button { width: 100px; height: 32px; text: "PREVIEW"; label-font-size: 12px; enabled: root.selected-count == 1; tone: Tf2Colors.blu; hover-tone: Tf2Colors.blu-hover; pressed-tone: Tf2Colors.blu-pressed; tooltip-id: 1; tooltip-title: "PREVIEW IN TF2"; tooltip-body: root.selected-count != 1 ? "Select exactly one candidate for this action." : "Opens the selected demo in TF2 near this highlight, including your lead-in time. Watch the moment before deciding what to record."; tooltip-footer: "Previewing does not start recording."; clicked => { root.preview-selected(); } }
+                Tf2Button { width: 145px; height: 32px; text: "RECORD SELECTED"; label-font-size: 12px; enabled: root.selected-count > 0 && root.recording-ready; tone: Tf2Colors.red; hover-tone: Tf2Colors.red-hover; pressed-tone: Tf2Colors.red-pressed; tooltip-id: 3; tooltip-title: "RECORD SELECTED"; tooltip-body: root.selected-count == 0 ? "Select one or more candidates to record." : !root.recording-ready ? "Wait for the current recording or recovery process to finish." : "Automatically records your selected candidates using your Recording Settings: format, FPS, HUD, graphics and output folder."; tooltip-footer: "Change these in Recording Settings."; clicked => { root.record-selected(); } }
             }
             if root.compact : RecordingPadding { lead <=> root.lead-seconds; tail <=> root.outro-seconds; }
             if root.compact && root.candidate-filters-open : Tf2Panel {
@@ -1152,10 +1169,15 @@ export component AppWindow inherits Window {
             if !root.compact : HorizontalLayout {
                 height: 40px; spacing: 7px;
                 Tf2Button { width: 170px; text: root.all-visible-selected ? "DESELECT ALL" : "SELECT ALL"; tone: Tf2Colors.gold; hover-tone: Tf2Colors.gold-hover; pressed-tone: Tf2Colors.gold-pressed; clicked => { root.select-all-visible(); } }
-                Tf2Button { width: 190px; text: "PREVIEW IN TF2"; enabled: root.selected-count == 1; tone: Tf2Colors.blu; hover-tone: Tf2Colors.blu-hover; pressed-tone: Tf2Colors.blu-pressed; clicked => { root.preview-selected(); } }
-                Tf2Button { width: 250px; text: "LAUNCH MANUAL MIRV SESSION"; enabled: root.selected-count == 1 && root.recording-ready; tone: Tf2Colors.gold; hover-tone: Tf2Colors.gold-hover; pressed-tone: Tf2Colors.gold-pressed; clicked => { root.launch-manual-hlae(); } }
-                Tf2Button { width: 205px; text: "RECORD WITH HLAE"; enabled: root.selected-count > 0 && root.recording-ready; tone: Tf2Colors.red; hover-tone: Tf2Colors.red-hover; pressed-tone: Tf2Colors.red-pressed; clicked => { root.record-selected(); } }
-                Tf2Button { width: 145px; text: "VIEW DETAILS"; enabled: root.selected-count == 1; clicked => { root.view-selected-details(); } }
+                Tf2Button { width: 190px; text: "PREVIEW IN TF2"; enabled: root.selected-count == 1; tone: Tf2Colors.blu; hover-tone: Tf2Colors.blu-hover; pressed-tone: Tf2Colors.blu-pressed; tooltip-id: 1; tooltip-title: "PREVIEW IN TF2"; tooltip-body: root.selected-count != 1 ? "Select exactly one candidate for this action." : "Opens the selected demo in TF2 near this highlight, including your lead-in time. Watch the moment before deciding what to record."; tooltip-footer: "Previewing does not start recording."; clicked => { root.preview-selected(); } }
+                Tf2Button { width: 225px; text: "MANUAL CAMERA (MIRV)"; label-font-size: 14px; enabled: root.selected-count == 1 && root.recording-ready; tone: Tf2Colors.gold; hover-tone: Tf2Colors.gold-hover; pressed-tone: Tf2Colors.gold-pressed; tooltip-id: 2; tooltip-title: "MANUAL CAMERA (MIRV)"; tooltip-body: root.selected-count != 1 ? "Select exactly one candidate for this action." : !root.recording-ready ? "Wait for the current recording or recovery process to finish." : "Choose custom angles and save camera positions as keyframes to create smooth movement. Useful for following a charge or showing an airshot from another angle."; tooltip-footer: "Opens TF2 paused. You decide when to record."; clicked => { root.launch-manual-hlae(); } }
+                Tf2Button { width: 34px; text: "?"; clicked => {
+                    root.help-dialog-title = "Manual Camera (MIRV)";
+                    root.help-dialog-body = "MIRV provides HLAE’s camera and recording controls in TF2.\n\nChoose your own angles, save positions as keyframes, and create smooth movement between them. Try following a charge or viewing an airshot from another angle.\n\nOpen one candidate paused, set up the camera, preview the movement, then record. A keyframe saves a camera position at a moment in the demo.";
+                    root.help-dialog-compact = false; root.help-dialog-open = true; Tf2Tooltips.visible = false;
+                } }
+                Tf2Button { width: 205px; text: "RECORD SELECTED"; enabled: root.selected-count > 0 && root.recording-ready; tone: Tf2Colors.red; hover-tone: Tf2Colors.red-hover; pressed-tone: Tf2Colors.red-pressed; tooltip-id: 3; tooltip-title: "RECORD SELECTED"; tooltip-body: root.selected-count == 0 ? "Select one or more candidates to record." : !root.recording-ready ? "Wait for the current recording or recovery process to finish." : "Automatically records your selected candidates using your Recording Settings: format, FPS, HUD, graphics and output folder."; tooltip-footer: "Change these in Recording Settings."; clicked => { root.record-selected(); } }
+                Tf2Button { width: 145px; text: "VIEW DETAILS"; enabled: root.selected-count == 1; tooltip-id: 4; tooltip-title: "VIEW DETAILS"; tooltip-body: root.selected-count != 1 ? "Select exactly one candidate for this action." : "Inspect the selected candidate’s kills, score breakdown, tags and source demo."; tooltip-footer: "Select one candidate to view its details."; clicked => { root.view-selected-details(); } }
                 Rectangle { horizontal-stretch: 1; } Tf2Body { text: root.selected-count + " SELECTED"; color: Tf2Colors.muted; }
             }
             CandidateTable { vertical-stretch: 1; rows: root.candidate-rows; compact: root.compact; tags-width-px: root.candidate-tags-width; horizontal-offset <=> root.candidate-horizontal-offset; drag(index, delta, selecting, additive) => { root.drag-select-candidates(index, delta, selecting, additive); } selection-done => { root.selection-changed(); } }
@@ -1837,14 +1859,25 @@ export component AppWindow inherits Window {
             }
         }
 
-        if root.selected-page == 3 : VerticalLayout {
+        if root.selected-page == 3 : OptionsPage {
+            x: 0px; y: root.header-height; width: root.width; height: root.height - self.y;
+            compact: root.compact-header; scale: root.width >= 1250px ? 1.2 : 1;
+            show-tooltips <=> root.show-tooltips; save-status: root.options-save-status;
+            toggle-tooltips(value) => { root.toggle-tooltips(value); }
+            view-logs => { root.selected-page = 5; }
+            open-log-folder => { root.view-recording-logs(); }
+            start-guide => { root.guide-step = 0; root.guide-open = true; Tf2Tooltips.visible = false; }
+        }
+
+        if root.selected-page == 5 : VerticalLayout {
             x: 0px; y: root.header-height; width: root.width; height: root.height - self.y;
             padding: root.compact ? 9px : 14px; spacing: root.compact ? 5px : 8px;
             HorizontalLayout {
-                height: root.compact ? 24px : 34px;
+                height: 36px;
                 Tf2Heading { text: "APPLICATION LOGS"; font-size: root.compact ? 15px : 20px; }
                 Rectangle { horizontal-stretch: 1; }
                 Tf2Button { width: root.compact ? 130px : 170px; height: root.compact ? 30px : 36px; text: "OPEN LOG FOLDER"; clicked => { root.view-recording-logs(); } }
+                Tf2Button { width: root.compact ? 150px : 180px; height: root.compact ? 30px : 36px; text: "BACK TO OPTIONS"; label-font-size: 13px; clicked => { root.selected-page = 3; } }
             }
             HorizontalLayout {
                 spacing: root.compact ? 5px : 9px;
@@ -1884,7 +1917,45 @@ export component AppWindow inherits Window {
                 Tf2Button { text: "PARSE"; enabled: root.selected-page != 0; clicked => { root.selected-page = 0; root.compact-nav-open = false; } }
                 Tf2Button { text: "CANDIDATES"; text-color: root.has-export ? Tf2Colors.cream : Tf2Colors.dim; enabled: root.has-export && root.selected-page != 1; clicked => { root.selected-page = 1; root.compact-nav-open = false; } }
                 Tf2Button { text: "RECORDING SETTINGS"; text-color: root.has-export ? Tf2Colors.cream : Tf2Colors.dim; enabled: root.has-export && root.selected-page != 2; clicked => { root.selected-page = 2; root.compact-nav-open = false; } }
-                Tf2Button { text: "APPLICATION LOGS"; enabled: root.selected-page != 3; clicked => { root.selected-page = 3; root.compact-nav-open = false; } }
+                Tf2Button { text: "OPTIONS"; enabled: root.selected-page != 3; clicked => { root.selected-page = 3; root.compact-nav-open = false; } }
+            }
+        }
+
+        if !root.help-dialog-open && !root.guide-open && !root.compact-nav-open : Tf2TooltipLayer {
+            width: root.width; height: root.height; compact: root.compact;
+        }
+
+        if root.guide-open : Rectangle {
+            width: root.width; height: root.height; background: #000000aa;
+            TouchArea { clicked => { root.guide-open = false; } }
+            Tf2Panel {
+                width: Math.min(650px, parent.width - 32px); height: Math.min(350px, parent.height - 32px);
+                x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2;
+                border-color: Tf2Colors.border-bright;
+                TouchArea { }
+                VerticalLayout {
+                    padding: 20px; spacing: 12px;
+                    HorizontalLayout { height: 30px;
+                        Tf2Body { text: "QUICK GUIDE · " + (root.guide-step + 1) + " OF 6"; color: #8ab3cd; }
+                        Rectangle { horizontal-stretch: 1; }
+                        Tf2Button { width: 80px; height: 30px; text: "CLOSE"; label-font-size: 12px; clicked => { root.guide-open = false; } }
+                    }
+                    Tf2Heading { height: 30px; text: root.guide-step == 0 ? "CHOOSE YOUR DEMOS" : root.guide-step == 1 ? "SET YOUR PARSE OPTIONS" : root.guide-step == 2 ? "FIND YOUR HIGHLIGHTS" : root.guide-step == 3 ? "EXPLORE CANDIDATES" : root.guide-step == 4 ? "RECORD SELECTED" : "MANUAL CAMERA (MIRV)"; }
+                    Tf2Body {
+                        vertical-stretch: 1; wrap: word-wrap; vertical-alignment: top;
+                        text: root.guide-step == 0 ? "On Parse Demos, choose .dem files or a demos folder. You can also drag either into the app. The selected demos appear in a scrollable list.\n\nAlready parsed? Use Load Previously Parsed Export to open your saved export folder."
+                            : root.guide-step == 1 ? "Choose where to save your parse export. The app checks for an item schema automatically; it is optional if none is found.\n\nNormal is the default performance setting. Review the time and space estimates before continuing."
+                            : root.guide-step == 2 ? "Parsing reads the demo’s combat, movement and round events. Analysis identifies highlights, assigns scores and tags, and includes bookmarks.\n\nWhen parsing finishes, Candidates and Recording Settings become available."
+                            : root.guide-step == 3 ? "Use class, map, server and recorded filters to narrow the list. Separate search phrases with commas to require every phrase.\n\nSelect one candidate to Preview in TF2 or View Details. Preview plays the moment without recording."
+                            : root.guide-step == 4 ? "Set your format, FPS, HUD, graphics and output folder in Recording Settings.\n\nReturn to Candidates, select one or more clips, and choose Record Selected. The app uses those settings and your before/after padding."
+                            : "Select one candidate and open Manual Camera (MIRV) for custom camera shots. TF2 opens paused so you can choose angles and create smooth paths with keyframes.\n\nYou decide when to record. Your configured keys are in Recording Settings > MIRV Shortcuts. Help remains available from Options.";
+                    }
+                    HorizontalLayout { height: 36px;
+                        Tf2Button { width: 110px; height: 36px; text: "BACK"; enabled: root.guide-step > 0; clicked => { root.guide-step -= 1; } }
+                        Rectangle { horizontal-stretch: 1; }
+                        Tf2Button { width: 130px; height: 36px; text: root.guide-step == 5 ? "DONE" : "NEXT"; tone: Tf2Colors.red; hover-tone: Tf2Colors.red-hover; pressed-tone: Tf2Colors.red-pressed; clicked => { if root.guide-step == 5 { root.guide-open = false; } else { root.guide-step += 1; } } }
+                    }
+                }
             }
         }
 
