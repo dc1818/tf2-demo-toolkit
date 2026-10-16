@@ -1,3 +1,4 @@
+import { GuideFocus, GuideAnchor } from "guide-state.slint";
 import "./assets/fonts/TF2Build.ttf";
 import "./assets/fonts/BebasNeue-Regular.ttf";
 import "./assets/fonts/Oswald-Variable.ttf";
@@ -31,6 +32,10 @@ export global Tf2Colors {
 }
 
 export component Tf2Panel inherits Rectangle {
+    in property <int> guide-id: 0;
+    in property <length> guide-width: root.width;
+    in property <length> guide-height: root.height;
+    GuideAnchor { target-id: root.guide-id; width: root.guide-width; height: root.guide-height; }
     background: Tf2Colors.panel;
     border-width: 1px;
     border-color: Tf2Colors.border;
@@ -103,6 +108,10 @@ export component Tf2TooltipLayer inherits Rectangle {
 }
 
 export component Tf2Button inherits Rectangle {
+    in property <int> guide-id: 0;
+    in property <length> guide-width: root.width;
+    in property <length> guide-height: root.height;
+    GuideAnchor { target-id: root.guide-id; width: root.guide-width; height: root.guide-height; }
     in property <string> text;
     in property <bool> enabled: true;
     in property <brush> tone: Tf2Colors.neutral;
@@ -115,7 +124,7 @@ export component Tf2Button inherits Rectangle {
     in property <string> tooltip-body;
     in property <string> tooltip-footer;
     private property <bool> keyboard-tooltip: false;
-    private property <bool> wants-tooltip: Tf2Tooltips.enabled && root.tooltip-body != "" && (area.has-hover || root.keyboard-tooltip);
+    private property <bool> wants-tooltip: !GuideFocus.active && Tf2Tooltips.enabled && root.tooltip-body != "" && (area.has-hover || root.keyboard-tooltip);
     changed wants-tooltip => {
         tooltip-delay.running = root.wants-tooltip;
         if !root.wants-tooltip && Tf2Tooltips.owner == root.tooltip-id { Tf2Tooltips.visible = false; }
@@ -194,6 +203,10 @@ export component Tf2Button inherits Rectangle {
 }
 
 export component Tf2Tab inherits Rectangle {
+    in property <int> guide-id: 0;
+    in property <length> guide-width: root.width;
+    in property <length> guide-height: root.height;
+    GuideAnchor { target-id: root.guide-id; width: root.guide-width; height: root.guide-height; }
     in property <string> text;
     in property <bool> active;
     in property <bool> enabled: true;
@@ -225,6 +238,10 @@ export component Tf2Tab inherits Rectangle {
 }
 
 export component Tf2LineEdit inherits Rectangle {
+    in property <int> guide-id: 0;
+    in property <length> guide-width: root.width;
+    in property <length> guide-height: root.height;
+    GuideAnchor { target-id: root.guide-id; width: root.guide-width; height: root.guide-height; }
     in property <length> text-size: 14px;
     in-out property <string> text;
     in property <string> placeholder;
@@ -321,6 +338,10 @@ export component Tf2CheckBox inherits Rectangle {
 }
 
 export component Tf2Progress inherits Rectangle {
+    in property <int> guide-id: 0;
+    in property <length> guide-width: root.width;
+    in property <length> guide-height: root.height;
+    GuideAnchor { target-id: root.guide-id; width: root.guide-width; height: root.guide-height; }
     in property <float> value;
     height: 12px;
     background: #121311;
@@ -337,6 +358,10 @@ export component Tf2Progress inherits Rectangle {
 
 // The same controls on every platform, independent of the OS light/dark theme.
 export component Tf2ComboBox inherits Rectangle {
+    in property <int> guide-id: 0;
+    in property <length> guide-width: root.width;
+    in property <length> guide-height: root.height;
+    GuideAnchor { target-id: root.guide-id; width: root.guide-width; height: root.guide-height; }
     in property <length> text-size: 13px;
     in property <[string]> model;
     in-out property <string> current-value;

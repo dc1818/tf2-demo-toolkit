@@ -239,6 +239,7 @@ pub struct DemoJob {
 pub struct AppSettings {
     /// Application help preference; old settings files keep tooltips enabled.
     pub show_tooltips: bool,
+    pub onboarding: crate::guide::Progress,
     pub last_demo_directory: PathBuf,
     pub output_directory: PathBuf,
     pub group_parse_exports: bool,
@@ -445,6 +446,7 @@ impl MirvShortcuts {
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
+            onboarding: crate::guide::Progress::default(),
             show_tooltips: true, last_demo_directory: PathBuf::new(), output_directory: crate::parse_exports::default_location(), group_parse_exports: true, item_schema: PathBuf::new(), tf2_executable: PathBuf::new(),
             hlae_executable: PathBuf::new(), ffmpeg_executable: PathBuf::new(), recording_output_directory: PathBuf::new(), manual_hlae_launch_options: String::new(), performance_profile: "Medium".into(),
             lead_seconds: 8, outro_seconds: 3,

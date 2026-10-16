@@ -1,0 +1,28 @@
+// Live widget bounds shared by the themed controls and the guide overlay.
+export global GuideFocus {
+    in-out property <bool> active: false;
+    in-out property <int> target: 0;
+    in-out property <bool> available: false;
+    in-out property <length> left;
+    in-out property <length> top;
+    in-out property <length> target-width;
+    in-out property <length> target-height;
+    changed target => { self.available = false; }
+    changed active => { self.available = false; }
+}
+
+export component GuideAnchor inherits Rectangle {
+    in property <int> target-id;
+    // A transparent, non-interactive child: never changes layout or input.
+    Timer {
+        interval: 60ms;
+        running: GuideFocus.active && root.target-id > 0 && GuideFocus.target == root.target-id;
+        triggered => {
+            GuideFocus.left = root.absolute-position.x;
+            GuideFocus.top = root.absolute-position.y;
+            GuideFocus.target-width = root.width;
+            GuideFocus.target-height = root.height;
+            GuideFocus.available = root.width > 0px && root.height > 0px;
+        }
+    }
+}

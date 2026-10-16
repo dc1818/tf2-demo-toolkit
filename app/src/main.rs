@@ -2,6 +2,8 @@
 #![recursion_limit = "256"]
 
 mod analyzer;
+mod guide;
+mod guide_ui;
 mod item_schema;
 mod batch;
 mod models;
@@ -974,7 +976,13 @@ fn capture_ui_snapshots(directory: PathBuf) -> Result<()> {
     }).collect::<Vec<_>>())));
     ui.set_help_dialog_title("How to find the item schema".into());
     ui.set_help_dialog_body("Demo Toolkit checks the selected demo folders and your TF2 installation automatically.\n\n1. In Steam, open Team Fortress 2 > Properties > Installed Files > Browse.\n2. Look for tf/scripts/items/items_game.txt.\n3. Use Choose file to select it.\n\nThe schema is optional. You can continue without it.".into());
-    let cases = [(800.,480.,0,false), (800.,480.,1,false), (800.,480.,2,false), (800.,480.,1,true), (900.,520.,0,false), (900.,520.,1,false), (900.,520.,2,false), (1280.,720.,1,false), (1480.,860.,0,false), (1480.,860.,1,false), (1480.,860.,2,false), (1920.,1080.,1,false), (800.,480.,4,false), (800.,480.,5,false), (800.,480.,6,false), (800.,480.,7,false), (800.,480.,8,false), (800.,480.,9,false), (1280.,720.,4,false), (1280.,720.,7,false), (1280.,720.,8,false), (1280.,720.,9,false), (1280.,720.,5,false), (800.,480.,12,false), (800.,480.,13,false), (800.,480.,14,false), (800.,480.,15,false), (1100.,600.,0,false), (1100.,600.,1,false), (1100.,600.,2,false), (1100.,600.,4,false), (1100.,600.,7,false), (1100.,600.,8,false), (1100.,600.,9,false), (1100.,600.,5,false), (1100.,600.,6,false), (1100.,600.,16,false), (1100.,600.,17,false), (800.,480.,16,false), (1100.,600.,18,false), (1480.,860.,6,false), (1320.,674.,18,false), (1320.,674.,1,false), (1320.,607.,2,false), (1320.,539.,4,false), (1320.,472.,7,false), (1320.,565.,8,false), (1320.,530.,9,false), (1320.,557.,5,false), (1100.,580.,18,false), (1100.,411.,7,false), (1100.,467.,4,false), (1100.,489.,8,false), (1320.,674.,19,false), (1100.,400.,20,false), (1320.,458.,20,false), (800.,480.,20,false), (900.,520.,20,false), (1480.,860.,21,false), (800.,480.,22,false), (1480.,860.,23,false), (800.,480.,24,false), (800.,480.,25,false)];
+    let mut cases = vec![(800.,480.,0,false), (800.,480.,1,false), (800.,480.,2,false), (800.,480.,1,true), (900.,520.,0,false), (900.,520.,1,false), (900.,520.,2,false), (1280.,720.,1,false), (1480.,860.,0,false), (1480.,860.,1,false), (1480.,860.,2,false), (1920.,1080.,1,false), (800.,480.,4,false), (800.,480.,5,false), (800.,480.,6,false), (800.,480.,7,false), (800.,480.,8,false), (800.,480.,9,false), (1280.,720.,4,false), (1280.,720.,7,false), (1280.,720.,8,false), (1280.,720.,9,false), (1280.,720.,5,false), (800.,480.,12,false), (800.,480.,13,false), (800.,480.,14,false), (800.,480.,15,false), (1100.,600.,0,false), (1100.,600.,1,false), (1100.,600.,2,false), (1100.,600.,4,false), (1100.,600.,7,false), (1100.,600.,8,false), (1100.,600.,9,false), (1100.,600.,5,false), (1100.,600.,6,false), (1100.,600.,16,false), (1100.,600.,17,false), (800.,480.,16,false), (1100.,600.,18,false), (1480.,860.,6,false), (1320.,674.,18,false), (1320.,674.,1,false), (1320.,607.,2,false), (1320.,539.,4,false), (1320.,472.,7,false), (1320.,565.,8,false), (1320.,530.,9,false), (1320.,557.,5,false), (1100.,580.,18,false), (1100.,411.,7,false), (1100.,467.,4,false), (1100.,489.,8,false), (1320.,674.,19,false), (1100.,400.,20,false), (1320.,458.,20,false), (800.,480.,20,false), (900.,520.,20,false), (1480.,860.,21,false), (800.,480.,22,false), (1480.,860.,23,false), (800.,480.,24,false), (800.,480.,25,false)];
+    for tour_step in 1..=39 {
+        for (width, height) in [(1320., 720.), (800., 480.)] {
+            cases.push((width, height, 100 + tour_step, false));
+        }
+    }
+    for dialog in 1..=3 { cases.push((800., 480., 200 + dialog, false)); }
     let failure = Rc::new(RefCell::new(None::<String>));
     let capture_failure = failure.clone();
     let weak = ui.as_weak();
@@ -998,8 +1006,8 @@ fn capture_ui_snapshots(directory: PathBuf) -> Result<()> {
             ui.set_mp4_compatibility(if step == 15 { "DaVinci Resolve / Universal" } else { "Custom" }.into());
             ui.set_parse_step(if step == 19 { 1 } else if step < 3 { step } else { 0 });
             ui.set_help_dialog_open(popup);
-            ui.set_guide_open(step == 25);
-            ui.set_guide_step(5);
+            ui.set_guide_open(false);
+            ui.set_guide_dialog(if step == 25 { 1 } else { 0 });
             ui.set_show_tooltips(step != 24);
             ui.set_recording_ready(true);
             ui.set_selected_count(if (21..=24).contains(&step) { 1 } else { 0 });
@@ -1015,9 +1023,23 @@ fn capture_ui_snapshots(directory: PathBuf) -> Result<()> {
                 _ => "Automatically records your selected candidates using your Recording Settings: format, FPS, HUD, graphics and output folder.",
             }.into());
             tips.set_footer(match step { 22 => "Opens TF2 paused. You decide when to record.", 23 => "Previewing does not start recording.", _ => "Change these in Recording Settings." }.into());
+            if (101..=139).contains(&step) {
+                ui.set_has_export(true);
+                ui.set_selected_count(1);
+                ui.set_parse_started(step == 112);
+                ui.set_busy(step == 112);
+                guide_ui::show_step(&ui, step - 100);
+            } else {
+                ui.set_parse_started(false); ui.set_busy(false);
+            }
+            if (201..=203).contains(&step) { ui.set_selected_page(0); ui.set_guide_dialog(step - 200); }
+
         } else {
             let result = (|| -> Result<()> {
                 ui.global::<Tf2Tooltips>().set_visible((21..=24).contains(&step));
+                if (101..=139).contains(&step) && !ui.global::<GuideFocus>().get_available() {
+                    anyhow::bail!("Guide target {} is missing at {}x{}", step - 100, width, height);
+                }
                 let pixels = ui.window().take_snapshot()?;
                 let mut file = File::create(directory.join(format!("{:02}-{}x{}-step{}{}.ppm", frame / 2, width as u32, height as u32, step + 1, if popup { "-help" } else { "" })))?;
                 write!(file, "P6\n{} {}\n255\n", pixels.width(), pixels.height())?;
@@ -1163,6 +1185,7 @@ fn main() -> Result<()> {
     bind_candidate_callbacks(&ui, &state);
     bind_settings_callbacks(&ui, &state);
     bind_demo_file_drop(&ui, &state);
+    guide_ui::bind(&ui, &state);
     start_recording_recovery(&ui, &state);
     bind_page_window_size(&ui);
     center_window_on_startup(&ui);
@@ -1804,6 +1827,7 @@ fn bind_batch_callbacks(ui: &AppWindow, state: &Arc<Mutex<State>>) {
                                 }
                                 ui.set_has_export(true);
                                 ui.set_selected_page(1);
+                                guide_ui::results_loaded(&ui, &state);
                             }
                         });
                     }
@@ -1883,6 +1907,7 @@ fn bind_batch_callbacks(ui: &AppWindow, state: &Arc<Mutex<State>>) {
                         ui.set_has_export(true);
                         ui.set_selected_page(1);
                         ui.set_busy(false);
+                        guide_ui::results_loaded(&ui, &state_for_thread);
                         if reconcile_recorded_outputs(ui.as_weak(), state_for_thread.clone(), root) {
                             ui.set_status_text(format!("Loaded {count} candidates — checking saved recordings in the background").into());
                         } else {
