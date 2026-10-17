@@ -35,6 +35,15 @@ slint::include_modules!();
 
 /// Open the Director UI in the process launched by Toolkit with --director.
 pub fn run(session_path: PathBuf) -> Result<()> {
+    let result = run_inner(session_path.clone());
+    if let Err(error) = &result {
+        append_telemetry_diagnostic(&session_path.with_file_name("director_telemetry.log"),
+            &format!("status=DIRECTOR_FAILED\nerror={error:#}"));
+    }
+    result
+}
+
+fn run_inner(session_path: PathBuf) -> Result<()> {
     let session = Rc::new(load_session(&session_path)?);
     let telemetry_diagnostic = session_path.with_file_name("director_telemetry.log");
     let _ = fs::write(
@@ -2518,7 +2527,7 @@ mod tests {
             .unwrap()
             .as_nanos();
         let path = std::env::temp_dir().join(format!(
-            "tf2fragdemohelper-{name}-{}-{nonce}.xml",
+            "tf2_demo_toolkit-{name}-{}-{nonce}.xml",
             std::process::id()
         ));
         fs::write(&path, contents).unwrap();

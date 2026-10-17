@@ -160,7 +160,9 @@ A valid format does not mean an option is useful or supported by TF2. Leave this
 
 ## TF2 settings and recovery
 
-Recording temporarily changes TF2's configuration and installs its bundled recording profile. Custom-resource importing and whole-folder isolation have been removed; existing `tf/custom` content stays in place. Interrupted sessions from older versions can still restore their original custom folder. The helper backs up the original CFG folder, binds, HUD/custom content, hitsounds, video settings, and DX setting, then restores them after its TF2 session closes.
+Automatic HLAE and manual MIRV recording share the same profile backup and recovery system. Toolkit moves the original `tf/cfg` and `tf/custom` folders into the session backup, then creates a recording-only CFG from Recording Settings. Loose cosmetic files and cosmetic-only VPKs remain available in a working custom folder; user CFG/RC scripts and VPKs containing configuration scripts (including mastercomfig) are excluded. Recorded console commands in the demo are also disabled in the playback copy. Original binds, scripts, HUD/custom content, hitsounds, video settings, and the DX setting are restored after TF2 closes.
+
+Before a normal Toolkit close completes, it stops the active recording's TF2 process and restores the original profile. Folder contents are checked against their pre-recording SHA-256 snapshots, alongside the existing DX-setting and file checks. If restoration or verification fails, Toolkit stays open with an error and retains recovery data for retry. Forced process termination or a power loss still uses interrupted-session recovery on the next launch. A restore retry preserves folders already returned to their original locations.
 
 Keep the helper open while recording and finalizing. If TF2 crashes or a batch is interrupted, the helper tries to finalize usable captures and preserve unfinished work. Reopening the helper runs recovery for retained sessions.
 
@@ -242,3 +244,15 @@ When possible, include a small demo that reproduces the issue. Remove private pa
 The parser is based on [demostf/parser](https://codeberg.org/demostf/parser) and is licensed under MIT or Apache-2.0. Recording assets come from the [Lawena Recording Tool](https://github.com/quanticc/lawena-recording-tool), with additional fonts and Valve class artwork used in the interface.
 
 See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for asset credits and licensing details. HLAE and FFmpeg are separate downloads and are not bundled. This is a fan-made utility, not an official Valve tool.
+
+### Data folders and manual-camera diagnostics
+
+Toolkit stores local data and recording-session diagnostics in `%LOCALAPPDATA%\TF2 Demo Toolkit` on Windows. Settings use `%APPDATA%\TF2 Demo Toolkit`. On macOS/Linux, the platform's corresponding data, config, and cache directories use the same application name. The first launch migrates the former `TF2FragDemoHelper` folders, retaining settings, recorded status, and recoverable sessions. Conflicting folders are never overwritten. Close any older Toolkit instance before upgrading.
+
+Generated game files use the `tf2_demo_toolkit_` prefix, including `tf/tf2_demo_toolkit_recording.log`, temporary CFGs, demo folders, and profile backups. Legacy recovery filenames remain supported for interrupted older recordings.
+
+Preview, manual MIRV, and batch recording stage independent demo copies with recorded console commands disabled. This prevents the recorder's config reloads, graphics changes, and binds from overriding the playback profile while seeking. Network/gameplay packets, user-command packets, ticks, and packet offsets remain intact; the original demo is never edited. Staging requires space for full demo copies in the TF2 installation, and malformed or unsupported demos fail before launch. Session diagnostics report how many recorded console commands were neutralized.
+
+Manual-camera sessions retain `manual_hlae_diagnostics.log`, `director_startup.log`, `director_telemetry.log`, and a snapshot of the TF2 console log under `Recording Sessions`. Director opens after the demo reaches its ready marker. If TF2 exits earlier, Toolkit reports that loading did not complete and keeps the logs. Toolkit's `crash.log` covers a Toolkit panic, not a native TF2 crash.
+
+For a TF2 crash, check the Steam installation's `dumps` folder for a recent `crash_tf_win64.exe_*.dmp` matching the failed launch. A console log can show where loading stopped, but it does not contain the native exception and call stack needed to identify the crash fault. Keep the original demo and the session diagnostics alongside the dump when investigating.

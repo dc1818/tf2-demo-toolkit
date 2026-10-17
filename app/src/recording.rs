@@ -29,8 +29,8 @@ use tf2_mirv_director::{
 use walkdir::WalkDir;
 use zip::ZipArchive;
 
-const PROFILE_FOLDER: &str = "tf2fragdemohelper_recording";
-const PROFILE_CFG: &str = "tf2fragdemohelper_recording_profile.cfg";
+const PROFILE_FOLDER: &str = "tf2_demo_toolkit_recording";
+const PROFILE_CFG: &str = "tf2_demo_toolkit_recording_profile.cfg";
 const RESOURCE_CACHE_VERSION: &str = "bundled_resources_v2";
 const RECORDING_FLUSH_TICKS: i64 = 133;
 const VDM_ACTION_GAP_TICKS: i64 = 2;
@@ -232,7 +232,7 @@ fn manual_hlae_game_arguments(
         )
     };
     Ok(format!(
-        "-steam -insecure +sv_lan 1 -novid -window -noborder -console -no_texture_stream -afxGame tf {custom}-w {width} -h {height} {dx_argument}+tf_delete_temp_files 0 +exec tf2fragdemohelper_offline.cfg +exec tf2fragdemohelper_recording_profile.cfg +exec tf2fragdemohelper_manual.cfg +playdemo {staged_demo}",
+        "-steam -insecure +sv_lan 1 -novid -window -noborder -console -no_texture_stream -afxGame tf {custom}-w {width} -h {height} {dx_argument}+tf_delete_temp_files 0 +exec tf2_demo_toolkit_offline.cfg +exec tf2_demo_toolkit_recording_profile.cfg +exec tf2_demo_toolkit_manual.cfg +playdemo {staged_demo}",
     ))
 }
 
@@ -256,6 +256,7 @@ pub enum RecordingProgress {
     ManualFinished {
         output_path: PathBuf,
         session: Option<PathBuf>,
+        problem: Option<String>,
     },
 }
 
@@ -912,8 +913,18 @@ impl Drop for TemporaryPathGuard {
     }
 }
 
+fn legacy_profile_folder() -> String { "tf2fragdemohelper_recording".into() }
+fn legacy_profile_cfg() -> String { "tf2fragdemohelper_recording_profile.cfg".into() }
+fn legacy_offline_cfg() -> String { "tf2fragdemohelper_offline.cfg".into() }
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 struct RecordingProfileSession {
+    #[serde(default = "legacy_profile_folder")]
+    profile_folder: String,
+    #[serde(default = "legacy_profile_cfg")]
+    profile_cfg: String,
+    #[serde(default = "legacy_offline_cfg")]
+    offline_cfg: String,
     session_id: String,
     game_directory: PathBuf,
     backup_directory: PathBuf,
@@ -921,6 +932,14 @@ struct RecordingProfileSession {
     original_profile_existed: bool,
     original_profile_cfg_existed: bool,
     isolated_custom: bool,
+    #[serde(default)]
+    clean_cfg: bool,
+    #[serde(default)]
+    original_cfg_fingerprint: Option<String>,
+    #[serde(default)]
+    original_custom_fingerprint: Option<String>,
+    #[serde(default)]
+    hlae_launcher: Option<(u32, u64)>, // PID and process start time; avoids killing a reused PID
     tf_process_name: String,
     #[serde(default)]
     original_config_existed: bool,
@@ -1188,12 +1207,12 @@ pub fn preview_candidate(candidate: &Candidate, settings: &AppSettings) -> Resul
     }
 
     let game = tf2_game_directory(tf2)?;
-    let demo_directory = game.join("demos/tf2fragdemohelper");
+    let demo_directory = game.join("demos/tf2_demo_toolkit");
     fs::create_dir_all(&demo_directory)?;
     for entry in fs::read_dir(&demo_directory)? {
         let path = entry?.path();
         let is_stale_vdm = path.extension().and_then(|value| value.to_str()).is_some_and(|value| value.eq_ignore_ascii_case("vdm"))
-            && path.file_stem().and_then(|value| value.to_str()).is_some_and(|value| value.starts_with("tf2fragdemohelper_temp_"));
+            && path.file_stem().and_then(|value| value.to_str()).is_some_and(|value| value.starts_with("tf2_demo_toolkit_temp_"));
         if is_stale_vdm {
             let _ = fs::remove_file(path);
         }
@@ -1202,19 +1221,17 @@ pub fn preview_candidate(candidate: &Candidate, settings: &AppSettings) -> Resul
     let source_stem = sanitize(source.file_stem().and_then(|value| value.to_str()).unwrap_or("candidate_demo"));
     let signature = demo_signature(source)?;
     let signature_prefix = signature.get(..12).unwrap_or(&signature);
-    let staged_name = format!("tf2fragdemohelper_temp_{source_stem}_{signature_prefix}.dem");
+    let staged_name = format!("tf2_demo_toolkit_temp_{source_stem}_{signature_prefix}.dem");
     let staged_path = demo_directory.join(&staged_name);
-    let source_length = fs::metadata(source)?.len();
-    if !staged_path.is_file() || fs::metadata(&staged_path).map(|metadata| metadata.len()).unwrap_or_default() != source_length {
-        fs::copy(source, &staged_path).with_context(|| format!("could not stage {} for TF2 preview", source.display()))?;
-    }
-    let staged_relative = format!("demos/tf2fragdemohelper/{staged_name}");
+    crate::demo_playback::stage_playback_demo(source, &staged_path)
+        .with_context(|| format!("could not stage {} for TF2 preview", source.display()))?;
+    let staged_relative = format!("demos/tf2_demo_toolkit/{staged_name}");
 
     let (target_tick, _) = clip_window(candidate, settings);
     let playback_vdm = staged_path.with_extension("vdm");
     fs::write(&playback_vdm, preview_vdm_text(candidate, target_tick))?;
 
-    let cfg = game.join("cfg").join("tf2fragdemohelper_preview.cfg");
+    let cfg = game.join("cfg").join("tf2_demo_toolkit_preview.cfg");
     let previous_preview_cfg = fs::read(&cfg).ok();
     fs::write(&cfg, format!("{}cl_predict 0\n", offline_cfg()))?;
     let working_directory = game.parent().filter(|path| path.is_dir()).unwrap_or(game.as_path());
@@ -1222,7 +1239,7 @@ pub fn preview_candidate(candidate: &Candidate, settings: &AppSettings) -> Resul
     launch.current_dir(working_directory)
         .args(["-insecure", "-novid", "-console", "-game"])
         .arg(&game)
-        .args(["+sv_lan", "1", "+exec", "tf2fragdemohelper_preview.cfg", "+playdemo"])
+        .args(["+sv_lan", "1", "+exec", "tf2_demo_toolkit_preview.cfg", "+playdemo"])
         .arg(&staged_relative);
     #[cfg(target_os = "windows")]
     {
@@ -1439,11 +1456,14 @@ fn write_director_session(
 
 fn launch_director_companion(session_path: &Path) -> Result<Option<std::process::Child>> {
     let current = std::env::current_exe().context("could not locate the helper executable")?;
+    let log = File::create(session_path.with_file_name("director_startup.log"))?;
     // Reuse the running executable, including renamed portable installations.
     // A separate process keeps the Director's event loop independent of Toolkit.
     let child = Command::new(&current)
         .arg("--director")
         .arg(session_path)
+        .stdout(Stdio::from(log.try_clone()?))
+        .stderr(Stdio::from(log))
         .spawn()
         .with_context(|| format!("could not launch Director mode in {}", current.display()))?;
     Ok(Some(child))
@@ -1521,22 +1541,22 @@ pub fn launch_manual_hlae_candidate(
 
     fs::create_dir_all(&settings.recording_output_directory)?;
     let session = recording_sessions_root().join(format!(
-        "tf2fragdemohelper_manual_{}",
+        "tf2_demo_toolkit_manual_{}",
         Utc::now().format("%Y%m%d_%H%M%S_%3f")
     ));
     fs::create_dir_all(&session)?;
     let session_name = session
         .file_name()
         .and_then(|name| name.to_str())
-        .unwrap_or("tf2fragdemohelper_manual")
+        .unwrap_or("tf2_demo_toolkit_manual")
         .to_owned();
     let diagnostic_log = session.join("manual_hlae_diagnostics.log");
     let staged_root = game
-        .join("demos/tf2fragdemohelper_manual")
+        .join("demos/tf2_demo_toolkit_manual")
         .join(&session_name);
     fs::create_dir_all(&staged_root)?;
-    let mut staging_guard =
-        TemporaryPathGuard::new(vec![staged_root.clone(), session.clone()]);
+    // Session diagnostics survive failed launches; only staged game files are temporary.
+    let mut staging_guard = TemporaryPathGuard::new(vec![staged_root.clone()]);
 
     let demo_stem = sanitize(
         source
@@ -1551,17 +1571,19 @@ pub fn launch_manual_hlae_candidate(
     });
     let staged_name = format!("{demo_stem}__{candidate_name}.dem");
     let staged_path = staged_root.join(&staged_name);
-    if fs::hard_link(source, &staged_path).is_err() {
-        fs::copy(source, &staged_path)
-            .with_context(|| format!("could not stage {}", source.display()))?;
-    }
+    let playback_stats = crate::demo_playback::stage_playback_demo(source, &staged_path)
+        .with_context(|| format!("could not stage {}", source.display()))?;
+    log_recording_diagnostic(&diagnostic_log, format!(
+        "Staged independent playback copy; neutralized {} recorded console commands (original demo unchanged)",
+        playback_stats.console_commands_neutralized,
+    ));
     let (target_tick, end_tick) = clip_window(candidate, settings);
     fs::write(
         staged_path.with_extension("vdm"),
         manual_hlae_vdm_text(candidate, target_tick),
     )?;
     let staged_relative = format!(
-        "demos/tf2fragdemohelper_manual/{session_name}/{staged_name}"
+        "demos/tf2_demo_toolkit_manual/{session_name}/{staged_name}"
     );
 
     let output_path = manual_output_directory(&settings.recording_output_directory, candidate);
@@ -1573,7 +1595,7 @@ pub fn launch_manual_hlae_candidate(
     let recording_working = session.join("manual_capture");
     fs::create_dir_all(&recording_working)?;
     let campath_file = output_path.join(format!("{recording_identifier}__camera_path.xml"));
-    let telemetry_log = game.join("tf2fragdemohelper_recording.log");
+    let telemetry_log = game.join("tf2_demo_toolkit_recording.log");
     let cfg_root = game.join("cfg");
     let _ = fs::remove_file(&telemetry_log);
     let director_session = write_director_session(
@@ -1590,18 +1612,18 @@ pub fn launch_manual_hlae_candidate(
     )?;
     let launch_log = session.join("hlae_launch.log");
     let launch_log_file = File::create(&launch_log)?;
-    let profile = stage_recording_profile(
+    let mut profile = stage_recording_profile(
         &game,
         &session_name,
         &tf_process_name,
         settings,
-        vec![staged_root.clone(), session.clone()],
+        vec![staged_root.clone()],
     )
     .context("could not stage the temporary TF2/HLAE profile")?;
 
     let cfg_result = (|| -> Result<()> {
         fs::write(
-            cfg_root.join("tf2fragdemohelper_manual.cfg"),
+            cfg_root.join("tf2_demo_toolkit_manual.cfg"),
             manual_hotkey_cfg(
                 candidate,
                 target_tick,
@@ -1610,15 +1632,15 @@ pub fn launch_manual_hlae_candidate(
             ),
         )?;
         fs::write(
-            cfg_root.join("tf2fragdemohelper_manual_start.cfg"),
+            cfg_root.join("tf2_demo_toolkit_manual_start.cfg"),
             manual_recording_start_cfg(settings, &recording_working),
         )?;
         fs::write(
-            cfg_root.join("tf2fragdemohelper_manual_stop.cfg"),
+            cfg_root.join("tf2_demo_toolkit_manual_stop.cfg"),
             manual_recording_stop_cfg(settings),
         )?;
         fs::write(
-            cfg_root.join("tf2fragdemohelper_manual_save.cfg"),
+            cfg_root.join("tf2_demo_toolkit_manual_save.cfg"),
             format!(
                 "mirv_campath save \"{}\"\necho TF2FRAG_MANUAL_CAMPATH_SAVED\ntf2frag_manual_sync_keyframes\n",
                 campath_file.display().to_string().replace('\\', "/")
@@ -1689,6 +1711,7 @@ pub fn launch_manual_hlae_candidate(
             return Err(error).context("could not launch TF2 through HLAE");
         }
     };
+    track_hlae_launcher(&mut profile, &mut child)?;
     let mut director_child = match launch_director_companion(&director_session) {
         Ok(child) => child,
         Err(error) => {
@@ -1712,43 +1735,48 @@ pub fn launch_manual_hlae_candidate(
         let mut profile = profile;
         if let Some(sink) = &monitor_progress {
             sink(RecordingProgress::Status(format!(
-                "Manual HLAE paused at tick {target_tick} — 6 camera, 7 keyframe, 9/0 record"
+                "Loading manual HLAE demo toward tick {target_tick}; waiting for TF2"
             )));
         }
         let startup_deadline = Instant::now() + Duration::from_secs(90);
         let mut tf2_seen = false;
+        let mut launcher_exit_reported = false;
         while Instant::now() < startup_deadline {
             if windows_process_state(&profile.tf_process_name) == Some(true) {
                 tf2_seen = true;
                 break;
             }
-            if child.try_wait().ok().flatten().is_some() {
-                break;
+            if !launcher_exit_reported {
+                if let Ok(Some(status)) = child.try_wait() {
+                    launcher_exit_reported = true;
+                    log_recording_diagnostic(&monitor_log, format!(
+                        "HLAE launcher exited ({status}); still waiting for the TF2 process"
+                    ));
+                }
             }
             thread::sleep(Duration::from_millis(250));
         }
         if tf2_seen {
             let mut absent_confirmations = 0u8;
-            let mut director_closed = false;
+            let mut director_exit_reported = false;
             while absent_confirmations < TF2_ABSENT_CONFIRMATIONS {
                 match windows_process_state(&profile.tf_process_name) {
                     Some(true) | None => absent_confirmations = 0,
                     Some(false) => {
-                        if !director_closed {
-                            close_director_companion(&mut director_child);
-                            director_closed = true;
-                            log_recording_diagnostic(
-                                &monitor_log,
-                                "TF2 closed; the complete Director overlay was closed",
-                            );
-                        }
                         absent_confirmations += 1;
                     }
                 }
+                if !director_exit_reported {
+                    if let Some(process) = director_child.as_mut() {
+                        if let Ok(Some(status)) = process.try_wait() {
+                            director_exit_reported = true;
+                            log_recording_diagnostic(&monitor_log, format!(
+                                "Director exited while monitoring TF2: {status}; see director_startup.log"
+                            ));
+                        }
+                    }
+                }
                 thread::sleep(Duration::from_millis(500));
-            }
-            if !director_closed {
-                close_director_companion(&mut director_child);
             }
         } else {
             log_recording_diagnostic(
@@ -1758,6 +1786,17 @@ pub fn launch_manual_hlae_candidate(
         }
         close_director_companion(&mut director_child);
         wait_for_hlae_shutdown(&mut child, &monitor_log);
+        // Snapshot TF2's own log before a later launch replaces it.
+        if let Err(error) = fs::copy(&telemetry_log, monitor_session.join("tf2_demo_toolkit_recording.log")) {
+            log_recording_diagnostic(&monitor_log, format!("Could not snapshot TF2 console log: {error}"));
+        }
+        let demo_ready = fs::read_to_string(&telemetry_log).unwrap_or_default()
+            .contains("TF2FRAG_MANUAL_PAUSED_AT_START");
+        log_recording_diagnostic(&monitor_log, if demo_ready {
+            "TF2 session ended after reaching the requested demo position"
+        } else {
+            "TF2 exited or failed to start before the demo-ready marker; overlay was waiting for demo load. This may be a game crash or an early close."
+        });
         let finalization_error = finalize_manual_outputs(
             &monitor_recording_working,
             &monitor_output,
@@ -1777,22 +1816,24 @@ pub fn launch_manual_hlae_candidate(
         }
         log_recording_diagnostic(&monitor_log, "TF2 closed; restoring the original TF2 profile");
         let restoration_error = restore_recording_profile(&profile).err();
-        let session_for_logs = if let Some(error) = restoration_error {
+        let problem = restoration_error.as_ref().map(|e| format!("TF2 settings restoration needs attention: {e}"))
+            .or_else(|| finalization_error.as_ref().map(|e| format!("Capture finalization failed: {e}")))
+            .or_else(|| (!demo_ready).then(|| "TF2 closed before the demo finished loading; Director never received the ready marker".into()));
+        if let Some(error) = restoration_error {
             log_recording_diagnostic(&monitor_log, format!("ERROR: restore failed: {error}"));
             let _ = fs::write(
                 profile.backup_directory.join("RESTORE_REQUIRED.txt"),
                 error.to_string(),
             );
-            Some(monitor_session)
-        } else if finalization_error.is_some() {
-            Some(monitor_session)
-        } else {
-            None
-        };
+        }
+        if finalization_error.is_none() {
+            let _ = fs::remove_dir_all(&monitor_recording_working);
+        }
         if let Some(sink) = &monitor_progress {
             sink(RecordingProgress::ManualFinished {
                 output_path: monitor_output,
-                session: session_for_logs,
+                session: Some(monitor_session),
+                problem,
             });
         }
     });
@@ -1846,13 +1887,13 @@ pub fn prepare_hlae_batch(candidates: &[Candidate], settings: &AppSettings) -> R
     }
     fs::create_dir_all(&sessions_root)?;
     let session = sessions_root.join(format!(
-        "tf2fragdemohelper_batch_{}",
+        "tf2_demo_toolkit_batch_{}",
         Utc::now().format("%Y%m%d_%H%M%S_%3f")
     ));
     fs::create_dir_all(&session)?;
     fs::write(session.join("offline_safety.cfg"), offline_cfg().as_bytes())?;
     fs::write(
-        session.join("tf2fragdemohelper_recording_profile.cfg"),
+        session.join("tf2_demo_toolkit_recording_profile.cfg"),
         recording_profile_cfg(settings),
     )?;
     Ok(session)
@@ -1916,13 +1957,14 @@ pub fn launch_hlae_batch(
         .and_then(|name| name.to_str())
         .unwrap_or("rust_session");
     let staged_root = game
-        .join("demos/tf2fragdemohelper_batch")
+        .join("demos/tf2_demo_toolkit_batch")
         .join(session_name);
-    let cfg_root = game.join("cfg/tf2fragdemohelper_batch").join(session_name);
+    // Generate outside the player's cfg so the original snapshot contains
+    // only their files, including when tf/cfg did not exist before recording.
+    let cfg_root = session.join("batch_cfg");
     fs::create_dir_all(&staged_root)?;
     fs::create_dir_all(&cfg_root)?;
     let mut staging_guard = TemporaryPathGuard::new(vec![staged_root.clone(), cfg_root.clone()]);
-    fs::create_dir_all(game.join("cfg"))?;
 
     let mut by_demo: BTreeMap<PathBuf, Vec<(usize, Candidate)>> = BTreeMap::new();
     for (order, candidate) in candidates.iter().cloned().enumerate() {
@@ -1973,11 +2015,13 @@ pub fn launch_hlae_batch(
         );
         let staged_name = format!("{:03}_{stem}.dem", demo_index + 1);
         let staged = staged_root.join(&staged_name);
-        if fs::hard_link(source, &staged).is_err() {
-            fs::copy(source, &staged)
-                .with_context(|| format!("could not stage {}", source.display()))?;
-        }
-        let relative = format!("demos/tf2fragdemohelper_batch/{session_name}/{staged_name}");
+        let playback_stats = crate::demo_playback::stage_playback_demo(source, &staged)
+            .with_context(|| format!("could not stage {}", source.display()))?;
+        log_recording_diagnostic(&diagnostic_log, format!(
+            "Staged independent playback copy of {}; neutralized {} recorded console commands (original demo unchanged)",
+            source.display(), playback_stats.console_commands_neutralized,
+        ));
+        let relative = format!("demos/tf2_demo_toolkit_batch/{session_name}/{staged_name}");
         staged_relatives.push(relative);
         let first_window = clips
             .first()
@@ -2046,7 +2090,7 @@ pub fn launch_hlae_batch(
         )
     };
     let game_arguments = format!(
-        "-steam -insecure +sv_lan 1 -novid -window -noborder -console -no_texture_stream -afxGame tf -w {width} -h {height} {dx_argument}+tf_delete_temp_files 0 +exec tf2fragdemohelper_offline.cfg +exec tf2fragdemohelper_recording_profile.cfg +playdemo {}",
+        "-steam -insecure +sv_lan 1 -novid -window -noborder -console -no_texture_stream -afxGame tf -w {width} -h {height} {dx_argument}+tf_delete_temp_files 0 +exec tf2_demo_toolkit_offline.cfg +exec tf2_demo_toolkit_recording_profile.cfg +playdemo {}",
         staged_relatives[0]
     );
     let encoding_log = match effective_mp4_encoding(settings)? {
@@ -2085,14 +2129,18 @@ pub fn launch_hlae_batch(
         "Prepared offline launch\nTF2 executable: {}\nHLAE executable: {}\nGame directory: {}\nHook DLL: {}\nHLAE options: -customLoader -autoStart -noGui -programPath <TF2> -cmdLine <shown below> -hookDllPath <hook DLL>\nCandidates: {}\nUnique demos: {}\nPlayback passes: {}\nFormat: {} at {} FPS\n{}\nInitial staged demo: {}\nTF2 command line: {}",
         settings.tf2_executable.display(), settings.hlae_executable.display(), game.display(), hook.display(), candidates.len(), unique_demo_count, groups.len(), settings.recording_format, settings.capture_fps, encoding_log, staged_relatives[0], game_arguments
     ));
-    let profile = stage_recording_profile(
+    let mut profile = stage_recording_profile(
         game.as_path(),
         session_name,
         tf_process_name,
         settings,
-        vec![staged_root.clone(), cfg_root.clone()],
+        vec![staged_root.clone()],
     )
     .context("could not stage the temporary TF2 recording profile")?;
+    if let Err(error) = copy_directory(&cfg_root, &game.join("cfg/tf2_demo_toolkit_batch").join(session_name)) {
+        let restoration = restore_recording_profile(&profile);
+        return Err(error).context(format!("could not install batch commands; profile restoration: {restoration:?}"));
+    }
     log_recording_diagnostic(
         &diagnostic_log,
         format!(
@@ -2100,7 +2148,7 @@ pub fn launch_hlae_batch(
             profile.backup_directory.display()
         ),
     );
-    let recording_log = game.join("tf2fragdemohelper_recording.log");
+    let recording_log = game.join("tf2_demo_toolkit_recording.log");
     let _ = fs::remove_file(&recording_log);
     let launch_log = session.join("hlae_launch.log");
     let launch_log_file = File::create(&launch_log)?;
@@ -2149,6 +2197,7 @@ pub fn launch_hlae_batch(
             return Err(error.into());
         }
     };
+    track_hlae_launcher(&mut profile, &mut child)?;
     let finalizer_settings = settings.clone();
     let finalizer_session = session.clone();
     let finalizer_game = game.clone();
@@ -2172,7 +2221,7 @@ pub fn launch_hlae_batch(
         if let Some(sink) = &progress {
             sink(RecordingProgress::Status("Archiving recording logs".into()));
         }
-        let tf2_console_log = finalizer_game.join("tf2fragdemohelper_recording.log");
+        let tf2_console_log = finalizer_game.join("tf2_demo_toolkit_recording.log");
         if tf2_console_log.is_file() {
             match fs::copy(&tf2_console_log, finalizer_session.join("tf2_console.log")) {
                 Ok(_) => {
@@ -2239,6 +2288,7 @@ pub fn recover_interrupted_profile() -> Result<bool> {
     if windows_process_is_running(&profile.tf_process_name) {
         bail!("a TF2 recording session is still active; close TF2 before reopening the helper");
     }
+    stop_hlae_launcher(&profile)?;
     if let Err(error) = restore_recording_profile(&profile) {
         let _ = fs::write(
             profile.backup_directory.join("RESTORE_REQUIRED.txt"),
@@ -2247,6 +2297,17 @@ pub fn recover_interrupted_profile() -> Result<bool> {
         return Err(error);
     }
     Ok(true)
+}
+
+pub(crate) fn ensure_profile_inactive(pointer: &Path) -> Result<()> {
+    if pointer.is_file() {
+        let profile: RecordingProfileSession = serde_json::from_slice(&fs::read(pointer)?)
+            .context("the previous recording recovery file is invalid")?;
+        if windows_process_state(&profile.tf_process_name) != Some(false) {
+            bail!("Close the previous TF2 recording session before migrating Toolkit's data folders");
+        }
+    }
+    Ok(())
 }
 
 /// Match the previous application's FormClosing behavior: if the helper is
@@ -2259,6 +2320,9 @@ pub fn shutdown_active_recording() -> Result<bool> {
     }
     let profile: RecordingProfileSession = serde_json::from_slice(&fs::read(&pointer)?)
         .context("the active recording recovery file is invalid")?;
+    // A close during loading must also stop the launcher, otherwise it could
+    // start TF2 after we have put the player's original profile back.
+    stop_hlae_launcher(&profile)?;
     if windows_process_is_running(&profile.tf_process_name) {
         stop_windows_process(&profile.tf_process_name)?;
         for _ in 0..20 {
@@ -2291,20 +2355,37 @@ fn stage_recording_profile(
     settings: &AppSettings,
     temporary_paths: Vec<PathBuf>,
 ) -> Result<RecordingProfileSession> {
+    stage_recording_profile_at(game, session_id, tf_process_name, settings, temporary_paths, &active_profile_path())
+}
+
+fn stage_recording_profile_at(
+    game: &Path,
+    session_id: &str,
+    tf_process_name: &str,
+    settings: &AppSettings,
+    temporary_paths: Vec<PathBuf>,
+    pointer: &Path,
+) -> Result<RecordingProfileSession> {
+    // Keep an old console log available under the current product name.
+    let legacy_log = game.join("tf2fragdemohelper_recording.log");
+    if legacy_log.is_file() {
+        let destination = game.join(format!("tf2_demo_toolkit_recording_legacy_{}.log", Utc::now().timestamp_millis()));
+        fs::rename(legacy_log, destination)?;
+    }
     let custom = game.join("custom");
     let cfg_folder = game.join("cfg");
     let cfg = game.join("cfg").join(PROFILE_CFG);
-    let backup = game.join("tf2fragdemohelper_backups").join(session_id);
+    let backup = game.join("tf2_demo_toolkit_backups").join(session_id);
     let cfg_folder_backup = backup.join("cfg_original");
+    let custom_backup = backup.join("custom_original");
     let profile = custom.join(PROFILE_FOLDER);
-    let profile_backup = backup.join("custom_profile_original");
     let cfg_backup = backup.join(PROFILE_CFG);
     let config = game.join("cfg").join("config.cfg");
     let config_backup = backup.join("config.cfg");
     let video = game.join("cfg").join("video.txt");
     let video_backup = backup.join("video.txt");
-    let offline_config_path = game.join("cfg").join("tf2fragdemohelper_offline.cfg");
-    let offline_cfg_backup = backup.join("tf2fragdemohelper_offline.cfg");
+    let offline_config_path = game.join("cfg").join("tf2_demo_toolkit_offline.cfg");
+    let offline_cfg_backup = backup.join("tf2_demo_toolkit_offline.cfg");
     fs::create_dir_all(&backup)?;
     let hitsound_files = backup_hitsound_files(&custom, &backup.join("hitsounds_original"))?;
     let (
@@ -2314,15 +2395,22 @@ fn stage_recording_profile(
         original_dx_level_data,
     ) = capture_dx_level(&settings.dx_level)?;
     let session = RecordingProfileSession {
+        profile_folder: PROFILE_FOLDER.into(),
+        profile_cfg: PROFILE_CFG.into(),
+        offline_cfg: "tf2_demo_toolkit_offline.cfg".into(),
         session_id: session_id.to_owned(),
         game_directory: game.to_path_buf(),
         backup_directory: backup,
         original_custom_existed: custom.is_dir(),
         original_profile_existed: profile.is_dir(),
         original_profile_cfg_existed: cfg.is_file(),
-        // Legacy session recovery still understands isolated_custom=true.
-        // New recordings preserve the existing custom folder.
-        isolated_custom: false,
+        // Reuse whole-folder recovery while leaving user configuration providers
+        // outside TF2's search paths for both manual and automatic recording.
+        isolated_custom: true,
+        clean_cfg: true,
+        original_cfg_fingerprint: Some(profile_tree_fingerprint(&cfg_folder, &temporary_paths)?),
+        original_custom_fingerprint: Some(profile_tree_fingerprint(&custom, &temporary_paths)?),
+        hlae_launcher: None,
         tf_process_name: tf_process_name.to_owned(),
         original_config_existed: config.is_file(),
         original_video_existed: video.is_file(),
@@ -2336,17 +2424,15 @@ fn stage_recording_profile(
         original_dx_level_data,
         temporary_paths,
     };
-    write_active_profile(&session)?;
+    write_active_profile(&session, pointer)?;
 
     let result = (|| -> Result<()> {
-        // Use a complete working copy of tf/cfg. TF2 can write more than
-        // config.cfg while it is running; moving the original folder aside
-        // preserves cfg/overrides and every other user script byte-for-byte.
+        // Back up the whole folder, but do not execute the player's autoexec,
+        // class scripts, or mastercomfig overrides in the recording session.
         if session.original_cfg_folder_existed {
             fs::rename(&cfg_folder, &cfg_folder_backup)
                 .context("could not back up TF2's cfg folder")?;
             fs::create_dir_all(&cfg_folder)?;
-            copy_path(&cfg_folder_backup, &cfg_folder)?;
         } else {
             fs::create_dir_all(&cfg_folder)?;
         }
@@ -2367,36 +2453,55 @@ fn stage_recording_profile(
                 fs::copy(&offline_config_path, &offline_cfg_backup)?;
             }
         }
-        fs::create_dir_all(&custom)?;
-        if session.original_profile_existed {
-            fs::rename(&profile, &profile_backup)?;
+        if session.original_custom_existed {
+            fs::rename(&custom, &custom_backup)
+                .context("could not back up TF2's custom folder")?;
         }
+        fs::create_dir_all(&custom)?;
+        copy_recording_cosmetics(&custom_backup, &custom)?;
         install_recording_resources(&custom, settings)?;
         install_recording_message_suppression(&custom)?;
         fs::write(&cfg, recording_profile_cfg(settings))?;
         fs::write(&offline_config_path, offline_cfg())?;
+        // The player's config.cfg stays in the backup. Supply ordinary camera
+        // navigation/menu binds; manual MIRV's configured shortcuts load later.
+        fs::write(&config, "bind w +forward\nbind s +back\nbind a +moveleft\nbind d +moveright\nbind SPACE +jump\nbind CTRL +duck\nbind SHIFT +speed\nbind ESCAPE cancelselect\nbind ` toggleconsole\n")?;
         Ok(())
     })();
     if let Err(error) = result {
-        let _ = restore_recording_profile(&session);
+        if let Err(restore_error) = restore_recording_profile_at(&session, pointer) {
+            return Err(error).context(format!("profile staging failed and rollback needs attention: {restore_error:#}"));
+        }
         return Err(error);
     }
     Ok(session)
 }
 
 fn restore_recording_profile(session: &RecordingProfileSession) -> Result<()> {
+    restore_recording_profile_at(session, &active_profile_path())
+}
+
+fn restore_recording_profile_at(session: &RecordingProfileSession, pointer: &Path) -> Result<()> {
     let _restore_guard = restore_lock().lock();
-    if !active_profile_path().is_file() {
+    if !pointer.is_file() {
         return Ok(());
+    }
+    let active: RecordingProfileSession = serde_json::from_slice(&fs::read(pointer)?)?;
+    if active.session_id != session.session_id || active.backup_directory != session.backup_directory {
+        // A completed session's monitor must never restore over a newer one.
+        return Ok(());
+    }
+    if windows_process_state(&session.tf_process_name) != Some(false) {
+        bail!("TF2 may still be running; its temporary profile and backups were retained for recovery");
     }
     let custom = session.game_directory.join("custom");
     let cfg_folder = session.game_directory.join("cfg");
     let cfg_folder_backup = session.backup_directory.join("cfg_original");
-    let cfg = session.game_directory.join("cfg").join(PROFILE_CFG);
+    let cfg = session.game_directory.join("cfg").join(&session.profile_cfg);
     let custom_backup = session.backup_directory.join("custom_original");
-    let profile = custom.join(PROFILE_FOLDER);
+    let profile = custom.join(&session.profile_folder);
     let profile_backup = session.backup_directory.join("custom_profile_original");
-    let cfg_backup = session.backup_directory.join(PROFILE_CFG);
+    let cfg_backup = session.backup_directory.join(&session.profile_cfg);
     let config = session.game_directory.join("cfg").join("config.cfg");
     let config_backup = session.backup_directory.join("config.cfg");
     let video = session.game_directory.join("cfg").join("video.txt");
@@ -2404,28 +2509,25 @@ fn restore_recording_profile(session: &RecordingProfileSession) -> Result<()> {
     let offline_cfg = session
         .game_directory
         .join("cfg")
-        .join("tf2fragdemohelper_offline.cfg");
+        .join(&session.offline_cfg);
     let offline_cfg_backup = session
         .backup_directory
-        .join("tf2fragdemohelper_offline.cfg");
+        .join(&session.offline_cfg);
     let cfg_snapshot_exists = cfg_folder_backup.is_dir();
     let config_existed = session.original_config_existed || config_backup.is_file();
     let video_existed = session.original_video_existed || video_backup.is_file();
     let offline_cfg_existed = session.original_offline_cfg_existed || offline_cfg_backup.is_file();
 
     if session.isolated_custom {
-        if custom.exists() {
-            fs::remove_dir_all(&custom)?;
-        }
-        if session.original_custom_existed {
-            fs::rename(&custom_backup, &custom).context("could not restore TF2's custom folder")?;
-        }
+        restore_original_directory(&custom, &custom_backup, session.original_custom_existed)?;
     } else {
-        if profile.exists() {
-            fs::remove_dir_all(&profile)?;
-        }
-        if session.original_profile_existed {
-            fs::rename(&profile_backup, &profile)?;
+        if profile_backup.exists() || !session.original_profile_existed {
+            if profile.exists() {
+                fs::remove_dir_all(&profile)?;
+            }
+            if session.original_profile_existed {
+                fs::rename(&profile_backup, &profile)?;
+            }
         }
         if !session.original_custom_existed
             && custom.is_dir()
@@ -2434,23 +2536,21 @@ fn restore_recording_profile(session: &RecordingProfileSession) -> Result<()> {
             fs::remove_dir(&custom)?;
         }
     }
-    restore_hitsound_files(session)?;
-    if cfg_snapshot_exists {
-        if cfg_folder.exists() {
-            fs::remove_dir_all(&cfg_folder)?;
-        }
-        if session.original_cfg_folder_existed {
-            fs::rename(&cfg_folder_backup, &cfg_folder)
-                .context("could not restore TF2's original cfg folder")?;
-        }
+    if !session.isolated_custom {
+        restore_hitsound_files(session)?;
+    }
+    if cfg_snapshot_exists || session.original_cfg_folder_existed || session.clean_cfg {
+        restore_original_directory(&cfg_folder, &cfg_folder_backup, session.original_cfg_folder_existed)?;
     } else {
         // Legacy fallback for a session started by an earlier build, which
         // backed up the individual files rather than the whole cfg folder.
-        if cfg.exists() {
-            fs::remove_file(&cfg)?;
-        }
-        if session.original_profile_cfg_existed {
-            fs::rename(&cfg_backup, &cfg)?;
+        if cfg_backup.exists() || !session.original_profile_cfg_existed {
+            if cfg.exists() {
+                fs::remove_file(&cfg)?;
+            }
+            if session.original_profile_cfg_existed {
+                fs::rename(&cfg_backup, &cfg)?;
+            }
         }
         if config_existed && config_backup.is_file() {
             fs::copy(&config_backup, &config)?;
@@ -2472,12 +2572,13 @@ fn restore_recording_profile(session: &RecordingProfileSession) -> Result<()> {
     restore_dx_level(session)?;
     verify_restored_profile(session)?;
     cleanup_temporary_paths(session);
-    if session.backup_directory.is_dir() {
-        fs::remove_dir_all(&session.backup_directory)?;
-    }
-    let pointer = active_profile_path();
     if pointer.exists() {
         fs::remove_file(pointer)?;
+    }
+    // Settings are verified and recovery is complete. A locked leftover backup
+    // must not make a later retry depend on already-deleted verification files.
+    if session.backup_directory.is_dir() {
+        let _ = fs::remove_dir_all(&session.backup_directory);
     }
     Ok(())
 }
@@ -2485,6 +2586,182 @@ fn restore_recording_profile(session: &RecordingProfileSession) -> Result<()> {
 fn restore_lock() -> &'static Mutex<()> {
     static RESTORE_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
     RESTORE_LOCK.get_or_init(|| Mutex::new(()))
+}
+
+fn track_hlae_launcher(profile: &mut RecordingProfileSession, child: &mut std::process::Child) -> Result<()> {
+    let result = (|| -> Result<()> {
+        let pid = sysinfo::Pid::from_u32(child.id());
+        let mut system = sysinfo::System::new();
+        system.refresh_processes(sysinfo::ProcessesToUpdate::Some(&[pid]), true);
+        if let Some(process) = system.process(pid) {
+            if process.start_time() == 0 { bail!("could not determine the HLAE launcher's identity"); }
+            profile.hlae_launcher = Some((child.id(), process.start_time()));
+            write_active_profile(profile, &active_profile_path())?;
+        } else if child.try_wait()?.is_none() {
+            bail!("could not track the HLAE launcher for safe shutdown");
+        }
+        Ok(())
+    })();
+    if let Err(error) = result {
+        let _ = child.kill();
+        let _ = child.wait();
+        if windows_process_is_running(&profile.tf_process_name) {
+            let _ = stop_windows_process(&profile.tf_process_name);
+        }
+        let restoration = restore_recording_profile(profile);
+        return Err(error).context(format!("HLAE launch tracking failed; profile restoration: {restoration:?}"));
+    }
+    Ok(())
+}
+
+fn stop_hlae_launcher(profile: &RecordingProfileSession) -> Result<()> {
+    let Some((pid, started)) = profile.hlae_launcher else { return Ok(()); };
+    let pid = sysinfo::Pid::from_u32(pid);
+    let mut system = sysinfo::System::new();
+    let mut requested = false;
+    for _ in 0..20 {
+        system.refresh_processes(sysinfo::ProcessesToUpdate::Some(&[pid]), true);
+        let Some(process) = system.process(pid) else { return Ok(()); };
+        if process.start_time() == 0 { bail!("could not verify the HLAE launcher's identity; close HLAE before retrying"); }
+        if process.start_time() != started { return Ok(()); }
+        if !requested {
+            if !process.kill() { bail!("could not stop the HLAE launcher; original TF2 backups were retained"); }
+            requested = true;
+        }
+        thread::sleep(Duration::from_millis(100));
+    }
+    bail!("HLAE did not close; original TF2 backups were retained")
+}
+
+/// A retry after a registry/verification failure must not delete a folder
+/// whose original backup has already been moved back into place.
+fn restore_original_directory(current: &Path, backup: &Path, originally_existed: bool) -> Result<()> {
+    if backup.is_dir() {
+        if current.exists() { fs::remove_dir_all(current)?; }
+        fs::rename(backup, current)
+            .with_context(|| format!("could not restore {}", current.display()))?;
+    } else if !originally_existed {
+        if current.exists() { fs::remove_dir_all(current)?; }
+    } else if !current.is_dir() {
+        bail!("original folder and its backup are both missing: {}", current.display());
+    }
+    Ok(())
+}
+
+fn profile_tree_fingerprint(root: &Path, excluded: &[PathBuf]) -> Result<String> {
+    match fs::symlink_metadata(root) {
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok("absent".into()),
+        Err(error) => return Err(error.into()),
+        Ok(_) => {},
+    }
+    let mut digest = Sha256::new();
+    for entry in WalkDir::new(root).follow_links(false).sort_by_file_name()
+        .into_iter().filter_entry(|entry| !excluded.iter().any(|path| entry.path().starts_with(path)))
+    {
+        let entry = entry?;
+        let relative = entry.path().strip_prefix(root)?.as_os_str().as_encoded_bytes();
+        digest.update((relative.len() as u64).to_le_bytes());
+        digest.update(relative);
+        if entry.file_type().is_symlink() {
+            digest.update(b"link");
+            digest.update(fs::read_link(entry.path())?.as_os_str().as_encoded_bytes());
+        } else if entry.file_type().is_dir() {
+            digest.update(b"dir");
+        } else if entry.file_type().is_file() {
+            digest.update(b"file");
+            let mut file = File::open(entry.path())?;
+            digest.update(file.metadata()?.len().to_le_bytes());
+            let mut buffer = [0u8; 64 * 1024];
+            loop {
+                let count = file.read(&mut buffer)?;
+                if count == 0 { break; }
+                digest.update(&buffer[..count]);
+            }
+        } else {
+            bail!("unsupported TF2 profile entry: {}", entry.path().display());
+        }
+    }
+    Ok(format!("{:x}", digest.finalize()))
+}
+
+/// Preserve installed cosmetic resources without mounting any user CFG/RC
+/// scripts. mastercomfig's VPK is a configuration provider, not a cosmetic.
+fn copy_recording_cosmetics(source: &Path, destination: &Path) -> Result<()> {
+    if !source.is_dir() { return Ok(()); }
+    for entry in WalkDir::new(source).min_depth(1).follow_links(false).into_iter()
+        .filter_entry(|entry| {
+            !entry.file_type().is_symlink()
+                && !entry.file_name().to_string_lossy().eq_ignore_ascii_case("cfg")
+                && !entry.file_name().to_string_lossy().eq_ignore_ascii_case(PROFILE_FOLDER)
+        })
+    {
+        let entry = entry?;
+        if !entry.file_type().is_file() { continue; }
+        let path = entry.path();
+        let extension = path.extension().unwrap_or_default().to_string_lossy();
+        if extension.eq_ignore_ascii_case("cfg") || extension.eq_ignore_ascii_case("rc") { continue; }
+        if extension.eq_ignore_ascii_case("vpk") {
+            // Multipart archive data belongs to its _dir index. Inspect that
+            // index before copying either the index or any of its data chunks.
+            let stem = path.file_stem().unwrap_or_default().to_string_lossy();
+            let index = match stem.rsplit_once('_') {
+                Some((base, suffix)) if suffix.len() == 3 && suffix.bytes().all(|b| b.is_ascii_digit()) => {
+                    path.with_file_name(format!("{base}_dir.vpk"))
+                }
+                _ => path.to_path_buf(),
+            };
+            if !vpk_is_cosmetic(&index)? { continue; }
+        }
+        let target = destination.join(path.strip_prefix(source)?);
+        fs::create_dir_all(target.parent().context("custom asset has no parent")?)?;
+        fs::copy(path, target)?;
+    }
+    Ok(())
+}
+
+fn vpk_is_cosmetic(path: &Path) -> Result<bool> {
+    let mut file = File::open(path)
+        .with_context(|| format!("could not inspect custom VPK {}", path.display()))?;
+    let mut header = [0u8; 12];
+    file.read_exact(&mut header)?;
+    let version = u32::from_le_bytes(header[4..8].try_into().unwrap());
+    if u32::from_le_bytes(header[..4].try_into().unwrap()) != 0x55aa1234 || !matches!(version, 1 | 2) {
+        bail!("unsupported custom VPK: {}", path.display());
+    }
+    let tree_size = u32::from_le_bytes(header[8..12].try_into().unwrap()) as u64;
+    if version == 2 { file.seek(SeekFrom::Current(16))?; }
+    let mut tree = BufReader::new(file.take(tree_size));
+    fn string(tree: &mut impl BufRead) -> Result<Vec<u8>> {
+        let mut value = Vec::new();
+        if tree.take(4097).read_until(0, &mut value)? == 0 || value.pop() != Some(0) {
+            bail!("truncated or oversized VPK directory string");
+        }
+        Ok(value)
+    }
+    loop {
+        let extension = string(&mut tree)?;
+        if extension.is_empty() { return Ok(true); }
+        if extension.eq_ignore_ascii_case(b"cfg") || extension.eq_ignore_ascii_case(b"rc") {
+            return Ok(false);
+        }
+        loop {
+            let directory = string(&mut tree)?;
+            if directory.is_empty() { break; }
+            if directory.split(|b| *b == b'/' || *b == b'\\').any(|part| part.eq_ignore_ascii_case(b"cfg")) {
+                return Ok(false);
+            }
+            loop {
+                if string(&mut tree)?.is_empty() { break; }
+                let mut entry = [0u8; 18];
+                tree.read_exact(&mut entry)?;
+                if entry[16..18] != [0xff, 0xff] { bail!("invalid VPK directory entry"); }
+                let preload = u16::from_le_bytes(entry[4..6].try_into().unwrap()) as u64;
+                if io::copy(&mut tree.by_ref().take(preload), &mut io::sink())? != preload {
+                    bail!("truncated VPK preload data");
+                }
+            }
+        }
+    }
 }
 
 const TF2_SETTINGS_REGISTRY_KEY: &str = r"HKCU\Software\Valve\Source\tf\Settings";
@@ -2598,14 +2875,13 @@ fn cleanup_temporary_paths(session: &RecordingProfileSession) {
                 normalized.starts_with("demos/tf2fragdemohelper_batch/")
                     || normalized.starts_with("cfg/tf2fragdemohelper_batch/")
                     || normalized.starts_with("demos/tf2fragdemohelper_manual/")
+                    || normalized.starts_with("demos/tf2_demo_toolkit_batch/")
+                    || normalized.starts_with("cfg/tf2_demo_toolkit_batch/")
+                    || normalized.starts_with("demos/tf2_demo_toolkit_manual/")
             });
-        let sessions_root = recording_sessions_root();
-        let allowed_manual_session = path.parent().is_some_and(|parent| parent == sessions_root)
-            && path
-                .file_name()
-                .and_then(|name| name.to_str())
-                .is_some_and(|name| name.starts_with("tf2fragdemohelper_manual_"));
-        if !allowed_game_path && !allowed_manual_session {
+        // Older recovery records also list the manual session directory here.
+        // Preserve those diagnostics too; only staged game files are disposable.
+        if !allowed_game_path {
             continue;
         }
         if path.is_dir() {
@@ -2686,18 +2962,29 @@ fn verify_restored_profile(session: &RecordingProfileSession) -> Result<()> {
     let cfg_folder = game.join("cfg");
     let cfg_folder_backup = backup.join("cfg_original");
     let overrides = cfg_folder.join("overrides");
-    let profile = custom.join(PROFILE_FOLDER);
-    let profile_cfg = game.join("cfg").join(PROFILE_CFG);
+    let profile = custom.join(&session.profile_folder);
+    let profile_cfg = game.join("cfg").join(&session.profile_cfg);
     let config = game.join("cfg/config.cfg");
     let video = game.join("cfg/video.txt");
-    let offline = game.join("cfg/tf2fragdemohelper_offline.cfg");
+    let offline = game.join("cfg").join(&session.offline_cfg);
     let config_backup = backup.join("config.cfg");
     let video_backup = backup.join("video.txt");
-    let offline_backup = backup.join("tf2fragdemohelper_offline.cfg");
+    let offline_backup = backup.join(&session.offline_cfg);
     let config_existed = session.original_config_existed || config_backup.is_file();
     let video_existed = session.original_video_existed || video_backup.is_file();
     let offline_existed = session.original_offline_cfg_existed || offline_backup.is_file();
     let mut problems = Vec::new();
+
+    for (path, expected) in [
+        (&cfg_folder, &session.original_cfg_fingerprint),
+        (&custom, &session.original_custom_fingerprint),
+    ] {
+        if let Some(expected) = expected {
+            if &profile_tree_fingerprint(path, &session.temporary_paths)? != expected {
+                problems.push(format!("{} does not match the original file snapshot", path.display()));
+            }
+        }
+    }
 
     if session.original_custom_existed != custom.is_dir() {
         problems.push("tf/custom was not returned to its original presence state".to_owned());
@@ -2757,7 +3044,7 @@ fn verify_restored_profile(session: &RecordingProfileSession) -> Result<()> {
     }
     if !problems.is_empty() {
         bail!(
-            "restore verification failed: {}. Original backups remain in {}",
+            "restore verification failed: {}. Recovery data remains in {}",
             problems.join("; "),
             backup.display()
         );
@@ -2788,8 +3075,7 @@ fn files_match(left: &Path, right: &Path) -> Result<bool> {
     }
 }
 
-fn write_active_profile(session: &RecordingProfileSession) -> Result<()> {
-    let pointer = active_profile_path();
+fn write_active_profile(session: &RecordingProfileSession, pointer: &Path) -> Result<()> {
     if let Some(parent) = pointer.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -2913,9 +3199,7 @@ fn find_recording_resources() -> Result<PathBuf> {
             return Ok(candidate);
         }
     }
-    let cache = dirs::cache_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("TF2FragDemoHelper")
+    let cache = crate::paths::cache_root()
         .join(RESOURCE_CACHE_VERSION);
     if cache.join("complete.marker").is_file() && cache.join("custom").is_dir() {
         return Ok(cache);
@@ -3026,18 +3310,6 @@ fn install_skybox(source: &Path, destination: &Path, selected: &str) -> Result<(
         }
     }
     Ok(())
-}
-
-fn copy_path(source: &Path, destination: &Path) -> Result<()> {
-    if source.is_dir() {
-        copy_directory(source, destination)
-    } else if source.is_file() {
-        fs::copy(source, destination)
-            .map(|_| ())
-            .map_err(Into::into)
-    } else {
-        bail!("selected custom resource is missing: {}", source.display())
-    }
 }
 
 fn copy_directory(source: &Path, destination: &Path) -> Result<()> {
@@ -3432,13 +3704,13 @@ fn manual_hotkey_cfg(
         format!(
             "mirv_cmd addCurves tick {DIRECTOR_TELEMETRY_FIRST_TICK} {DIRECTOR_TELEMETRY_LAST_TICK} - interp=linear space=abs {DIRECTOR_TELEMETRY_FIRST_TICK} {DIRECTOR_TELEMETRY_FIRST_TICK} {DIRECTOR_TELEMETRY_LAST_TICK} {DIRECTOR_TELEMETRY_LAST_TICK} -- \"echo {DIRECTOR_TICK_MARKER_PREFIX} {{0}}\""
         ),
-        "alias tf2frag_manual_start \"exec tf2fragdemohelper_manual_start\"".into(),
-        "alias tf2frag_manual_stop \"exec tf2fragdemohelper_manual_stop\"".into(),
-        "alias tf2frag_manual_save \"exec tf2fragdemohelper_manual_save\"".into(),
+        "alias tf2frag_manual_start \"exec tf2_demo_toolkit_manual_start\"".into(),
+        "alias tf2frag_manual_stop \"exec tf2_demo_toolkit_manual_stop\"".into(),
+        "alias tf2frag_manual_save \"exec tf2_demo_toolkit_manual_save\"".into(),
         format!("alias tf2frag_manual_sync_keyframes \"echo {DIRECTOR_KEYFRAME_BEGIN_PREFIX}; mirv_campath print; echo {DIRECTOR_KEYFRAME_END_PREFIX}\""),
-        "alias tf2frag_manual_restore_campath_noop \"\"".into(),
-        "alias tf2frag_manual_restore_campath_do \"alias tf2frag_manual_restore_campath tf2frag_manual_restore_campath_noop; mirv_input end; thirdperson; r_drawviewmodel 0; mirv_campath enabled 1; echo TF2FRAG_MANUAL_CAMPATH_RESTORED_AFTER_FRAG_SEEK; tf2frag_manual_sync_keyframes\"".into(),
-        "alias tf2frag_manual_restore_campath tf2frag_manual_restore_campath_noop".into(),
+        "alias tf2tk_restore_path_noop \"\"".into(),
+        "alias tf2tk_restore_path_do \"alias tf2frag_manual_restore_campath tf2tk_restore_path_noop; mirv_input end; thirdperson; r_drawviewmodel 0; mirv_campath enabled 1; echo TF2FRAG_MANUAL_CAMPATH_RESTORED_AFTER_FRAG_SEEK; tf2frag_manual_sync_keyframes\"".into(),
+        "alias tf2frag_manual_restore_campath tf2tk_restore_path_noop".into(),
         format!(
             "alias tf2frag_manual_help \"echo TF2FRAG_KEYS {}_FORWARD_0.25_SECONDS {}_TOGGLE_HUD {}_HELP {}_BACK_1_SECOND {}_CLIP_START {}_NEXT_KILL {}_PAUSE {}_CAMERA {}_KEYFRAME {}_PLAY_PATH {}_DRAW_PATH {}_RECORD {}_STOP {}_PRINT {}_SAVE {}_LOAD_CAMPATH {}_EMERGENCY_DIRECTOR_FALLBACK\"",
             shortcuts.advance_time, shortcuts.toggle_hud, shortcuts.show_help,
@@ -3464,9 +3736,9 @@ fn manual_hotkey_cfg(
         "alias tf2frag_director_poll_loop \"tf2frag_director_poll_action; wait 2; tf2frag_director_poll\"".into(),
         "alias tf2frag_director_poll tf2frag_director_poll_stop".into(),
         format!("alias tf2frag_director_wait_available \"echo {DIRECTOR_POLL_READY_MARKER}; alias tf2frag_director_poll tf2frag_director_poll_loop; tf2frag_director_poll\""),
-        format!("alias tf2frag_director_wait_unavailable \"echo {DIRECTOR_POLL_UNAVAILABLE_MARKER}; alias tf2frag_director_poll tf2frag_director_poll_stop\""),
-        "alias tf2frag_director_wait_result tf2frag_director_wait_unavailable".into(),
-        "alias wait \"alias tf2frag_director_wait_result tf2frag_director_wait_unavailable\"".into(),
+        format!("alias tf2tk_wait_unavailable \"echo {DIRECTOR_POLL_UNAVAILABLE_MARKER}; alias tf2frag_director_poll tf2frag_director_poll_stop\""),
+        "alias tf2frag_director_wait_result tf2tk_wait_unavailable".into(),
+        "alias wait \"alias tf2frag_director_wait_result tf2tk_wait_unavailable\"".into(),
         "alias tf2frag_director_wait_probe \"alias tf2frag_director_wait_result tf2frag_director_wait_available; wait; tf2frag_director_wait_result\"".into(),
     ]);
     lines.push("echo TF2FRAG_DIRECTOR_MAILBOX_READY".into());
@@ -3475,7 +3747,7 @@ fn manual_hotkey_cfg(
         let next = if current == kill_ticks.len() { 1 } else { current + 1 };
         let cue_tick = (tick - MANUAL_ONE_SECOND_TICKS).max(target_tick).max(0);
         lines.push(format!(
-            "alias tf2frag_manual_kill_{current} \"alias tf2frag_manual_next_kill tf2frag_manual_kill_{next}; alias tf2frag_manual_restore_campath tf2frag_manual_restore_campath_do; echo {DIRECTOR_TICK_MARKER_PREFIX} {cue_tick}; echo TF2FRAG_MANUAL_KILL {current}/{} FRAG_TICK {tick} CUE_TICK {cue_tick}; demo_gototick {cue_tick} 0 1\"",
+            "alias tf2frag_manual_kill_{current} \"alias tf2frag_manual_next_kill tf2frag_manual_kill_{next}; alias tf2frag_manual_restore_campath tf2tk_restore_path_do; echo {DIRECTOR_TICK_MARKER_PREFIX} {cue_tick}; echo TF2FRAG_MANUAL_KILL {current}/{} FRAG_TICK {tick} CUE_TICK {cue_tick}; demo_gototick {cue_tick} 0 1\"",
             kill_ticks.len()
         ));
     }
@@ -3527,7 +3799,7 @@ fn vdm_text(
         "Apply movie profile",
         1,
         None,
-        &format!("mirv_campath enabled 0; mirv_campath clear; mirv_input end; exec tf2fragdemohelper_recording_profile; {}", clean_capture_screen_commands()),
+        &format!("mirv_campath enabled 0; mirv_campath clear; mirv_input end; exec tf2_demo_toolkit_recording_profile; {}", clean_capture_screen_commands()),
     );
     let mut previous_finalize_tick = -1;
     for (order, candidate) in clips {
@@ -3548,8 +3820,8 @@ fn vdm_text(
         let focus = if candidate_needs_spectator_focus(candidate) {
             format!("spec_autodirector 0; spec_player #{}; spec_mode 4; ", candidate.attacker_user_id)
         } else { String::new() };
-        add_vdm_action(&mut lines, &mut action, "PlayCommands", "Start clip", start + 1, None, &format!("{focus}exec tf2fragdemohelper_batch/{session_name}/{base}_start"));
-        add_vdm_action(&mut lines, &mut action, "PlayCommands", "Stop clip", end, None, &format!("exec tf2fragdemohelper_batch/{session_name}/{base}_stop"));
+        add_vdm_action(&mut lines, &mut action, "PlayCommands", "Start clip", start + 1, None, &format!("{focus}exec tf2_demo_toolkit_batch/{session_name}/{base}_start"));
+        add_vdm_action(&mut lines, &mut action, "PlayCommands", "Stop clip", end, None, &format!("exec tf2_demo_toolkit_batch/{session_name}/{base}_stop"));
         previous_finalize_tick = end + RECORDING_FLUSH_TICKS;
         add_vdm_action(&mut lines, &mut action, "PlayCommands", "Finalize clip", previous_finalize_tick, None, &format!("echo TF2FRAG_RECORD_FINALIZED {base}"));
     }
@@ -3857,7 +4129,7 @@ fn finalize_recording_session(
     diagnostic_log: &Path,
 ) -> (usize, usize) {
     update_recording_manifest(session, None, "Running", None, None, None);
-    let recording_log = game.join("tf2fragdemohelper_recording.log");
+    let recording_log = game.join("tf2_demo_toolkit_recording.log");
     let start_deadline = Instant::now() + Duration::from_secs(120);
     let mut tf2_started = false;
     let mut query_warning_logged = false;
@@ -4803,7 +5075,7 @@ fn recording_stop_cfg(settings: &AppSettings, config_base: &str) -> String {
 }
 
 fn offline_cfg() -> &'static str {
-    "// Generated by TF2 Demo Toolkit. Offline demo playback only.\nsv_lan 1\nsv_allow_votes 0\ncl_allowdownload 0\ncl_downloadfilter none\ncl_spec_carrieditems 0\nalias +inspect echo\nalias -inspect echo\ncl_chatfilters 0\nhud_saytext_time 0\ntv_nochat 1\ncl_showtextmsg 0\ncl_showpluginmessages 0\ncl_vote_ui_active_after_voting 0\ncl_vote_ui_show_notification 0\ntf_hud_notification_duration 0\ndeveloper 0\ncon_notifytime 0\ncontimes 0\nalias connect \"echo BLOCKED: recording mode cannot connect to servers\"\nalias retry \"echo BLOCKED: recording mode cannot reconnect to servers\"\nalias tf_party_join_request_mode \"echo BLOCKED: matchmaking is disabled in recording mode\"\nalias openserverbrowser \"echo BLOCKED: recording mode is offline only\"\ncon_logfile tf2fragdemohelper_recording.log\ncon_timestamp 1\nengine_no_focus_sleep 0\nsnd_mute_losefocus 0\necho TF2FRAG_RECORDER_INIT\necho TF2FRAG_RECORDER_READY\n"
+    "// Generated by TF2 Demo Toolkit. Offline demo playback only.\nsv_lan 1\nsv_allow_votes 0\ncl_allowdownload 0\ncl_downloadfilter none\ncl_spec_carrieditems 0\nalias +inspect echo\nalias -inspect echo\ncl_chatfilters 0\nhud_saytext_time 0\ntv_nochat 1\ncl_showtextmsg 0\ncl_showpluginmessages 0\ncl_vote_ui_active_after_voting 0\ncl_vote_ui_show_notification 0\ntf_hud_notification_duration 0\ndeveloper 0\ncon_notifytime 0\ncontimes 0\nalias connect \"echo BLOCKED: recording mode cannot connect to servers\"\nalias retry \"echo BLOCKED: recording mode cannot reconnect to servers\"\nalias tf_party_join_request_mode \"echo BLOCKED: matchmaking is disabled in recording mode\"\nalias openserverbrowser \"echo BLOCKED: recording mode is offline only\"\ncon_logfile tf2_demo_toolkit_recording.log\ncon_timestamp 1\nengine_no_focus_sleep 0\nsnd_mute_losefocus 0\necho TF2FRAG_RECORDER_INIT\necho TF2FRAG_RECORDER_READY\n"
 }
 
 fn clean_capture_screen_commands() -> &'static str {
@@ -5363,9 +5635,7 @@ fn final_recording_outputs(root: &Path) -> Vec<PathBuf> {
 }
 
 fn application_data_root() -> PathBuf {
-    dirs::data_local_dir()
-        .unwrap_or_else(std::env::temp_dir)
-        .join("TF2FragDemoHelper")
+    crate::paths::data_root()
 }
 
 pub fn recording_sessions_root() -> PathBuf {
@@ -5373,14 +5643,15 @@ pub fn recording_sessions_root() -> PathBuf {
 }
 
 pub fn latest_recording_session() -> Option<PathBuf> {
-    discover_recording_sessions_in(
-        &recording_sessions_root(),
-        true,
-        MAX_RECOVERY_DIRECTORY_ENTRIES,
-        MAX_RECOVERY_DIRECTORY_ENTRIES,
-    )
-    .sessions
-    .pop()
+    fs::read_dir(recording_sessions_root()).ok()?.filter_map(Result::ok)
+        .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_dir()))
+        .filter(|entry| entry.file_name().to_str().is_some_and(|name| {
+            ["tf2_demo_toolkit_manual_", "tf2_demo_toolkit_batch_",
+             "tf2fragdemohelper_manual_", "tf2fragdemohelper_batch_"]
+                .iter().any(|prefix| name.starts_with(prefix))
+        }))
+        .max_by_key(|entry| entry.metadata().and_then(|meta| meta.modified()).ok())
+        .map(|entry| entry.path())
 }
 
 pub fn recover_recording_sessions(settings: &AppSettings) -> RecordingRecoveryReport {
@@ -5450,7 +5721,7 @@ fn discover_recording_sessions_in(
             || !path
                 .file_name()
                 .and_then(|value| value.to_str())
-                .is_some_and(|value| value.starts_with("tf2fragdemohelper_batch_"))
+                .is_some_and(|value| (value.starts_with("tf2_demo_toolkit_batch_") || value.starts_with("tf2fragdemohelper_batch_")))
         {
             continue;
         }
@@ -5849,7 +6120,7 @@ fn is_managed_recording_session(root: &Path, session: &Path) -> bool {
         && session
             .file_name()
             .and_then(|value| value.to_str())
-            .is_some_and(|value| value.starts_with("tf2fragdemohelper_batch_"))
+            .is_some_and(|value| (value.starts_with("tf2_demo_toolkit_batch_") || value.starts_with("tf2fragdemohelper_batch_")))
 }
 
 fn index_path() -> PathBuf {
@@ -5859,6 +6130,188 @@ fn index_path() -> PathBuf {
 #[cfg(test)]
 mod recording_tests {
     use super::*;
+
+    fn test_vpk(extension: &str, directory: &str, version: u32) -> Vec<u8> {
+        let mut tree = Vec::new();
+        for text in [extension, directory, "fixture"] {
+            tree.extend(text.as_bytes()); tree.push(0);
+        }
+        let mut entry = [0u8; 18];
+        entry[4..6].copy_from_slice(&3u16.to_le_bytes());
+        entry[6..8].copy_from_slice(&0x7fffu16.to_le_bytes());
+        entry[16..18].fill(0xff);
+        tree.extend(entry);
+        tree.extend(b"abc"); // preload data, not a directory string
+        tree.extend([0, 0, 0]);
+        let mut vpk = Vec::new();
+        vpk.extend(0x55aa1234u32.to_le_bytes());
+        vpk.extend(version.to_le_bytes());
+        vpk.extend((tree.len() as u32).to_le_bytes());
+        if version == 2 { vpk.extend([0; 16]); }
+        vpk.extend(tree);
+        vpk
+    }
+
+    fn profile_test_settings() -> AppSettings {
+        AppSettings {
+            dx_level: "Default".into(), hud: "Keep current".into(),
+            disable_announcer_voices: false, disable_applause_sounds: false,
+            disable_domination_sounds: false, ..AppSettings::default()
+        }
+    }
+
+    fn write_profile_fixture(game: &Path) {
+        for (relative, bytes) in [
+            ("cfg/autoexec.cfg", b"exec overrides/pre_comfig".as_slice()),
+            ("cfg/overrides/pre_comfig.cfg", b"mat_picmip 2".as_slice()),
+            ("cfg/config.cfg", b"bind q slot2".as_slice()),
+            ("cfg/video.txt", b"original video settings".as_slice()),
+            ("custom/broesel/resource/ui/hud.res", b"original HUD".as_slice()),
+            ("custom/broesel/cfg/autoexec.cfg", b"exec myconfig".as_slice()),
+            ("custom/hitsound/sound/ui/hitsound.wav", b"original hitsound".as_slice()),
+        ] {
+            let path = game.join(relative);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, bytes).unwrap();
+        }
+        fs::write(game.join("custom/mastercomfig.vpk"), test_vpk("cfg", " ", 2)).unwrap();
+        fs::write(game.join("custom/cosmetic.vpk"), test_vpk("res", "resource/ui", 1)).unwrap();
+    }
+
+    #[test]
+    fn both_recording_modes_exclude_user_configs_and_restore_original_bytes() {
+        for batch in [false, true] {
+            let root = recovery_test_root(if batch { "batch-profile" } else { "manual-profile" });
+            let game = root.join("tf");
+            let pointer = root.join("active.json");
+            write_profile_fixture(&game);
+            let batch_cfg = game.join("cfg/tf2_demo_toolkit_batch/test");
+            let temporary = vec![];
+            let cfg_hash = profile_tree_fingerprint(&game.join("cfg"), &temporary).unwrap();
+            let custom_hash = profile_tree_fingerprint(&game.join("custom"), &[]).unwrap();
+            let session = stage_recording_profile_at(&game, "test", "tf2tk_test_nonexistent.exe",
+                &profile_test_settings(), temporary.clone(), &pointer).unwrap();
+            if batch {
+                let generated = root.join("batch_cfg");
+                fs::create_dir_all(&generated).unwrap();
+                fs::write(generated.join("start.cfg"), "mirv_streams record start").unwrap();
+                copy_directory(&generated, &batch_cfg).unwrap();
+            }
+            assert!(!game.join("cfg/autoexec.cfg").exists());
+            assert!(!game.join("cfg/overrides").exists());
+            assert!(!game.join("custom/mastercomfig.vpk").exists());
+            assert!(!game.join("custom/broesel/cfg").exists());
+            assert!(game.join("custom/broesel/resource/ui/hud.res").is_file());
+            assert!(game.join("custom/cosmetic.vpk").is_file());
+            assert!(game.join("cfg").join(PROFILE_CFG).is_file());
+            if batch { assert!(batch_cfg.join("start.cfg").is_file()); }
+            fs::write(game.join("cfg/config.cfg"), "recording binds").unwrap();
+            fs::write(game.join("cfg/video.txt"), "recording video").unwrap();
+            restore_recording_profile_at(&session, &pointer).unwrap();
+            assert_eq!(profile_tree_fingerprint(&game.join("cfg"), &temporary).unwrap(), cfg_hash);
+            assert_eq!(profile_tree_fingerprint(&game.join("custom"), &[]).unwrap(), custom_hash);
+            assert!(!pointer.exists());
+            assert!(!session.backup_directory.exists());
+            fs::remove_dir_all(root).unwrap();
+        }
+    }
+
+    #[test]
+    fn restore_retry_keeps_already_restored_folders_and_verifies_their_contents() {
+        let root = recovery_test_root("restore-retry");
+        let game = root.join("tf");
+        let pointer = root.join("active.json");
+        write_profile_fixture(&game);
+        let session = stage_recording_profile_at(&game, "test", "tf2tk_test_nonexistent.exe",
+            &profile_test_settings(), vec![], &pointer).unwrap();
+        let mut newer = session.clone();
+        newer.session_id = "newer-session".into();
+        write_active_profile(&newer, &pointer).unwrap();
+        restore_recording_profile_at(&session, &pointer).unwrap();
+        assert!(!game.join("cfg/autoexec.cfg").exists());
+        assert!(session.backup_directory.join("cfg_original").is_dir());
+        write_active_profile(&session, &pointer).unwrap();
+        // Simulate a prior restore reaching the verification step before failing.
+        restore_original_directory(&game.join("custom"), &session.backup_directory.join("custom_original"), true).unwrap();
+        restore_original_directory(&game.join("cfg"), &session.backup_directory.join("cfg_original"), true).unwrap();
+        fs::write(game.join("cfg/config.cfg"), "unexpected content").unwrap();
+        assert!(restore_recording_profile_at(&session, &pointer).is_err());
+        assert!(pointer.exists());
+        assert_eq!(fs::read(game.join("cfg/config.cfg")).unwrap(), b"unexpected content");
+        assert!(game.join("custom/mastercomfig.vpk").is_file());
+        fs::write(game.join("cfg/config.cfg"), "bind q slot2").unwrap();
+        restore_recording_profile_at(&session, &pointer).unwrap();
+        assert!(!pointer.exists());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn failed_staging_rolls_back_and_fresh_install_restores_absent_folders() {
+        let root = recovery_test_root("profile-rollback");
+        let game = root.join("tf");
+        let pointer = root.join("active.json");
+        write_profile_fixture(&game);
+        fs::write(game.join("custom/invalid.vpk"), "invalid archive").unwrap();
+        let original_cfg = profile_tree_fingerprint(&game.join("cfg"), &[]).unwrap();
+        let original_custom = profile_tree_fingerprint(&game.join("custom"), &[]).unwrap();
+        assert!(stage_recording_profile_at(&game, "test", "tf2tk_test_nonexistent.exe",
+            &profile_test_settings(), vec![], &pointer).is_err());
+        assert_eq!(profile_tree_fingerprint(&game.join("cfg"), &[]).unwrap(), original_cfg);
+        assert_eq!(profile_tree_fingerprint(&game.join("custom"), &[]).unwrap(), original_custom);
+        assert!(!pointer.exists());
+        let fresh = root.join("fresh-tf");
+        let session = stage_recording_profile_at(&fresh, "fresh", "tf2tk_test_nonexistent.exe",
+            &profile_test_settings(), vec![], &pointer).unwrap();
+        restore_recording_profile_at(&session, &pointer).unwrap();
+        assert!(!fresh.join("cfg").exists());
+        assert!(!fresh.join("custom").exists());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn custom_archive_config_filter_covers_rc_cfg_paths_and_multipart_archives() {
+        let root = recovery_test_root("vpk-filter");
+        let source = root.join("source");
+        let destination = root.join("working");
+        fs::create_dir_all(&source).unwrap();
+        for (name, extension, directory) in [
+            ("rc.vpk", "RC", " "), ("path.vpk", "txt", "CFG/overrides"),
+            ("mastercomfig_dir.vpk", "cfg", " "), ("hud_dir.vpk", "res", "resource/ui"),
+        ] { fs::write(source.join(name), test_vpk(extension, directory, 2)).unwrap(); }
+        fs::write(source.join("mastercomfig_000.vpk"), "config data").unwrap();
+        fs::write(source.join("hud_000.vpk"), "cosmetic data").unwrap();
+        copy_recording_cosmetics(&source, &destination).unwrap();
+        assert_eq!(fs::read_dir(&destination).unwrap().count(), 2);
+        assert!(destination.join("hud_dir.vpk").is_file());
+        assert!(destination.join("hud_000.vpk").is_file());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn all_generated_manual_aliases_fit_the_engine_name_limit() {
+        let candidate = Candidate::default();
+        let cfg = manual_hotkey_cfg(&candidate, 53835, "demos/tf2_demo_toolkit_manual/test.dem", &AppSettings::default());
+        // Check nested definitions too, not only the first alias on each line.
+        for definition in cfg.split("alias ").skip(1) {
+            let name = definition.split_whitespace().next().unwrap();
+            assert!(name.len() < 32, "Source rejects alias {name} ({} bytes)", name.len());
+        }
+        assert!(cfg.contains("alias tf2tk_wait_unavailable "));
+        assert!(cfg.contains("alias tf2tk_restore_path_do "));
+    }
+
+    #[test]
+    fn interrupted_legacy_profiles_keep_their_original_restore_names() {
+        let profile: RecordingProfileSession = serde_json::from_value(serde_json::json!({
+            "session_id":"legacy", "game_directory":"tf", "backup_directory":"tf/backup",
+            "original_custom_existed":true, "original_profile_existed":false,
+            "original_profile_cfg_existed":false, "isolated_custom":false,
+            "tf_process_name":"tf_win64.exe"
+        })).unwrap();
+        assert_eq!(profile.profile_folder, "tf2fragdemohelper_recording");
+        assert_eq!(profile.profile_cfg, "tf2fragdemohelper_recording_profile.cfg");
+        assert_eq!(profile.offline_cfg, "tf2fragdemohelper_offline.cfg");
+    }
 
     fn recovery_test_root(name: &str) -> PathBuf {
         let unique = Utc::now().timestamp_nanos_opt().unwrap_or_default();
@@ -5914,7 +6367,7 @@ mod recording_tests {
             13_000,
             output,
             &campath,
-            Path::new(r"C:\Team Fortress 2\tf\tf2fragdemohelper_recording.log"),
+            Path::new(r"C:\Team Fortress 2\tf\tf2_demo_toolkit_recording.log"),
             Path::new(r"C:\Team Fortress 2\tf\cfg"),
             &AppSettings::default(),
             DirectorControl::HotkeysOnly,
@@ -5963,11 +6416,11 @@ mod recording_tests {
     fn recovery_discovery_is_bounded_and_skips_disabled_sessions() {
         let root = recovery_test_root("discovery");
         for index in 0..5 {
-            fs::create_dir_all(root.join(format!("tf2fragdemohelper_batch_{index:02}")))
+            fs::create_dir_all(root.join(format!("tf2_demo_toolkit_batch_{index:02}")))
                 .expect("create retained session");
         }
         fs::create_dir_all(root.join("unrelated-folder")).expect("create unrelated folder");
-        disable_automatic_recovery(&root.join("tf2fragdemohelper_batch_04"), "test quarantine");
+        disable_automatic_recovery(&root.join("tf2_demo_toolkit_batch_04"), "test quarantine");
 
         let active = discover_recording_sessions_in(&root, false, 32, 2);
         assert_eq!(active.sessions.len(), 2);
@@ -5983,7 +6436,7 @@ mod recording_tests {
     #[test]
     fn malformed_manifest_is_retained_and_disabled_instead_of_retried_forever() {
         let root = recovery_test_root("malformed");
-        let session = root.join("tf2fragdemohelper_batch_bad");
+        let session = root.join("tf2_demo_toolkit_batch_bad");
         fs::create_dir_all(&session).expect("create malformed session");
         fs::write(session.join("recording_manifest.json"), b"{not valid json")
             .expect("write malformed manifest");
@@ -6012,7 +6465,7 @@ mod recording_tests {
     #[test]
     fn repeatedly_failing_session_stops_after_three_automatic_attempts() {
         let root = recovery_test_root("retry-limit");
-        let session = root.join("tf2fragdemohelper_batch_retry");
+        let session = root.join("tf2_demo_toolkit_batch_retry");
         fs::create_dir_all(&session).expect("create retry session");
         let mut report = RecordingRecoveryReport::default();
         for _ in 0..MAX_AUTOMATIC_RECOVERY_ATTEMPTS {
@@ -6051,11 +6504,11 @@ mod recording_tests {
         let cfg = manual_hotkey_cfg(
             &candidate,
             500,
-            "demos/tf2fragdemohelper_manual/session/candidate.dem",
+            "demos/tf2_demo_toolkit_manual/session/candidate.dem",
             &AppSettings::default(),
         );
         assert!(cfg.contains(
-            "playdemo demos/tf2fragdemohelper_manual/session/candidate.dem"
+            "playdemo demos/tf2_demo_toolkit_manual/session/candidate.dem"
         ));
         assert!(cfg.contains(
             "alias tf2frag_manual_seek_001_do \"alias tf2frag_manual_seek_001 tf2frag_manual_seek_noop; demo_gototick 500\""
@@ -6069,10 +6522,10 @@ mod recording_tests {
         assert!(cfg.contains("TF2FRAG_MANUAL_KILL 2/3 FRAG_TICK 925 CUE_TICK 858"));
         assert!(cfg.contains("TF2FRAG_MANUAL_KILL 3/3 FRAG_TICK 970 CUE_TICK 903"));
         assert!(cfg.contains(
-            "alias tf2frag_manual_kill_3 \"alias tf2frag_manual_next_kill tf2frag_manual_kill_1; alias tf2frag_manual_restore_campath tf2frag_manual_restore_campath_do; echo TF2FRAG_DIRECTOR_TICK 903; echo TF2FRAG_MANUAL_KILL 3/3 FRAG_TICK 970 CUE_TICK 903; demo_gototick 903 0 1\""
+            "alias tf2frag_manual_kill_3 \"alias tf2frag_manual_next_kill tf2frag_manual_kill_1; alias tf2frag_manual_restore_campath tf2tk_restore_path_do; echo TF2FRAG_DIRECTOR_TICK 903; echo TF2FRAG_MANUAL_KILL 3/3 FRAG_TICK 970 CUE_TICK 903; demo_gototick 903 0 1\""
         ));
         assert!(cfg.contains(
-            "alias tf2frag_manual_restore_campath_do \"alias tf2frag_manual_restore_campath tf2frag_manual_restore_campath_noop; mirv_input end; thirdperson; r_drawviewmodel 0; mirv_campath enabled 1; echo TF2FRAG_MANUAL_CAMPATH_RESTORED_AFTER_FRAG_SEEK; tf2frag_manual_sync_keyframes\""
+            "alias tf2tk_restore_path_do \"alias tf2frag_manual_restore_campath tf2tk_restore_path_noop; mirv_input end; thirdperson; r_drawviewmodel 0; mirv_campath enabled 1; echo TF2FRAG_MANUAL_CAMPATH_RESTORED_AFTER_FRAG_SEEK; tf2frag_manual_sync_keyframes\""
         ));
         assert!(cfg.contains("bind \"1\" \"tf2frag_manual_help\""));
         assert!(cfg.contains(
@@ -6112,7 +6565,7 @@ mod recording_tests {
             "mirv_input end; mirv_campath enabled 0; mirv_campath draw enabled 0; mirv_cmd enabled 0"
         ));
         assert!(cfg.contains(
-            "echo TF2FRAG_MANUAL_SAFE_RESTART_FROM_ZERO TARGET 500; playdemo demos/tf2fragdemohelper_manual/session/candidate.dem"
+            "echo TF2FRAG_MANUAL_SAFE_RESTART_FROM_ZERO TARGET 500; playdemo demos/tf2_demo_toolkit_manual/session/candidate.dem"
         ));
         assert!(!cfg.contains("bind \"F1\""));
         assert!(cfg.contains("mirv_cmd clear"));
@@ -6132,10 +6585,10 @@ mod recording_tests {
         assert!(cfg.contains("tf2frag_director_wait_probe"));
         assert!(cfg.trim_end().ends_with("tf2frag_manual_help"));
         assert!(cfg.contains(
-            "alias tf2frag_director_execute_00 \"exec tf2fragdemohelper_director_action_00\""
+            "alias tf2frag_director_execute_00 \"exec tf2_demo_toolkit_director_action_00\""
         ));
         assert!(cfg.contains(
-            "alias tf2frag_director_execute_63 \"exec tf2fragdemohelper_director_action_63\""
+            "alias tf2frag_director_execute_63 \"exec tf2_demo_toolkit_director_action_63\""
         ));
         assert!(cfg.contains("bind \"'\" \"tf2frag_director_execute\""));
         assert!(!cfg.contains("wait 10"));
@@ -6146,7 +6599,7 @@ mod recording_tests {
         let cfg = manual_hotkey_cfg(
             &Candidate::default(),
             500,
-            "demos/tf2fragdemohelper_manual/session/candidate.dem",
+            "demos/tf2_demo_toolkit_manual/session/candidate.dem",
             &AppSettings::default(),
         );
         let lines = cfg.lines().collect::<Vec<_>>();
@@ -6183,7 +6636,7 @@ mod recording_tests {
         let cfg = manual_hotkey_cfg(
             &Candidate::default(),
             500,
-            "demos/tf2fragdemohelper_manual/session/candidate.dem",
+            "demos/tf2_demo_toolkit_manual/session/candidate.dem",
             &settings,
         );
         assert!(cfg.contains(
@@ -6202,7 +6655,7 @@ mod recording_tests {
         let cfg = manual_hotkey_cfg(
             &Candidate::default(),
             500,
-            "demos/tf2fragdemohelper_manual/session/candidate.dem",
+            "demos/tf2_demo_toolkit_manual/session/candidate.dem",
             &AppSettings::default(),
         );
         assert!(!cfg.contains("net_start"));
@@ -6218,7 +6671,7 @@ mod recording_tests {
             &settings,
             2560,
             1440,
-            "demos/tf2fragdemohelper_manual/session/candidate.dem",
+            "demos/tf2_demo_toolkit_manual/session/candidate.dem",
         )
         .unwrap();
         assert!(arguments.contains("-insecure"));
@@ -6230,7 +6683,7 @@ mod recording_tests {
         let cfg = manual_hotkey_cfg(
             &Candidate::default(),
             500,
-            "demos/tf2fragdemohelper_manual/session/candidate.dem",
+            "demos/tf2_demo_toolkit_manual/session/candidate.dem",
             &settings,
         );
         assert!(cfg.contains("echo TF2FRAG_DIRECTOR_TICK {0}"));
@@ -6334,12 +6787,12 @@ mod recording_tests {
         assert!(!vdm.contains("mirv_cmd"));
         assert!(!vdm.contains("TF2FRAG_DIRECTOR_TICK"));
         assert_eq!(vdm.matches("TF2 MIRV Director live tick").count(), 0);
-        assert!(!vdm.contains("exec tf2fragdemohelper_manual"));
+        assert!(!vdm.contains("exec tf2_demo_toolkit_manual"));
 
         let cfg = manual_hotkey_cfg(
             &Candidate::default(),
             500,
-            "demos/tf2fragdemohelper_manual/session/candidate.dem",
+            "demos/tf2_demo_toolkit_manual/session/candidate.dem",
             &AppSettings::default(),
         );
         assert!(cfg.contains(
@@ -6370,7 +6823,7 @@ mod recording_tests {
         let cfg = manual_hotkey_cfg(
             &candidate,
             46_001,
-            "demos/tf2fragdemohelper_manual/session/candidate.dem",
+            "demos/tf2_demo_toolkit_manual/session/candidate.dem",
             &AppSettings::default(),
         );
         for (index, tick) in [15_000, 30_000, 45_000, 46_001].iter().enumerate() {
@@ -6538,7 +6991,7 @@ mod recording_tests {
         let root = PathBuf::from("app-data").join("Recording Sessions");
         assert!(is_managed_recording_session(
             &root,
-            &root.join("tf2fragdemohelper_batch_20260825_120000_000")
+            &root.join("tf2_demo_toolkit_batch_20260825_120000_000")
         ));
         assert!(!is_managed_recording_session(
             &root,
@@ -6548,7 +7001,7 @@ mod recording_tests {
             &root,
             &root
                 .join("nested")
-                .join("tf2fragdemohelper_batch_20260825_120000_000")
+                .join("tf2_demo_toolkit_batch_20260825_120000_000")
         ));
     }
 

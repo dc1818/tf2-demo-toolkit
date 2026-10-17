@@ -73,14 +73,32 @@ with tempfile.TemporaryDirectory() as working:
         'campath_file': str(Path(working) / 'campath.xml'),
         'output_directory': working, 'telemetry_log': str(Path(working) / 'console.log'),
         'telemetry_marker_prefix': 'TF2FRAG_DIRECTOR_TICK',
-        'command_cfg_directory': working, 'control': {'mode': 'hotkeys_only'},
+        'command_cfg_directory': working, 'control': {'mode': 'cfg_mailbox'},
     }), encoding='utf-8')
-    (Path(working) / 'console.log').write_text('TF2FRAG_MANUAL_PAUSED_AT_START\n', encoding='utf-8')
+    console_log = Path(working) / 'console.log'
+    console_log.write_text('', encoding='utf-8')
     for arguments in [[], ['--director', str(session)]]:
         name = 'TF2_Demo_Toolkit'
         with tempfile.TemporaryFile() as log:
             process = subprocess.Popen([str(root / (name + suffix)), *arguments], env=env, cwd=working, stdout=log, stderr=log)
             try:
+                if arguments:
+                    diagnostic_path = Path(working) / 'director_telemetry.log'
+                    deadline = time.monotonic() + 12
+                    while not diagnostic_path.is_file() and time.monotonic() < deadline:
+                        if process.poll() is not None:
+                            break
+                        time.sleep(0.1)
+                    if not diagnostic_path.is_file():
+                        log.seek(0)
+                        raise RuntimeError(f'Director did not begin waiting for TF2: {log.read().decode(errors="replace")}')
+                    time.sleep(2)
+                    diagnostic = diagnostic_path.read_text(encoding='utf-8')
+                    if 'status=WAITING_FOR_TF2_LOG' not in diagnostic:
+                        raise RuntimeError('Director did not report its loading state')
+                    if 'status=DIRECTOR_WINDOWS_READY' in diagnostic:
+                        raise RuntimeError('Director opened before TF2 was ready')
+                    console_log.write_text('TF2FRAG_MANUAL_PAUSED_AT_START\nTF2FRAG_DIRECTOR_POLL_READY\n', encoding='utf-8')
                 time.sleep(12)
                 if process.poll() is not None:
                     log.seek(0)

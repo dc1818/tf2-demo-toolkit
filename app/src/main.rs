@@ -1,11 +1,13 @@
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 #![recursion_limit = "256"]
 
+mod paths;
 mod analyzer;
 mod guide;
 mod guide_ui;
 mod item_schema;
 mod batch;
+mod demo_playback;
 mod models;
 mod preflight;
 mod parse_exports;
@@ -904,9 +906,7 @@ struct State {
 }
 
 fn crash_log_path() -> PathBuf {
-    dirs::data_local_dir()
-        .unwrap_or_else(std::env::temp_dir)
-        .join("TF2FragDemoHelper")
+    crate::paths::data_root()
         .join("crash.log")
 }
 
@@ -1094,6 +1094,14 @@ fn main() -> Result<()> {
         }
     }
 
+    if let Err(error) = paths::migrate() {
+        rfd::MessageDialog::new()
+            .set_title("TF2 Demo Toolkit data migration")
+            .set_description(format!("Could not migrate existing app data:\n\n{error:#}"))
+            .set_level(rfd::MessageLevel::Error)
+            .show();
+        return Err(error);
+    }
     let recovered_recording_profile = recover_interrupted_profile()?;
     let ui = AppWindow::new()?;
     slint::set_xdg_app_id("com.dc1818.tf2-demo-toolkit")?;
@@ -1206,7 +1214,21 @@ fn main() -> Result<()> {
     start_recording_recovery(&ui, &state);
     bind_page_window_size(&ui);
     center_window_on_startup(&ui);
-    ui.run()?;
+    ui.window().on_close_requested(|| {
+        match shutdown_active_recording() {
+            Ok(_) => slint::CloseRequestResponse::HideWindow,
+            Err(error) => {
+                rfd::MessageDialog::new()
+                    .set_title("TF2 Settings Could Not Be Restored")
+                    .set_description(format!("Toolkit will stay open because it could not verify that your original TF2 settings are back in place. Recovery data was retained.\n\n{error:#}\n\nClose TF2 if it is still running, resolve the error, then close Toolkit again to retry."))
+                    .set_level(rfd::MessageLevel::Error)
+                    .show();
+                slint::CloseRequestResponse::KeepWindowShown
+            }
+        }
+    });
+    let ui_result = ui.run();
+    // Also cover event-loop errors/programmatic exits, not just window closes.
     if let Err(error) = shutdown_active_recording() {
         rfd::MessageDialog::new()
             .set_title("TF2 Recording Restore Warning")
@@ -1215,6 +1237,7 @@ fn main() -> Result<()> {
             .show();
         return Err(error);
     }
+    ui_result?;
     Ok(())
 }
 
@@ -1388,7 +1411,7 @@ fn bind_demo_file_drop(ui: &AppWindow, state: &Arc<Mutex<State>>) {
         if matches!(event, winit::event::WindowEvent::CloseRequested) && drop_state.lock().recording_active {
             let choice = rfd::MessageDialog::new()
                 .set_title("Recording Finalization Is Still Active")
-                .set_description("TF2 recording, output finalization, or interrupted-session recovery is still running. Closing now can interrupt muxing or file transfers.\n\nYes: close anyway and preserve the session for recovery on the next launch\nNo: keep the helper open until finalization finishes")
+                .set_description("TF2 recording, output finalization, or interrupted-session recovery is still running. Closing now can interrupt muxing or file transfers.\n\nYes: close TF2, restore and verify your original settings, then close Toolkit; unfinished captures remain recoverable\nNo: keep Toolkit open until finalization finishes")
                 .set_buttons(rfd::MessageButtons::YesNo)
                 .set_level(rfd::MessageLevel::Warning)
                 .show();
@@ -2281,16 +2304,17 @@ fn bind_candidate_callbacks(ui: &AppWindow, state: &Arc<Mutex<State>>) {
                         set_background_process(&ui, "MANUAL HLAE ACTIVE", true);
                         ui.set_status_text(message.into());
                     }
-                    RecordingProgress::ManualFinished { output_path, session } => {
+                    RecordingProgress::ManualFinished { output_path, session, problem } => {
                         {
                             let mut current = state.lock();
                             current.recording_active = false;
                             current.last_recording_session = session.clone();
                         }
                         let status = match session {
-                            Some(session) => format!("Manual HLAE closed, but restoration needs attention. Logs: {}", session.display()),
+                            Some(session) => format!("Manual HLAE session ended. Diagnostics: {}", session.display()),
                             None => format!("Manual HLAE closed; TF2 settings restored. Capture folder: {}", output_path.display()),
                         };
+                        let status = problem.map(|problem| format!("{problem}. {status}")).unwrap_or(status);
                         ui.set_status_text(status.into());
                         set_background_process(&ui, "READY", false);
                     }
@@ -2305,7 +2329,7 @@ fn bind_candidate_callbacks(ui: &AppWindow, state: &Arc<Mutex<State>>) {
                 state_for_manual_hlae.lock().last_recording_session = Some(launch.session.clone());
                 ui.set_status_text(
                     format!(
-                        "Manual HLAE launched and paused at tick {}. 3 start, 4 kills, 6 camera, 7 keyframe, 9/0 record. Output: {}",
+                        "Manual HLAE is loading toward tick {}. Director appears after the demo is ready. Output: {}",
                         launch.target_tick,
                         launch.output_path.display()
                     )
@@ -2473,16 +2497,17 @@ fn bind_candidate_callbacks(ui: &AppWindow, state: &Arc<Mutex<State>>) {
                         ui.set_status_text(status.into());
                         set_background_process(&ui, "READY", false);
                     }
-                    RecordingProgress::ManualFinished { output_path, session } => {
+                    RecordingProgress::ManualFinished { output_path, session, problem } => {
                         {
                             let mut current = state.lock();
                             current.recording_active = false;
                             current.last_recording_session = session.clone();
                         }
                         let status = match session {
-                            Some(session) => format!("Manual HLAE session closed, but TF2 settings restoration needs attention. Logs: {}", session.display()),
+                            Some(session) => format!("Manual HLAE session ended. Diagnostics: {}", session.display()),
                             None => format!("Manual HLAE session closed and TF2 settings were restored. Capture folder: {}", output_path.display()),
                         };
+                        let status = problem.map(|problem| format!("{problem}. {status}")).unwrap_or(status);
                         ui.set_status_text(status.into());
                         set_background_process(&ui, "READY", false);
                     }

@@ -20,7 +20,7 @@ pub const DIRECTOR_LOAD_CAMPATH_REQUEST_MARKER: &str =
 pub const DIRECTOR_ACTION_ACK_PREFIX: &str = "TF2FRAG_DIRECTOR_ACTION_ACK";
 pub const DIRECTOR_POLL_READY_MARKER: &str = "TF2FRAG_DIRECTOR_POLL_READY";
 pub const DIRECTOR_POLL_UNAVAILABLE_MARKER: &str = "TF2FRAG_DIRECTOR_POLL_UNAVAILABLE";
-pub const DIRECTOR_ACTION_FILE_PREFIX: &str = "tf2fragdemohelper_director_action";
+pub const DIRECTOR_ACTION_FILE_PREFIX: &str = "tf2_demo_toolkit_director_action";
 pub const DIRECTOR_ACTION_SLOTS: u16 = 64;
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
@@ -150,7 +150,7 @@ mod tests {
                 key: "7".into(),
                 label: "Add keyframe".into(),
             }],
-            telemetry_log: PathBuf::from("tf/tf2fragdemohelper_recording.log"),
+            telemetry_log: PathBuf::from("tf/tf2_demo_toolkit_recording.log"),
             telemetry_marker_prefix: DIRECTOR_TICK_MARKER_PREFIX.into(),
             command_cfg_directory: PathBuf::from("tf/cfg"),
             ..DirectorSession::default()

@@ -467,9 +467,7 @@ impl Default for AppSettings {
 
 impl AppSettings {
     pub fn path() -> PathBuf {
-        dirs::config_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join("TF2FragDemoHelper")
+        crate::paths::config_root()
             .join("settings.json")
     }
 

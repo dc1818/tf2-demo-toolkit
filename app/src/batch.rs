@@ -199,9 +199,7 @@ extern "system" {
 }
 
 fn crash_log_path() -> PathBuf {
-    dirs::data_local_dir()
-        .unwrap_or_else(std::env::temp_dir)
-        .join("TF2FragDemoHelper")
+    crate::paths::data_root()
         .join("crash.log")
 }
 
@@ -727,9 +725,7 @@ fn write_summary(
 }
 
 fn timing_history_path() -> PathBuf {
-    dirs::data_local_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("TF2FragDemoHelper")
+    crate::paths::data_root()
         .join("preflight_timing_history.ndjson")
 }
 

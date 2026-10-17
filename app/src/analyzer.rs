@@ -1968,7 +1968,7 @@ mod tests {
             .unwrap()
             .as_nanos();
         std::env::temp_dir().join(format!(
-            "tf2-frag-helper-bookmark-{name}-{}-{nonce}",
+            "tf2-demo-toolkit-bookmark-{name}-{}-{nonce}",
             std::process::id()
         ))
     }
