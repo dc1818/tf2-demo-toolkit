@@ -972,12 +972,12 @@ fn capture_ui_snapshots(directory: PathBuf) -> Result<()> {
     ui.set_parse_time_left("Estimated total: 3m 20s".into());
     ui.set_status_text("".into());
     ui.set_candidate_rows(ModelRc::new(VecModel::from((0..24).map(|index| CandidateRow {
-        rank: index + 1, score: "90".into(), recorded: "Not recorded".into(), map_name: "cp_process".into(), class_name: "Demoman".into(), ticks: "10000 - 12000".into(), mode: "Competitive".into(), ..Default::default()
+        rank: index + 1, score: "90".into(), recorded: if index % 2 == 0 { "Recorded" } else { "" }.into(), map_name: "cp_process".into(), class_name: "Demoman".into(), ticks: "10000, 12000".into(), mode: "Competitive".into(), team: "RED".into(), ..Default::default()
     }).collect::<Vec<_>>())));
     ui.set_help_dialog_title("How to find the item schema".into());
     ui.set_help_dialog_body("Demo Toolkit checks the selected demo folders and your TF2 installation automatically.\n\n1. In Steam, open Team Fortress 2 > Properties > Installed Files > Browse.\n2. Look for tf/scripts/items/items_game.txt.\n3. Use Choose file to select it.\n\nThe schema is optional. You can continue without it.".into());
     let mut cases = vec![(800.,480.,0,false), (800.,480.,1,false), (800.,480.,2,false), (800.,480.,1,true), (900.,520.,0,false), (900.,520.,1,false), (900.,520.,2,false), (1280.,720.,1,false), (1480.,860.,0,false), (1480.,860.,1,false), (1480.,860.,2,false), (1920.,1080.,1,false), (800.,480.,4,false), (800.,480.,5,false), (800.,480.,6,false), (800.,480.,7,false), (800.,480.,8,false), (800.,480.,9,false), (1280.,720.,4,false), (1280.,720.,7,false), (1280.,720.,8,false), (1280.,720.,9,false), (1280.,720.,5,false), (800.,480.,12,false), (800.,480.,13,false), (800.,480.,14,false), (800.,480.,15,false), (1100.,600.,0,false), (1100.,600.,1,false), (1100.,600.,2,false), (1100.,600.,4,false), (1100.,600.,7,false), (1100.,600.,8,false), (1100.,600.,9,false), (1100.,600.,5,false), (1100.,600.,6,false), (1100.,600.,16,false), (1100.,600.,17,false), (800.,480.,16,false), (1100.,600.,18,false), (1480.,860.,6,false), (1320.,674.,18,false), (1320.,674.,1,false), (1320.,607.,2,false), (1320.,539.,4,false), (1320.,472.,7,false), (1320.,565.,8,false), (1320.,530.,9,false), (1320.,557.,5,false), (1100.,580.,18,false), (1100.,411.,7,false), (1100.,467.,4,false), (1100.,489.,8,false), (1320.,674.,19,false), (1100.,400.,20,false), (1320.,458.,20,false), (800.,480.,20,false), (900.,520.,20,false), (1480.,860.,21,false), (800.,480.,22,false), (1480.,860.,23,false), (800.,480.,24,false), (800.,480.,25,false)];
-    for tour_step in 1..=39 {
+    for tour_step in guide::ORDER {
         for (width, height) in [(1320., 720.), (800., 480.)] {
             cases.push((width, height, 100 + tour_step, false));
         }
@@ -1023,7 +1023,7 @@ fn capture_ui_snapshots(directory: PathBuf) -> Result<()> {
                 _ => "Automatically records your selected candidates using your Recording Settings: format, FPS, HUD, graphics and output folder.",
             }.into());
             tips.set_footer(match step { 22 => "Opens TF2 paused. You decide when to record.", 23 => "Previewing does not start recording.", _ => "Change these in Recording Settings." }.into());
-            if (101..=139).contains(&step) {
+            if (101..=100 + guide::MAX_STEP).contains(&step) {
                 ui.set_has_export(true);
                 ui.set_selected_count(1);
                 ui.set_parse_started(step == 112);
@@ -1036,7 +1036,6 @@ fn capture_ui_snapshots(directory: PathBuf) -> Result<()> {
                     12 => "Parsing stopped or results could not be loaded. Check Application Logs, then go Back to retry.",
                     13 => "This export has no candidates. Go Back to choose other demos, or pause the guide in Options.",
                     16 => "No rows match. Clear the search or relax Filters before selecting a candidate.",
-                    35..=37 => "Try this when ready, or choose Next. Next never launches TF2 or starts recording.",
                     _ => "",
                 }.into());
             } else {
@@ -1047,11 +1046,11 @@ fn capture_ui_snapshots(directory: PathBuf) -> Result<()> {
         } else {
             let result = (|| -> Result<()> {
                 ui.global::<Tf2Tooltips>().set_visible((21..=24).contains(&step));
-                if (101..=139).contains(&step) && !ui.global::<GuideFocus>().get_available() {
+                if (101..=100 + guide::MAX_STEP).contains(&step) && !ui.global::<GuideFocus>().get_available() {
                     anyhow::bail!("Guide target {} is missing at {}x{}", step - 100, width, height);
                 }
                 let pixels = ui.window().take_snapshot()?;
-                if (101..=139).contains(&step) {
+                if (101..=100 + guide::MAX_STEP).contains(&step) {
                     let focus = ui.global::<GuideFocus>();
                     let (x,y,w,h) = (focus.get_card_left(),focus.get_card_top(),focus.get_card_width(),focus.get_card_height());
                     let (tx,ty,tw,th) = (focus.get_left(),focus.get_top(),focus.get_target_width(),focus.get_target_height());
@@ -1097,6 +1096,7 @@ fn main() -> Result<()> {
 
     let recovered_recording_profile = recover_interrupted_profile()?;
     let ui = AppWindow::new()?;
+    slint::set_xdg_app_id("com.dc1818.tf2-demo-toolkit")?;
     let settings = AppSettings::load();
     // Ensure first-run defaults and any normalized legacy values exist on
     // disk immediately. All later Recording Settings changes remain autosaved.

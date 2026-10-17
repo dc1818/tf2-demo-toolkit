@@ -19,7 +19,10 @@ OutputBaseFilename=TF2-Demo-Toolkit-Windows-x64-Setup
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
+SetupIconFile=..\app\ui\assets\branding\toolkit.ico
 UninstallDisplayIcon={app}\TF2_Demo_Toolkit.exe
+[Tasks]
+Name: "desktopicon"; Description: "Create a desktop shortcut"; Flags: unchecked
 [InstallDelete]
 Type: files; Name: "{app}\TF2_Demo_Director.exe"
 
@@ -27,5 +30,6 @@ Type: files; Name: "{app}\TF2_Demo_Director.exe"
 Source: "..\dist\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 [Icons]
 Name: "{group}\TF2 Demo Toolkit"; Filename: "{app}\TF2_Demo_Toolkit.exe"
+Name: "{autodesktop}\TF2 Demo Toolkit"; Filename: "{app}\TF2_Demo_Toolkit.exe"; Tasks: desktopicon
 [Run]
 Filename: "{app}\TF2_Demo_Toolkit.exe"; Description: "Open TF2 Demo Toolkit"; Flags: nowait postinstall skipifsilent

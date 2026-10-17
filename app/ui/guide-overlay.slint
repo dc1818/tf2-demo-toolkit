@@ -8,6 +8,8 @@ export component GuideOverlay inherits Rectangle {
     in property <int> position;
     in property <int> count;
     in property <int> step;
+    in property <int> ordinal;
+    in property <int> total;
     in property <bool> can-next;
     in property <string> next-label: "NEXT";
     callback action(int);
@@ -38,7 +40,7 @@ export component GuideOverlay inherits Rectangle {
             padding: 14px; spacing: 9px;
             HorizontalLayout { height: 18px;
                 Tf2Body { text: "GUIDE · " + root.position + " / " + root.count; color: #8ab3cd; font-size: 12px; }
-                Tf2Body { text: root.step + " OF 39"; color: Tf2Colors.muted; font-size: 11px; horizontal-alignment: right; }
+                Tf2Body { text: root.ordinal + " OF " + root.total; color: Tf2Colors.muted; font-size: 11px; horizontal-alignment: right; }
             }
             Tf2Heading { text: root.heading; font-size: root.card-width < 300px ? 17px : 20px; wrap: word-wrap; }
             Tf2Body { text: root.body; font-size: root.width < 1000px ? 14px : 15px; wrap: word-wrap; color: #decba9; }

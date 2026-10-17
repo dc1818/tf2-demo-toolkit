@@ -56,6 +56,7 @@ pub fn run(session_path: PathBuf) -> Result<()> {
 
     let strip = DirectorStripWindow::new()?;
     let card = DirectorCardWindow::new()?;
+    slint::set_xdg_app_id("com.dc1818.tf2-demo-toolkit")?;
     let demo_ready = Rc::new(Cell::new(true));
     let highlighted_cue = Rc::new(Cell::new(None::<usize>));
     let selected_keyframe = Rc::new(Cell::new(None::<(i32, i64)>));

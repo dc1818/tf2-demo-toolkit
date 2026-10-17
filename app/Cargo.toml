@@ -32,3 +32,4 @@ tf2-mirv-director = { path = "../director" }
 
 [build-dependencies]
 slint-build = "=1.16.0"
+cc = "1.4"

@@ -20,10 +20,12 @@ fn working(ui: &AppWindow, state: &SharedState) -> bool {
 
 /// Also used by visual fixtures: metadata and geometry use the production UI.
 pub fn show_step(ui: &AppWindow, index: i32) {
-    let index = index.clamp(1, guide::LAST_STEP);
+    let index = index.clamp(1, guide::MAX_STEP);
     let step = guide::step(index);
     ui.global::<GuideFocus>().set_available(false);
     ui.set_guide_step(index);
+    ui.set_guide_ordinal(guide::ordinal(index));
+    ui.set_guide_total(guide::ORDER.len() as i32);
     ui.global::<GuideFocus>().set_target(index);
     ui.set_guide_title(step.title.into());
     ui.set_guide_body(step.body.into());
@@ -99,14 +101,13 @@ fn update_gate(ui: &AppWindow, state: &SharedState) {
         13 if no_candidates => (false, "This export has no candidates. Go Back to choose other demos, or pause the guide in Options."),
         16 if no_visible => (false, "No rows match. Clear the search or relax Filters before selecting a candidate."),
         16 if ui.get_selected_count() == 0 => (false, "Select a candidate row to continue. View Details is optional."),
-        35 | 36 if ui.get_selected_count() != 1 => (true, "This action needs exactly one selected candidate. Next only explains the following action."),
-        37 if ui.get_selected_count() == 0 => (true, "Select one or more rows before recording. Next does not start a capture."),
-        35..=37 => (true, "Try this when ready, or choose Next. Next never launches TF2 or starts recording."),
+        35 | 36 if ui.get_selected_count() != 1 => (true, "This action needs exactly one selected candidate."),
+        37 if ui.get_selected_count() == 0 => (true, "Select one or more rows before recording."),
         _ => (true, ""),
     };
     ui.set_guide_can_next(can_next);
     ui.set_guide_note(note.into());
-    ui.set_guide_next_label(if index == 39 { "FINISH" } else if index == 11 || index == 12 { "WAITING" } else { "NEXT" }.into());
+    ui.set_guide_next_label(if index == guide::LAST_STEP { "FINISH" } else if index == 11 || index == 12 { "WAITING" } else { "NEXT" }.into());
     encoding_copy(ui);
 }
 
@@ -206,8 +207,8 @@ pub fn bind(ui: &AppWindow, state: &SharedState) {
         if page != metadata.page || ((page == 0 || page == 2) && section != metadata.section) {
             let next = match page {
                 0 => match section { 0 => 1, 1 => 5, _ => if ui.get_parse_started() { 12 } else { 9 } },
-                1 => if index >= 19 { 35 } else { 13 },
-                2 => [19, 23, 26, 28, 31][section.clamp(0, 4) as usize],
+                1 => if metadata.page == 2 { 35 } else { 13 },
+                2 => [19, 23, 26, 28, 49][section.clamp(0, 4) as usize],
                 _ => index,
             };
             go(&ui, state, next); return;

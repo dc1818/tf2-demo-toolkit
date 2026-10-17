@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <title>TF2 Demo Toolkit</title>
+  <desc>A cream film frame, orange playback ring, and neutral keyframe timeline.</desc>
+  <!-- Dark backing keeps the negative spaces readable on light desktops. -->
+  <path fill="#181918" d="M32 92H480V408H32Z"/>
+  <!-- Filmstrip frame and its four sprocket holes. -->
+  <path fill="#decba9" fill-rule="evenodd" d="M32 92H480V408H32Z
+    M104 116H408V344H104Z
+    M52 150H84V182H52Z M52 232H84V264H52Z
+    M428 150H460V182H428Z M428 232H460V264H428Z
+    M48 360H152V392H48Z M360 360H464V392H360Z
+    M160 344H352V408H160Z"/>
+  <!-- A single TF2-inspired orange, with the four cardinal breaks retained. -->
+  <g fill="#b8662b">
+    <path d="M248 124.3A108 108 0 0 0 148.3 224H180.4A76 76 0 0 1 248 156.4Z"/>
+    <path d="M264 124.3A108 108 0 0 1 363.7 224H331.6A76 76 0 0 0 264 156.4Z"/>
+    <path d="M363.7 240A108 108 0 0 1 264 339.7V307.6A76 76 0 0 0 331.6 240Z"/>
+    <path d="M248 339.7A108 108 0 0 1 148.3 240H180.4A76 76 0 0 0 248 307.6Z"/>
+  </g>
+  <path fill="#decba9" d="M222 181Q222 175 229 179L302 226Q312 232 302 238L229 285Q222 289 222 283Z"/>
+  <!-- Neutral timeline: no team colors and no external corner accents. -->
+  <g fill="#2b2b28">
+    <path d="M48 360H152V392H48Z M360 360H464V392H360Z"/>
+  </g>
+  <path fill="#756d60" d="M202 372H224V384H202Z M288 372H310V384H288Z"/>
+  <g fill="#decba9">
+    <path d="M174 342H198V354H186V406H198V418H174Z"/>
+    <path d="M314 342H338V418H314V406H326V354H314Z"/>
+    <path d="M256 350L284 378L256 406L228 378Z"/>
+  </g>
+</svg>

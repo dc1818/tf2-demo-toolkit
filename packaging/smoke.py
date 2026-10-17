@@ -6,6 +6,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import plistlib
 
 root = Path('dist').resolve()
 windows = sys.platform == 'win32'
@@ -23,6 +24,30 @@ if windows:
         forbidden = [name for name in imports if name.startswith(('vcruntime', 'msvcp', 'msvcr', 'concrt'))]
         if forbidden:
             raise RuntimeError(f'External MSVC runtime required: {forbidden}')
+        if file.name == 'TF2_Demo_Toolkit.exe':
+            resource_types = {entry.id for entry in pe.DIRECTORY_ENTRY_RESOURCE.entries}
+            if not {3, 14}.issubset(resource_types):
+                raise RuntimeError('Application executable is missing its icon resources')
+if mac:
+    contents = root.parent
+    with (contents / 'Info.plist').open('rb') as file:
+        info = plistlib.load(file)
+    icon = contents / 'Resources' / info['CFBundleIconFile']
+    if icon.read_bytes()[:4] != b'icns':
+        raise RuntimeError('Application bundle is missing a valid ICNS icon')
+if not windows and not mac:
+    with tempfile.TemporaryDirectory(prefix='toolkit-desktop-') as directory:
+        launcher_env = os.environ.copy()
+        launcher_env['XDG_DATA_HOME'] = directory
+        subprocess.run(['sh', str(root / 'install-desktop.sh')], env=launcher_env, check=True)
+        app_id = 'com.dc1818.tf2-demo-toolkit'
+        desktop = Path(directory) / 'applications' / (app_id + '.desktop')
+        if f'Icon={app_id}' not in desktop.read_text():
+            raise RuntimeError('Linux desktop entry does not reference the app icon')
+        for size in (16, 24, 32, 48, 64, 128, 256, 512):
+            icon = Path(directory) / f'icons/hicolor/{size}x{size}/apps/{app_id}.png'
+            if not icon.is_file():
+                raise RuntimeError(f'Linux launcher is missing its {size}px icon')
 env = os.environ.copy()
 env['PATH'] = str(Path(os.environ['SystemRoot']) / 'System32') if windows else '/usr/bin:/bin'
 env['SLINT_BACKEND'] = 'winit-software'

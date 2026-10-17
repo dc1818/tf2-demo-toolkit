@@ -5,7 +5,7 @@ on:
     branches: [main]
     tags: ['v*']
   pull_request:
-    paths: ['packaging/**', '.cargo/**', '.github/workflows/release.yml']
+    paths: ['packaging/**', 'app/ui/assets/branding/**', 'app/build.rs', '.cargo/**', '.github/workflows/release.yml']
   workflow_dispatch:
 
 permissions:

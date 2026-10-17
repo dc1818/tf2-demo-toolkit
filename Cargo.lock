@@ -5093,6 +5093,7 @@ name = "tf2-frag-helper"
 version = "34.0.0"
 dependencies = [
  "anyhow",
+ "cc",
  "chrono",
  "dirs",
  "hex",

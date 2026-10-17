@@ -44,6 +44,13 @@ Open [GitHub Releases](https://github.com/dc1818/tf2-demo-toolkit/releases) and 
 
 Packages include Toolkit with integrated Director, the demo parser, and recording resources. Director opens automatically for Manual MIRV capture using the same Toolkit executable in a separate process; no separate Director executable is required. Keep portable package contents together. GitHub's **Source code** archives are for building the project yourself.
 
+The filmstrip icon appears in the native window title bar and operating-system
+launchers; the app's content header remains text-only. The Windows installer
+offers an optional desktop shortcut. On Linux, extract the package to its final
+location and run `./install-desktop.sh` to add Toolkit and its icon to your
+application menu without administrator access. Rerun that script if you move
+the folder. The macOS app bundle includes its Dock and Finder icon.
+
 Linux requires glibc 2.35+ (Ubuntu 22.04 or newer or equivalent), a graphical X11/Wayland desktop, and graphics drivers. macOS packages require macOS 11 or newer. Beta downloads are not publisher-signed or Apple-notarized, so Windows SmartScreen or macOS may ask you to approve the app.
 
 ### Recording requirements

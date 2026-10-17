@@ -18,6 +18,7 @@ if os.environ.get('GITHUB_OUTPUT'):
     with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
         output.write(f'version={version}\n')
 source = Path('target') / a.target / 'release'
+branding = Path('app/ui/assets/branding')
 dist = Path('dist')
 assets = Path('release-assets')
 shutil.rmtree(dist, ignore_errors=True)
@@ -39,12 +40,13 @@ shutil.copytree('recording_resources_archive', data_root / 'recording_resources_
 for file in ['README.md', 'THIRD_PARTY_NOTICES.md']:
     shutil.copy2(file, data_root / file)
 (data_root / 'BUILD.txt').write_text(f"Commit: {os.environ.get('GITHUB_SHA', 'local')}\nTarget: {a.target}\n", encoding='utf-8')
-(data_root / 'START-HERE.txt').write_text('TF2 Demo Toolkit beta\n\nNo Rust, Cargo, Visual Studio, Python or .NET installation is needed.\nKeep all files in this package together.\nWindows: run TF2_Demo_Toolkit.exe (or use the Setup.exe download).\nmacOS: open TF2 Demo Toolkit.app.\nLinux: run ./TF2_Demo_Toolkit.sh from a graphical desktop.\n\nLinux requires glibc 2.35+ and a working X11/Wayland desktop and graphics drivers.\nTF2, HLAE and FFmpeg are separate recording requirements.\nHLAE recording is Windows-only.\nBeta builds are not publisher-signed or Apple-notarized.\n', encoding='utf-8')
+(data_root / 'START-HERE.txt').write_text('TF2 Demo Toolkit beta\n\nNo Rust, Cargo, Visual Studio, Python or .NET installation is needed.\nKeep all files in this package together.\nWindows: run TF2_Demo_Toolkit.exe (or use the Setup.exe download).\nmacOS: open TF2 Demo Toolkit.app.\nLinux: run ./TF2_Demo_Toolkit.sh from a graphical desktop.\nRun ./install-desktop.sh after moving the folder to its permanent location to add the app menu icon.\n\nLinux requires glibc 2.35+ and a working X11/Wayland desktop and graphics drivers.\nTF2, HLAE and FFmpeg are separate recording requirements.\nHLAE recording is Windows-only.\nBeta builds are not publisher-signed or Apple-notarized.\n', encoding='utf-8')
 
 if mac:
     contents = root.parent
+    shutil.copy2(branding / 'toolkit.icns', data_root / 'toolkit.icns')
     with (contents / 'Info.plist').open('wb') as f:
-        plistlib.dump({'CFBundleExecutable': 'TF2_Demo_Toolkit', 'CFBundleIdentifier': 'com.dc1818.tf2-demo-toolkit', 'CFBundleName': 'TF2 Demo Toolkit', 'CFBundlePackageType': 'APPL', 'CFBundleShortVersionString': version, 'CFBundleVersion': os.environ.get('GITHUB_RUN_NUMBER', '1'), 'NSHighResolutionCapable': True, 'LSMinimumSystemVersion': '11.0'}, f)
+        plistlib.dump({'CFBundleExecutable': 'TF2_Demo_Toolkit', 'CFBundleIdentifier': 'com.dc1818.tf2-demo-toolkit', 'CFBundleIconFile': 'toolkit.icns', 'CFBundleName': 'TF2 Demo Toolkit', 'CFBundlePackageType': 'APPL', 'CFBundleShortVersionString': version, 'CFBundleVersion': os.environ.get('GITHUB_RUN_NUMBER', '1'), 'NSHighResolutionCapable': True, 'LSMinimumSystemVersion': '11.0'}, f)
     for _, name in names:
         output = subprocess.check_output(['otool', '-L', str(root / name)], text=True)
         for line in output.splitlines()[1:]:
@@ -63,6 +65,9 @@ elif windows:
             if file.is_file():
                 z.write(file, file.relative_to(dist))
 else:
+    # The launcher installer registers this portable folder without root access.
+    from linux_desktop import stage_desktop_assets
+    stage_desktop_assets(root, branding)
     lib = root / 'lib'
     lib.mkdir()
     # glibc and the ELF loader must come from the host as a matched pair.
