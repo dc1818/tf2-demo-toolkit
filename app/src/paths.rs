@@ -255,8 +255,8 @@ mod tests {
         let data: serde_json::Value =
             serde_json::from_slice(&fs::read(session.join("session.json")).unwrap()).unwrap();
         assert_eq!(
-            data["working_path"],
-            session.join("frames").to_string_lossy().as_ref()
+            Path::new(data["working_path"].as_str().unwrap()),
+            session.join("frames")
         );
         assert_eq!(data["source_demo"], "D:/demos/original.dem");
         assert!(fs::read_to_string(new.join("recorded_clip_index.ndjson"))
