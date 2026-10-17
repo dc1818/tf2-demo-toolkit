@@ -264,7 +264,7 @@ export component DirectorStripWindow inherits Window {
                 width: root.narrow-layout ? 100px : (root.compact-layout ? 130px : 190px);
                 alignment: center;
                 Text { text: root.next-frag-tick > 0 ? "NEXT FRAG  " + root.next-frag-tick : "CLIP OUTRO"; color: Colors.gold; font-family: "TF2 Build"; font-size: 12px; horizontal-alignment: right; overflow: elide; }
-                Caption { text: root.panel-toggle-key + (root.panel-visible ? "  HIDE PANEL" : "  SHOW PANEL"); color: Colors.blue-text; horizontal-alignment: right; overflow: elide; }
+                Caption { text: root.panel-toggle-key + (root.panel-visible ? "  HIDE OVERLAY" : "  SHOW OVERLAY"); color: Colors.blue-text; horizontal-alignment: right; overflow: elide; }
                 Caption { text: root.interaction-mode ? root.interaction-toggle-key + "  RETURN TO TF2" : root.interaction-toggle-key + "  ENABLE CLICKS"; font-size: 9px; horizontal-alignment: right; overflow: elide; }
             }
         }
@@ -311,6 +311,7 @@ export component DirectorCardWindow inherits Window {
     in property <bool> guide-active;
     in property <bool> compact-card;
     callback guide-requested();
+    callback overlay-visibility-changed(bool);
     callback hide-requested();
     callback interaction-toggle-requested();
     callback frag-goto-requested();
@@ -480,7 +481,7 @@ export component DirectorCardWindow inherits Window {
             HorizontalLayout {
                 height: 42px;
                 spacing: 6px;
-                DirectorButton { guide-id: 28; horizontal-stretch: 1; text: root.panel-toggle-key + "  HIDE PANEL"; enabled: root.actions-enabled; clicked => { root.hide-requested(); } }
+                DirectorButton { guide-id: 28; horizontal-stretch: 1; text: root.panel-toggle-key + "  HIDE OVERLAY"; clicked => { root.hide-requested(); } }
                 DirectorButton { guide-id: 2; horizontal-stretch: 1; text: root.interaction-toggle-key + (root.interaction-mode ? "  RETURN TO TF2" : "  ENABLE CLICKS"); enabled: root.actions-enabled; tone: root.interaction-mode ? #34542e : Colors.blue; clicked => { root.interaction-toggle-requested(); } }
             }
             // Keep file and quit actions in dedicated full-width rows so they

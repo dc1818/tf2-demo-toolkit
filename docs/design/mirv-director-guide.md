@@ -44,7 +44,7 @@ Status: implemented. See `mirv-director-implementation.md` for behavior and vali
 | 25 | Stop recording | stop_recording | Stop the current capture. Let Toolkit finish preparing or transferring the output before opening it. Stopping capture does not close TF2. |
 | 26 | Toggle the HUD | toggle_hud | Show or hide the in-game HUD for the shot. This changes what TF2 renders; the Director panel is a separate desktop overlay. |
 | 27 | Show controls | show_help | Display the manual-session control reference in TF2. The keys shown by this guide and Director must reflect your configured shortcuts. |
-| 28 | Hide or show the panel | overlay_panel_toggle | Toggle the side panel while keeping the top timeline visible. Hiding the panel does not stop capture or close Director. |
+| 28 | Hide or show the overlay | overlay_panel_toggle | Toggle the side panel, timeline and guide together. Showing them again resumes the same guide step. Hiding the overlay does not stop capture or close Director. |
 | 29 | Command feedback and fallback | Command status / execute_director_action | Watch the command status for delivery feedback. Actions normally execute automatically. If TF2 reports that wait is unavailable, the configured emergency fallback key executes the queued action while TF2 has focus. |
 | 30 | Finish and restore | Close TF2 | CLOSE TF2 ends the game session. Toolkit finishes the output and restores your original config. Check the Toolkit status area for Original config restored. |
 

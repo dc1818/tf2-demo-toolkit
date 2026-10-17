@@ -190,19 +190,15 @@ fn run_inner(session_path: PathBuf) -> Result<()> {
         let panel_visible = panel_visible.clone();
         let interaction_mode = interaction_mode.clone();
         let selected_keyframe = selected_keyframe.clone();
-        let demo_ready = demo_ready.clone();
         card.on_hide_requested(move || {
-            if !demo_ready.get() {
-                return;
-            }
             let (Some(strip), Some(card)) = (weak_strip.upgrade(), weak_card.upgrade()) else {
                 return;
             };
+            clear_selected_keyframe(&strip, &card, &selected_keyframe);
+            set_panel_visibility(&strip, &card, &panel_visible, false);
             if interaction_mode.get() {
                 toggle_overlay_interaction(&strip, &card, &interaction_mode);
             }
-            clear_selected_keyframe(&strip, &card, &selected_keyframe);
-            set_panel_visibility(&strip, &card, &panel_visible, false);
         });
     }
     {
@@ -434,6 +430,13 @@ fn run_inner(session_path: PathBuf) -> Result<()> {
     let docked_monitor = configure_overlay_windows(&strip, &card);
     append_telemetry_diagnostic(&telemetry_diagnostic, "status=DIRECTOR_WINDOWS_READY");
 
+    // Guide failure must not prevent recording or overlay startup.
+    let _guide_lifetime = match guide_ui::bind(session.clone(), &strip, &card,
+        panel_visible.clone(), interaction_mode.clone(), demo_ready.clone(), docked_monitor.clone(), guide_startup_revision) {
+        Ok(guide) => guide,
+        Err(error) => { append_telemetry_diagnostic(&telemetry_diagnostic, &format!("Guide unavailable: {error:#}")); None }
+    };
+
     // Report actual responsive windows to the Toolkit status area. A crash or
     // blocked event loop expires the heartbeat without a stale "open" label.
     let heartbeat_path = session_path.with_file_name("director_overlay.heartbeat");
@@ -443,22 +446,23 @@ fn run_inner(session_path: PathBuf) -> Result<()> {
         let _ = fs::write(&heartbeat_path, b"ready");
     });
 
-    // TF2 is a borderless top-level window. Reasserting HWND_TOPMOST keeps both
-    // Director windows above it without activating either window.
+    // One controller maintains the complete visible stack. Stable windows are
+    // left alone; independent raise loops would compete and flash the guide.
     let topmost_timer = Timer::default();
     {
         let weak_strip = strip.as_weak();
         let weak_card = card.as_weak();
         let panel_visible = panel_visible.clone();
         let docked_monitor = docked_monitor.clone();
+        let weak_guide = _guide_lifetime.as_ref().map(|(window, _)| window.as_weak());
         topmost_timer.start(TimerMode::Repeated, Duration::from_millis(250), move || {
             let (Some(strip), Some(card)) = (weak_strip.upgrade(), weak_card.upgrade()) else {
                 return;
             };
             refresh_overlay_dock(&strip, &card, &docked_monitor, false);
-            let _ = strip.window().with_winit_window(force_topmost);
             if panel_visible.get() {
-                let _ = card.window().with_winit_window(force_topmost);
+                let guide = weak_guide.as_ref().and_then(|weak| weak.upgrade());
+                maintain_overlay_stack(&strip, &card, guide.as_ref());
             }
         });
     }
@@ -471,19 +475,19 @@ fn run_inner(session_path: PathBuf) -> Result<()> {
         let weak_strip = strip.as_weak();
         let weak_card = card.as_weak();
         let panel_visible = panel_visible.clone();
-        let demo_ready = demo_ready.clone();
+        let interaction_mode = interaction_mode.clone();
         let was_down = Rc::new(Cell::new(false));
         hotkey_timer.start(TimerMode::Repeated, Duration::from_millis(30), move || {
             let down = global_key_is_down(virtual_key);
             if down && !was_down.replace(down) {
-                if !demo_ready.get() {
-                    return;
-                }
                 let (Some(strip), Some(card)) = (weak_strip.upgrade(), weak_card.upgrade()) else {
                     return;
                 };
                 let visible = !panel_visible.get();
                 set_panel_visibility(&strip, &card, &panel_visible, visible);
+                if !visible && interaction_mode.get() {
+                    toggle_overlay_interaction(&strip, &card, &interaction_mode);
+                }
             } else if !down {
                 was_down.set(false);
             }
@@ -513,8 +517,12 @@ fn run_inner(session_path: PathBuf) -> Result<()> {
                     };
                     if !panel_visible.get() {
                         set_panel_visibility(&strip, &card, &panel_visible, true);
+                        if !interaction_mode.get() {
+                            toggle_overlay_interaction(&strip, &card, &interaction_mode);
+                        }
+                    } else {
+                        toggle_overlay_interaction(&strip, &card, &interaction_mode);
                     }
-                    toggle_overlay_interaction(&strip, &card, &interaction_mode);
                 } else if !down {
                     was_down.set(false);
                 }
@@ -832,12 +840,6 @@ fn run_inner(session_path: PathBuf) -> Result<()> {
         });
     }
 
-    // Guide failure must not prevent recording or overlay startup.
-    let _guide_lifetime = match guide_ui::bind(session.clone(), &strip, &card,
-        panel_visible.clone(), interaction_mode.clone(), demo_ready.clone(), docked_monitor.clone(), guide_startup_revision) {
-        Ok(guide) => guide,
-        Err(error) => { append_telemetry_diagnostic(&telemetry_diagnostic, &format!("Guide unavailable: {error:#}")); None }
-    };
     // Keep the timers alive for the complete Slint event loop.
     let _timer_lifetime = (
         &status_heartbeat,
@@ -848,7 +850,10 @@ fn run_inner(session_path: PathBuf) -> Result<()> {
         &direct_action_timer,
         &telemetry_timer,
     );
-    strip.run()?;
+    strip.show()?;
+    // Hiding all three overlay windows must keep global hotkeys and telemetry alive.
+    // Toolkit still owns companion shutdown when the recording session ends.
+    slint::run_event_loop_until_quit()?;
     Ok(())
 }
 
@@ -944,14 +949,16 @@ fn set_panel_visibility(
     state: &Cell<bool>,
     visible: bool,
 ) {
-    state.set(visible);
+    if state.replace(visible) == visible { return; }
     strip.set_panel_visible(visible);
     if visible {
+        let _ = strip.show();
         let _ = card.show();
-        let _ = card.window().with_winit_window(force_topmost);
     } else {
+        let _ = strip.hide();
         let _ = card.hide();
     }
+    card.invoke_overlay_visibility_changed(visible);
 }
 
 fn toggle_overlay_interaction(
@@ -1804,6 +1811,104 @@ fn dock_overlay_windows(
     });
 }
 
+/// Desired order is bottom to top. Only repair when a visible member is below
+/// TF2, missing from the stack, or ordered incorrectly relative to its siblings.
+#[cfg(any(windows, test))]
+fn overlay_stack_needs_repair(current: &[usize], desired: &[usize], game: Option<usize>) -> bool {
+    let mut below = game
+        .and_then(|game| current.iter().position(|&id| id == game))
+        .unwrap_or(usize::MAX);
+    for id in desired {
+        let Some(index) = current.iter().position(|value| value == id) else {
+            return true;
+        };
+        if index >= below {
+            return true;
+        }
+        below = index;
+    }
+    false
+}
+
+fn maintain_overlay_stack(
+    strip: &DirectorStripWindow,
+    card: &DirectorCardWindow,
+    guide: Option<&DirectorGuideWindow>,
+) {
+    #[cfg(windows)]
+    {
+        use std::ffi::c_void;
+        use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+        let mut handles = Vec::new();
+        let mut append = |window: &slint::Window| {
+            if !window.is_visible() {
+                return;
+            }
+            let _ = window.with_winit_window(|native| {
+                if let Ok(handle) = native.window_handle() {
+                    if let RawWindowHandle::Win32(handle) = handle.as_raw() {
+                        handles.push(handle.hwnd.get() as usize);
+                    }
+                }
+            });
+        };
+        append(strip.window());
+        append(card.window());
+        if let Some(guide) = guide {
+            append(guide.window());
+        }
+        if handles.is_empty() {
+            return;
+        }
+        unsafe {
+            let mut current = Vec::new();
+            let mut window = GetTopWindow(std::ptr::null_mut());
+            // Bound traversal in case the external window list changes mid-read.
+            while !window.is_null() && current.len() < 10000 {
+                current.push(window as usize);
+                window = GetWindow(window, 2); // GW_HWNDNEXT
+            }
+            let topmost = handles
+                .iter()
+                .all(|id| GetWindowLongPtrW(*id as *mut c_void, -20) & 0x8 != 0);
+            if topmost
+                && !overlay_stack_needs_repair(
+                    &current,
+                    &handles,
+                    find_tf2_window_handle().map(|h| h as usize),
+                )
+            {
+                return;
+            }
+            // Commit one batch, without activation, show flags or intermediate raises.
+            let mut batch = BeginDeferWindowPos(handles.len() as i32);
+            if batch.is_null() {
+                return;
+            }
+            for handle in handles {
+                batch = DeferWindowPos(
+                    batch,
+                    handle as *mut c_void,
+                    -1_isize as *mut c_void,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0x0001 | 0x0002 | 0x0010,
+                );
+                if batch.is_null() {
+                    return;
+                }
+            }
+            EndDeferWindowPos(batch);
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (strip, card, guide);
+    }
+}
+
 fn force_topmost(native: &winit::window::Window) {
     native.set_window_level(winit::window::WindowLevel::AlwaysOnTop);
     #[cfg(target_os = "windows")]
@@ -1818,7 +1923,6 @@ fn force_topmost_windows(native: &winit::window::Window) {
     const SWP_NOSIZE: u32 = 0x0001;
     const SWP_NOMOVE: u32 = 0x0002;
     const SWP_NOACTIVATE: u32 = 0x0010;
-    const SWP_SHOWWINDOW: u32 = 0x0040;
     const HWND_TOPMOST: *mut c_void = -1_isize as *mut c_void;
 
     let Ok(handle) = native.window_handle() else {
@@ -1835,7 +1939,7 @@ fn force_topmost_windows(native: &winit::window::Window) {
             0,
             0,
             0,
-            SWP_NOSIZE | SWP_NOMOVE | SWP_NOACTIVATE | SWP_SHOWWINDOW,
+            SWP_NOSIZE | SWP_NOMOVE | SWP_NOACTIVATE,
         );
     }
 }
@@ -2501,6 +2605,12 @@ unsafe extern "system" {
         callback: Option<unsafe extern "system" fn(*mut std::ffi::c_void, isize) -> i32>,
         state: isize,
     ) -> i32;
+    fn GetTopWindow(window: *mut std::ffi::c_void) -> *mut std::ffi::c_void;
+    fn GetWindow(window: *mut std::ffi::c_void, command: u32) -> *mut std::ffi::c_void;
+    fn BeginDeferWindowPos(count: i32) -> *mut std::ffi::c_void;
+    fn DeferWindowPos(batch: *mut std::ffi::c_void, window: *mut std::ffi::c_void,
+        after: *mut std::ffi::c_void, x: i32, y: i32, width: i32, height: i32, flags: u32) -> *mut std::ffi::c_void;
+    fn EndDeferWindowPos(batch: *mut std::ffi::c_void) -> i32;
     fn GetClassNameW(window: *mut std::ffi::c_void, class_name: *mut u16, maximum: i32) -> i32;
     fn GetAsyncKeyState(virtual_key: i32) -> i16;
     fn GetCursorPos(point: *mut WindowsPoint) -> i32;
@@ -3053,5 +3163,26 @@ mod tests {
     #[test]
     fn maps_default_overlay_hotkey() {
         assert_eq!(virtual_key_code("C"), Some(0x43));
+    }
+}
+
+#[cfg(test)]
+mod overlay_stack_tests {
+    use super::*;
+    #[test]
+    fn stable_stack_is_not_repeatedly_raised() {
+        // Desktop order: unrelated window, guide, card, strip, TF2.
+        assert!(!overlay_stack_needs_repair(&[99, 3, 2, 1, 4], &[1, 2, 3], Some(4)));
+        assert!(!overlay_stack_needs_repair(&[2, 1, 4], &[1, 2], Some(4)));
+        assert!(!overlay_stack_needs_repair(&[99, 4], &[], Some(4)));
+        assert!(!overlay_stack_needs_repair(&[3, 2, 1], &[1, 2, 3], None));
+    }
+    #[test]
+    fn game_or_sibling_overtaking_guide_requires_one_stack_repair() {
+        assert!(overlay_stack_needs_repair(&[4, 3, 2, 1], &[1, 2, 3], Some(4)));
+        assert!(overlay_stack_needs_repair(&[2, 3, 1, 4], &[1, 2, 3], Some(4)));
+        assert!(overlay_stack_needs_repair(&[2, 1, 4], &[1, 2, 3], Some(4)));
+        // Applying that repair converges to a no-op on the next check.
+        assert!(!overlay_stack_needs_repair(&[3, 2, 1, 4], &[1, 2, 3], Some(4)));
     }
 }
