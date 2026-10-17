@@ -32,10 +32,14 @@ const MAX_CAMPATH_XML_BYTES: u64 = 16 * 1024 * 1024;
 const MAX_CAMPATH_POINTS: usize = 100_000;
 
 slint::include_modules!();
+#[path = "guide_ui.rs"]
+mod guide_ui;
 
 /// Open the Director UI in the process launched by Toolkit with --director.
 pub fn run(session_path: PathBuf) -> Result<()> {
+    let _ = fs::remove_file(session_path.with_file_name("director_overlay.heartbeat"));
     let result = run_inner(session_path.clone());
+    let _ = fs::remove_file(session_path.with_file_name("director_overlay.heartbeat"));
     if let Err(error) = &result {
         append_telemetry_diagnostic(&session_path.with_file_name("director_telemetry.log"),
             &format!("status=DIRECTOR_FAILED\nerror={error:#}"));
@@ -45,6 +49,9 @@ pub fn run(session_path: PathBuf) -> Result<()> {
 
 fn run_inner(session_path: PathBuf) -> Result<()> {
     let session = Rc::new(load_session(&session_path)?);
+    let guide_startup_revision = session.guide_directory.as_ref()
+        .and_then(|path| crate::guide::Store(path.clone()).preferences().ok())
+        .map(|preferences| preferences.revision).unwrap_or(0);
     let telemetry_diagnostic = session_path.with_file_name("director_telemetry.log");
     let _ = fs::write(
         &telemetry_diagnostic,
@@ -151,7 +158,9 @@ fn run_inner(session_path: PathBuf) -> Result<()> {
     let shortcut_rows = session
         .shortcuts
         .iter()
-        .map(|shortcut| ShortcutRow {
+        .enumerate()
+        .map(|(index, shortcut)| ShortcutRow {
+            guide_id: 1000 + index as i32,
             key: shortcut.key.clone().into(),
             label: shortcut.label.clone().into(),
         })
@@ -424,6 +433,15 @@ fn run_inner(session_path: PathBuf) -> Result<()> {
     card.show()?;
     let docked_monitor = configure_overlay_windows(&strip, &card);
     append_telemetry_diagnostic(&telemetry_diagnostic, "status=DIRECTOR_WINDOWS_READY");
+
+    // Report actual responsive windows to the Toolkit status area. A crash or
+    // blocked event loop expires the heartbeat without a stale "open" label.
+    let heartbeat_path = session_path.with_file_name("director_overlay.heartbeat");
+    let _ = fs::write(&heartbeat_path, b"ready");
+    let status_heartbeat = Timer::default();
+    status_heartbeat.start(TimerMode::Repeated, Duration::from_secs(1), move || {
+        let _ = fs::write(&heartbeat_path, b"ready");
+    });
 
     // TF2 is a borderless top-level window. Reasserting HWND_TOPMOST keeps both
     // Director windows above it without activating either window.
@@ -814,8 +832,15 @@ fn run_inner(session_path: PathBuf) -> Result<()> {
         });
     }
 
+    // Guide failure must not prevent recording or overlay startup.
+    let _guide_lifetime = match guide_ui::bind(session.clone(), &strip, &card,
+        panel_visible.clone(), interaction_mode.clone(), demo_ready.clone(), docked_monitor.clone(), guide_startup_revision) {
+        Ok(guide) => guide,
+        Err(error) => { append_telemetry_diagnostic(&telemetry_diagnostic, &format!("Guide unavailable: {error:#}")); None }
+    };
     // Keep the timers alive for the complete Slint event loop.
     let _timer_lifetime = (
+        &status_heartbeat,
         &topmost_timer,
         &hotkey_timer,
         &interaction_hotkey_timer,
@@ -1758,6 +1783,7 @@ fn dock_overlay_windows(
     let logical_height = geometry.size.height as f64 / geometry.scale;
     let card_width = CARD_WIDTH.min(logical_width);
     let card_height = (logical_height - STRIP_HEIGHT).max(1.0);
+    card.set_compact_card(card_height < 540.0);
     strip.set_compact_layout(logical_width < 1000.0);
     strip.set_narrow_layout(logical_width < 800.0);
 

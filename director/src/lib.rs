@@ -1,3 +1,4 @@
+pub mod guide;
 mod rcon;
 mod ui;
 
@@ -25,6 +26,8 @@ pub const DIRECTOR_ACTION_SLOTS: u16 = 64;
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 pub struct DirectorSession {
+    #[serde(default)]
+    pub guide_directory: Option<PathBuf>,
     pub schema_version: u32,
     pub candidate_id: String,
     pub demo_file: String,

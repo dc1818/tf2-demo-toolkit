@@ -1,0 +1,104 @@
+import { ScrollView } from "std-widgets.slint";
+
+export global DirectorGuideFocus {
+    in-out property <bool> active;
+    in-out property <int> target;
+    in-out property <int> pane;
+    in-out property <length> left;
+    in-out property <length> top;
+    in-out property <length> target-width;
+    in-out property <length> target-height;
+}
+export component DirectorGuideAnchor inherits Rectangle {
+    in property <int> target-id;
+    in property <int> pane: 2;
+    border-width: DirectorGuideFocus.active && DirectorGuideFocus.target == root.target-id ? 2px : 0px;
+    border-color: #d4a555;
+    background: transparent;
+    Timer {
+        interval: 60ms;
+        running: DirectorGuideFocus.active && root.target-id > 0 && DirectorGuideFocus.target == root.target-id;
+        triggered => {
+            DirectorGuideFocus.pane = root.pane;
+            DirectorGuideFocus.left = root.absolute-position.x;
+            DirectorGuideFocus.top = root.absolute-position.y;
+            DirectorGuideFocus.target-width = root.width;
+            DirectorGuideFocus.target-height = root.height;
+        }
+    }
+}
+component GuideButton inherits Rectangle {
+    in property <string> text;
+    in property <bool> enabled: true;
+    in property <bool> primary;
+    callback clicked();
+    height: 32px;
+    border-width: 1px; border-color: root.enabled ? #8b7760 : #45443e;
+    background: !root.enabled ? #252623 : area.pressed ? #743c31 : root.primary ? #914b3c : area.has-hover ? #48453b : #34352f;
+    Text { text: root.text; color: root.enabled ? #decba9 : #756d60; font-family: "TF2 Build"; font-size: 11px; horizontal-alignment: center; vertical-alignment: center; }
+    area := TouchArea { enabled: root.enabled; clicked => { root.clicked(); } }
+}
+export component DirectorGuideWindow inherits Window {
+    title: "MIRV Director Guide";
+    icon: @image-url("../../app/ui/assets/branding/toolkit-256.png");
+    no-frame: true;
+    always-on-top: true;
+    preferred-width: 390px; preferred-height: root.example ? 400px : 320px;
+    min-width: 280px; min-height: 240px;
+    background: #24231f;
+    in property <int> step;
+    in property <string> heading;
+    in property <string> body;
+    in property <bool> example;
+    in property <string> note;
+    callback action(int);
+    forward-focus: keys;
+    keys := FocusScope {
+        key-pressed(event) => {
+            if event.text == Key.Escape { root.action(3); return accept; }
+            return reject;
+        }
+    }
+    Rectangle {
+        border-width: 2px; border-color: #d4a555;
+        VerticalLayout {
+            padding: 16px; spacing: 10px;
+            HorizontalLayout {
+                height: 26px;
+                Text { text: "MIRV DIRECTOR GUIDE"; color: #d4a555; font-family: "TF2 Build"; font-size: 12px; vertical-alignment: center; }
+                GuideButton { width: 62px; height: 26px; text: "PAUSE"; clicked => { root.action(3); } }
+            }
+            Text { height: 42px; text: root.heading; color: #decba9; font-family: "TF2 Build"; font-size: 20px; wrap: word-wrap; }
+            Rectangle {
+                vertical-stretch: 1; clip: true;
+                ScrollView {
+                    width: parent.width; height: parent.height;
+                    horizontal-scrollbar-policy: always-off;
+                    VerticalLayout {
+                        spacing: 10px;
+                        Text { text: root.body; color: #decba9; font-family: "Roboto Condensed"; font-size: 16px; wrap: word-wrap; }
+                        if root.example : Rectangle {
+                            height: 94px; background: #1d1d1b; border-width: 1px; border-color: #8fbd60;
+                            VerticalLayout { padding: 8px; spacing: 5px;
+                                Text { text: "EXAMPLE ONLY — NO KEYFRAME SELECTED"; font-family: "TF2 Build"; font-size: 9px; color: #8fbd60; }
+                                Text { text: "Action: Edit keyframe\nSetting: FOV — Set value\nValue: 90  →  Execute HLAE action"; font-family: "Roboto Condensed"; font-size: 14px; color: #decba9; }
+                            }
+                        }
+                        Text { text: root.note; font-family: "Roboto Condensed"; font-size: 12px; color: #8ab3cd; wrap: word-wrap; }
+                    }
+                }
+            }
+            HorizontalLayout {
+                height: 12px; spacing: 3px;
+                for index in 30 : Rectangle { height: 3px; vertical-stretch: 0; background: index <= root.step ? #d4a555 : #514b40; }
+                Text { width: 44px; text: (root.step + 1) + " / 30"; color: #a69882; font-family: "Roboto Condensed"; font-size: 11px; horizontal-alignment: right; }
+            }
+            HorizontalLayout {
+                height: 32px; spacing: 8px;
+                GuideButton { text: "BACK"; enabled: root.step > 0; clicked => { root.action(1); } }
+                GuideButton { text: "SKIP"; clicked => { root.action(4); } }
+                GuideButton { text: root.step == 29 ? "FINISH" : "NEXT"; primary: true; clicked => { root.action(2); } }
+            }
+        }
+    }
+}

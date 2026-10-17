@@ -5,6 +5,7 @@ mod paths;
 mod analyzer;
 mod guide;
 mod guide_ui;
+mod director_guide_ui;
 mod item_schema;
 mod batch;
 mod demo_playback;
@@ -1211,7 +1212,9 @@ fn main() -> Result<()> {
     bind_settings_callbacks(&ui, &state);
     bind_demo_file_drop(&ui, &state);
     guide_ui::bind(&ui, &state);
+    director_guide_ui::bind(&ui);
     start_recording_recovery(&ui, &state);
+    let _session_status_monitor = start_session_status_monitor(&ui);
     bind_page_window_size(&ui);
     center_window_on_startup(&ui);
     ui.window().on_close_requested(|| {
@@ -1228,6 +1231,7 @@ fn main() -> Result<()> {
         }
     });
     let ui_result = ui.run();
+    _session_status_monitor.store(false, std::sync::atomic::Ordering::Relaxed);
     // Also cover event-loop errors/programmatic exits, not just window closes.
     if let Err(error) = shutdown_active_recording() {
         rfd::MessageDialog::new()
@@ -1357,6 +1361,30 @@ fn start_recording_recovery(ui: &AppWindow, state: &Arc<Mutex<State>>) {
             set_background_process(&ui, "READY", false);
         });
     });
+}
+
+// Process and recovery-file polling stays off the UI thread.
+fn start_session_status_monitor(ui: &AppWindow) -> Arc<std::sync::atomic::AtomicBool> {
+    let running = Arc::new(std::sync::atomic::AtomicBool::new(true));
+    let worker_running = running.clone();
+    let weak = ui.as_weak();
+    thread::spawn(move || {
+        let mut system = sysinfo::System::new();
+        while worker_running.load(std::sync::atomic::Ordering::Relaxed) {
+            let (config, activity, warning) = recording::session_status(&mut system);
+            let weak = weak.clone();
+            let running = worker_running.clone();
+            if slint::invoke_from_event_loop(move || {
+                if let Some(ui) = weak.upgrade() {
+                    ui.set_config_status(config.into());
+                    ui.set_session_activity(activity.into());
+                    ui.set_config_status_warning(warning);
+                } else { running.store(false, std::sync::atomic::Ordering::Relaxed); }
+            }).is_err() { break; }
+            thread::sleep(Duration::from_secs(1));
+        }
+    });
+    running
 }
 
 fn set_background_process(ui: &AppWindow, status: &str, active: bool) {

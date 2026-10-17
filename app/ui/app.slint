@@ -124,6 +124,9 @@ component AppHeader inherits Rectangle {
     in property <string> recording-save-status;
     in property <string> background-process-status;
     in property <bool> background-process-active;
+    in property <string> config-status;
+    in property <string> session-activity;
+    in property <bool> config-status-warning;
     in-out property <bool> menu-open;
     callback navigate(int);
 
@@ -165,18 +168,31 @@ component AppHeader inherits Rectangle {
         Tf2Button { guide-id: GuideFocus.target == 18 ? 18 : 39; width: 84px; height: 38px; text: root.menu-open ? "CLOSE" : "MENU"; clicked => { root.menu-open = !root.menu-open; } }
     }
 
-    if root.background-process-status != "" : Text {
-        x: root.compact ? 290px : parent.width - 656px;
-        y: root.compact ? 7px : 9px;
-        width: root.compact ? parent.width - 580px : 420px;
-        height: root.compact ? 38px : 34px;
-        text: root.background-process-active ? "BACKGROUND: " + root.background-process-status : "BACKGROUND: READY";
-        color: root.background-process-active ? Tf2Colors.gold : #8ab3cd;
-        font-family: "TF2 Build";
-        font-size: root.compact ? 10px : 12px;
-        horizontal-alignment: right;
-        vertical-alignment: center;
-        overflow: elide;
+    VerticalLayout {
+        x: root.compact ? 270px : Math.max(350px, parent.width - 736px);
+        y: root.compact ? 5px : 7px;
+        width: Math.max(0px, parent.width - self.x - (root.compact ? 284px : 236px));
+        height: root.compact ? 52px : 44px;
+        spacing: 1px;
+        Text {
+            text: root.config-status;
+            color: root.config-status-warning ? #e39770 : #8fbd60;
+            font-family: "Roboto Condensed";
+            font-size: root.compact ? 11px : 13px;
+            horizontal-alignment: right; overflow: elide;
+        }
+        Text {
+            text: root.session-activity;
+            color: #8ab3cd; font-family: "Roboto Condensed";
+            font-size: root.compact ? 10px : 12px;
+            horizontal-alignment: right; overflow: elide;
+        }
+        if root.background-process-active : Text {
+            text: root.background-process-status;
+            color: Tf2Colors.gold; font-family: "Roboto Condensed";
+            font-size: root.compact ? 10px : 11px;
+            horizontal-alignment: right; overflow: elide;
+        }
     }
 
     // Fixed diagnostic readout. It is deliberately outside the header layouts
@@ -720,6 +736,12 @@ export component AppWindow inherits Window {
     changed height => { GuideFocus.available = false; Tf2Tooltips.visible = false; }
     in-out property <bool> show-tooltips: true;
     changed show-tooltips => { Tf2Tooltips.enabled = root.show-tooltips; Tf2Tooltips.visible = false; }
+    in-out property <bool> director-guide-enabled: true;
+    in-out property <bool> director-guide-can-resume;
+    in-out property <string> director-guide-status;
+    callback director-guide-action(int);
+    callback director-guide-tick();
+    Timer { interval: 1s; running: root.selected-page == 3; triggered => { root.director-guide-tick(); } }
     in-out property <string> options-save-status: "Changes save automatically.";
     callback toggle-tooltips(bool);
     in-out property <bool> guide-open: false;
@@ -769,6 +791,9 @@ export component AppWindow inherits Window {
     in-out property <string> status-text: "Ready";
     in-out property <string> recording-save-status;
     in-out property <int> recording-save-generation: 0;
+    in-out property <string> config-status: "Checking config status";
+    in-out property <string> session-activity: "Checking TF2";
+    in-out property <bool> config-status-warning: false;
     in-out property <string> background-process-status: "READY";
     in-out property <bool> background-process-active: true;
     in-out property <bool> recording-ready: false;
@@ -974,7 +999,7 @@ export component AppWindow inherits Window {
         : root.recording-settings-section == 4 ? 290
         : (root.recording-format == "MP4 - Standard" || root.recording-format == "MP4 - Compatible") ? (root.mp4-compatibility == "Custom" ? 295 : 235)
         : root.recording-format == "AVI - Raw" ? 177 : root.recording-format == "MOV - DNxHR" ? 119 : 139;
-    out property <int> preferred-guided-height: root.selected-page == 0 ? 580 : root.selected-page == 2 ? 194 + root.recording-body-height : root.selected-page == 3 ? 400 : 600;
+    out property <int> preferred-guided-height: root.selected-page == 0 ? 580 : root.selected-page == 2 ? 194 + root.recording-body-height : root.selected-page == 3 ? 600 : 600;
     changed preferred-guided-height => { root.page-layout-changed(root.selected-page); }
     private property <bool> parse-short: self.height < 760px;
     private property <bool> compact: self.width <= 1220px || self.height <= 700px;
@@ -1000,7 +1025,7 @@ export component AppWindow inherits Window {
             dismiss-focus := FocusScope { enabled: true; }
             clicked => { dismiss-focus.focus(); }
         }
-        app-header := AppHeader { x: 0px; y: 0px; width: root.width; page: root.selected-page; compact: root.compact-header; has-export: root.has-export; frame-debug: root.frame-debug; recording-save-status: root.recording-save-status; background-process-status: root.background-process-status; background-process-active: root.background-process-active; menu-open <=> root.compact-nav-open; navigate(page) => { if root.has-export || (page != 1 && page != 2) { root.selected-page = page; root.compact-nav-open = false; } } }
+        app-header := AppHeader { x: 0px; y: 0px; width: root.width; page: root.selected-page; compact: root.compact-header; has-export: root.has-export; frame-debug: root.frame-debug; recording-save-status: root.recording-save-status; background-process-status: root.background-process-status; background-process-active: root.background-process-active; config-status: root.config-status; session-activity: root.session-activity; config-status-warning: root.config-status-warning; menu-open <=> root.compact-nav-open; navigate(page) => { if root.has-export || (page != 1 && page != 2) { root.selected-page = page; root.compact-nav-open = false; } } }
 
 
         if root.selected-page == 0 : VerticalLayout {
@@ -1896,6 +1921,10 @@ export component AppWindow inherits Window {
             x: 0px; y: root.header-height; width: root.width; height: root.height - self.y;
             compact: root.compact-header; scale: root.width >= 1250px ? 1.2 : 1;
             show-tooltips <=> root.show-tooltips; save-status: root.options-save-status;
+            director-guide-enabled: root.director-guide-enabled;
+            director-guide-can-resume: root.director-guide-can-resume;
+            director-guide-status: root.director-guide-status;
+            director-guide-action(value) => { root.director-guide-action(value); }
             toggle-tooltips(value) => { root.toggle-tooltips(value); }
             view-logs => { root.selected-page = 5; }
             open-log-folder => { root.view-recording-logs(); }

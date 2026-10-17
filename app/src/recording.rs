@@ -29,6 +29,96 @@ use tf2_mirv_director::{
 use walkdir::WalkDir;
 use zip::ZipArchive;
 
+// Presentation state only; the recovery pointer remains the authority for safety.
+#[derive(Clone, Copy, PartialEq)]
+enum ConfigPhase { Original, Applying, Recording, Restoring, Restored, Attention }
+static CONFIG_PHASE: Mutex<ConfigPhase> = Mutex::new(ConfigPhase::Original);
+
+pub fn session_status(system: &mut sysinfo::System) -> (String, String, bool) {
+    system.refresh_processes_specifics(sysinfo::ProcessesToUpdate::All, true,
+        sysinfo::ProcessRefreshKind::nothing().with_cmd(sysinfo::UpdateKind::OnlyIfNotSet));
+    let tf2_open = system.processes().values().any(|process| {
+        matches!(process.name().to_string_lossy().to_ascii_lowercase().as_str(),
+            "tf.exe" | "tf_win64.exe" | "hl2.exe" | "hl2_linux" | "tf_linux64" | "tf_osx")
+    });
+    let phase = *CONFIG_PHASE.lock();
+    let pointer = active_profile_path();
+    let profile = match fs::read(&pointer) {
+        Ok(bytes) => match serde_json::from_slice::<RecordingProfileSession>(&bytes) {
+            Ok(profile) => Some(profile),
+            Err(_) => return ("Config recovery needs attention".into(), "Cannot read recovery state".into(), true),
+        },
+        Err(error) if error.kind() == io::ErrorKind::NotFound => None,
+        Err(_) => return ("Config recovery needs attention".into(), "Cannot read recovery state".into(), true),
+    };
+    let (config, warning) = config_status_label(phase, profile.is_some());
+    let mut activity = if tf2_open { "TF2 open" } else { "TF2 closed" }.to_owned();
+    if let Some(profile) = profile {
+        let session = recording_sessions_root().join(&profile.session_id);
+        if session.join("director_session.json").is_file() {
+            // A live UI heartbeat avoids claiming that a spawned or crashed
+            // companion has an open overlay. Old sessions cannot supply it.
+            let director_session = session.join("director_session.json");
+            let director_running = system.processes().values().any(|process|
+                process.cmd().iter().any(|arg| Path::new(arg) == director_session));
+            let heartbeat_age = session.join("director_overlay.heartbeat").metadata()
+                .and_then(|meta| meta.modified()).ok()
+                .and_then(|time| time.elapsed().ok());
+            activity.push_str(" · ");
+            activity.push_str(director_activity(tf2_open, director_running, heartbeat_age));
+        }
+    }
+    (config.into(), activity, warning)
+}
+
+fn director_activity(tf2_open: bool, director_running: bool, heartbeat_age: Option<Duration>) -> &'static str {
+    if !director_running { "Director overlay closed" }
+    else if !tf2_open { "Director waiting for TF2" }
+    else { match heartbeat_age {
+        Some(age) if age < Duration::from_secs(4) => "Director overlay open",
+        Some(_) => "Director not responding",
+        None => "Director waiting for demo",
+    } }
+}
+
+fn config_status_label(phase: ConfigPhase, pending_restore: bool) -> (&'static str, bool) {
+    match (phase, pending_restore) {
+        (ConfigPhase::Applying, _) => ("Applying recording settings config", false),
+        (ConfigPhase::Restoring, _) => ("Restoring original config", false),
+        (ConfigPhase::Attention, true) => ("Original config restoration required", true),
+        (ConfigPhase::Recording, true) => ("Currently using recording settings config", false),
+        (_, true) => ("Original config restoration pending", true),
+        (ConfigPhase::Restored, false) => ("Original config restored", false),
+        _ => ("Original config active", false),
+    }
+}
+
+#[cfg(test)]
+mod session_status_tests {
+    use super::*;
+
+    #[test]
+    fn director_must_be_alive_and_responsive_to_report_open() {
+        assert_eq!(director_activity(true, true, Some(Duration::ZERO)), "Director overlay open");
+        assert_eq!(director_activity(true, false, Some(Duration::ZERO)), "Director overlay closed");
+        assert_eq!(director_activity(true, true, None), "Director waiting for demo");
+        assert_eq!(director_activity(false, true, None), "Director waiting for TF2");
+        assert_eq!(director_activity(true, true, Some(Duration::from_secs(5))), "Director not responding");
+    }
+
+    #[test]
+    fn pending_recovery_never_claims_original_settings_are_restored() {
+        for phase in [ConfigPhase::Original, ConfigPhase::Restored] {
+            assert_eq!(config_status_label(phase, true), ("Original config restoration pending", true));
+        }
+        assert_eq!(config_status_label(ConfigPhase::Recording, true), ("Currently using recording settings config", false));
+        assert_eq!(config_status_label(ConfigPhase::Attention, true), ("Original config restoration required", true));
+        assert_eq!(config_status_label(ConfigPhase::Restoring, true), ("Restoring original config", false));
+        assert_eq!(config_status_label(ConfigPhase::Original, false), ("Original config active", false));
+        assert_eq!(config_status_label(ConfigPhase::Restored, false), ("Original config restored", false));
+    }
+}
+
 const PROFILE_FOLDER: &str = "tf2_demo_toolkit_recording";
 const PROFILE_CFG: &str = "tf2_demo_toolkit_recording_profile.cfg";
 const RESOURCE_CACHE_VERSION: &str = "bundled_resources_v2";
@@ -1399,6 +1489,7 @@ fn build_director_session(
     .collect();
 
     DirectorSession {
+        guide_directory: Some(crate::paths::config_root().join("Director Guide")),
         schema_version: DIRECTOR_SESSION_SCHEMA,
         candidate_id: candidate.candidate_id.clone(),
         demo_file: Path::new(&candidate.source_demo)
@@ -2355,7 +2446,12 @@ fn stage_recording_profile(
     settings: &AppSettings,
     temporary_paths: Vec<PathBuf>,
 ) -> Result<RecordingProfileSession> {
-    stage_recording_profile_at(game, session_id, tf_process_name, settings, temporary_paths, &active_profile_path())
+    *CONFIG_PHASE.lock() = ConfigPhase::Applying;
+    let result = stage_recording_profile_at(game, session_id, tf_process_name, settings, temporary_paths, &active_profile_path());
+    *CONFIG_PHASE.lock() = if result.is_ok() { ConfigPhase::Recording }
+        else if active_profile_path().exists() { ConfigPhase::Attention }
+        else { ConfigPhase::Original };
+    result
 }
 
 fn stage_recording_profile_at(
@@ -2478,7 +2574,9 @@ fn stage_recording_profile_at(
 }
 
 fn restore_recording_profile(session: &RecordingProfileSession) -> Result<()> {
-    restore_recording_profile_at(session, &active_profile_path())
+    let result = restore_recording_profile_at(session, &active_profile_path());
+    if result.is_err() { *CONFIG_PHASE.lock() = ConfigPhase::Attention; }
+    result
 }
 
 fn restore_recording_profile_at(session: &RecordingProfileSession, pointer: &Path) -> Result<()> {
@@ -2491,6 +2589,7 @@ fn restore_recording_profile_at(session: &RecordingProfileSession, pointer: &Pat
         // A completed session's monitor must never restore over a newer one.
         return Ok(());
     }
+    if pointer == active_profile_path() { *CONFIG_PHASE.lock() = ConfigPhase::Restoring; }
     if windows_process_state(&session.tf_process_name) != Some(false) {
         bail!("TF2 may still be running; its temporary profile and backups were retained for recovery");
     }
@@ -2575,6 +2674,7 @@ fn restore_recording_profile_at(session: &RecordingProfileSession, pointer: &Pat
     if pointer.exists() {
         fs::remove_file(pointer)?;
     }
+    if pointer == active_profile_path() { *CONFIG_PHASE.lock() = ConfigPhase::Restored; }
     // Settings are verified and recovery is complete. A locked leftover backup
     // must not make a later retry depend on already-deleted verification files.
     if session.backup_directory.is_dir() {

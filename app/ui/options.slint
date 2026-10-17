@@ -1,3 +1,4 @@
+import { ScrollView } from "std-widgets.slint";
 import { Tf2Colors, Tf2Panel, Tf2Heading, Tf2Body, Tf2Button, Tf2CheckBox } from "tf2-theme.slint";
 
 component GuidanceOptions inherits Tf2Panel {
@@ -49,6 +50,26 @@ component LogOptions inherits Tf2Panel {
     }
 }
 
+component DirectorGuideOptions inherits Tf2Panel {
+    in property <float> scale: 1;
+    in property <bool> enabled;
+    in property <bool> can-resume;
+    in property <string> status;
+    callback action(int);
+    VerticalLayout {
+        padding: 14px * root.scale; spacing: 8px * root.scale;
+        Tf2Heading { height: 24px * root.scale; text: "MIRV DIRECTOR GUIDE"; font-size: 18px * root.scale; }
+        Tf2CheckBox { height: 28px * root.scale; text: "Enable Director tutorial"; checked: root.enabled; prominent: true; label-font-size: 16px * root.scale; toggled(value) => { root.action(0); } }
+        Tf2Body { height: 36px * root.scale; text: "Learn the overlay, camera path and recording controls. Separate from the Toolkit Quick Guide."; font-size: 14px * root.scale; wrap: word-wrap; }
+        HorizontalLayout { height: 30px * root.scale; spacing: 8px;
+            Tf2Button { text: "START"; label-font-size: 12px * root.scale; clicked => { root.action(1); } }
+            Tf2Button { text: "RESUME"; enabled: root.can-resume; label-font-size: 12px * root.scale; clicked => { root.action(2); } }
+        }
+        Tf2Button { height: 30px * root.scale; text: "RESET FOR NEXT DIRECTOR LAUNCH"; label-font-size: 10px * root.scale; clicked => { root.action(3); } }
+        Tf2Body { height: 40px * root.scale; text: root.status; color: Tf2Colors.muted; font-size: 13px * root.scale; wrap: word-wrap; }
+    }
+}
+
 export component OptionsPage inherits Rectangle {
     in property <bool> compact;
     in property <float> scale: 1;
@@ -61,7 +82,15 @@ export component OptionsPage inherits Rectangle {
     callback reset-guide();
     callback view-logs();
     callback open-log-folder();
-    // Fixed content heights avoid stretched cards or page scrolling.
+    in property <bool> director-guide-enabled;
+    in property <bool> director-guide-can-resume;
+    in property <string> director-guide-status;
+    callback director-guide-action(int);
+    Rectangle { width: root.width; height: root.height - 42px; clip: true;
+    ScrollView { width: parent.width; height: parent.height;
+    horizontal-scrollbar-policy: always-off;
+    viewport-height: root.compact ? 700px * root.scale : 450px * root.scale;
+
     guidance := GuidanceOptions {
         x: 12px; y: 12px; width: root.compact ? root.width - 24px : (root.width - 36px) / 2;
         height: 210px * root.scale;
@@ -72,16 +101,24 @@ export component OptionsPage inherits Rectangle {
         resume-guide => { root.resume-guide(); }
         reset-guide => { root.reset-guide(); }
     }
-    logs := LogOptions {
+    director := DirectorGuideOptions {
         x: root.compact ? 12px : guidance.x + guidance.width + 12px;
         y: root.compact ? guidance.y + guidance.height + 12px : 12px;
-        width: guidance.width; height: root.compact ? 138px : guidance.height;
-        compact: root.compact; scale: root.scale;
+        width: guidance.width; height: 270px * root.scale;
+        scale: root.scale; enabled: root.director-guide-enabled;
+        can-resume: root.director-guide-can-resume; status: root.director-guide-status;
+        action(value) => { root.director-guide-action(value); }
+    }
+    logs := LogOptions {
+        x: 12px; y: director.y + director.height + 12px;
+        width: root.width - 24px; height: 138px * root.scale;
+        compact: true; scale: root.scale;
         view-logs => { root.view-logs(); }
         open-log-folder => { root.open-log-folder(); }
     }
+    } }
     Tf2Body {
-        x: 12px; y: logs.y + logs.height + 10px; width: parent.width - 24px; height: 28px;
+        x: 12px; y: root.height - 34px; width: parent.width - 24px; height: 28px;
         text: root.save-status; color: #8ab3cd; font-size: 13px * root.scale; wrap: word-wrap;
     }
 }

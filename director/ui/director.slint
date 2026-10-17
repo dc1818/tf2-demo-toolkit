@@ -1,3 +1,5 @@
+import { DirectorGuideAnchor, DirectorGuideFocus } from "director-guide.slint";
+export { DirectorGuideWindow, DirectorGuideFocus } from "director-guide.slint";
 import { ComboBox, LineEdit, ScrollView } from "std-widgets.slint";
 import "../../app/ui/assets/fonts/TF2Build.ttf";
 import "../../app/ui/assets/fonts/RobotoCondensed-Variable.ttf";
@@ -12,6 +14,7 @@ export struct CueRow {
 }
 
 export struct ShortcutRow {
+    guide-id: int,
     key: string,
     label: string,
 }
@@ -46,6 +49,8 @@ component Caption inherits Text {
 }
 
 component ShortcutCell inherits Rectangle {
+    in property <int> guide-id;
+    DirectorGuideAnchor { target-id: root.guide-id; width: parent.width; height: parent.height; }
     in property <string> key-name;
     in property <string> action-name;
     in property <length> key-width: 42px;
@@ -84,6 +89,8 @@ component ShortcutCell inherits Rectangle {
 }
 
 component DirectorButton inherits Rectangle {
+    in property <int> guide-id;
+    DirectorGuideAnchor { target-id: root.guide-id; width: parent.width; height: parent.height; }
     in property <string> text;
     in property <brush> tone: Colors.blue;
     in property <bool> enabled: true;
@@ -106,6 +113,7 @@ component DirectorButton inherits Rectangle {
 
 // Option C: this narrow timeline remains visible even when the cue card is hidden.
 export component DirectorStripWindow inherits Window {
+    DirectorGuideAnchor { target-id: DirectorGuideFocus.target == 16 ? 16 : 3; pane: 1; width: parent.width; height: parent.height; }
     title: "TF2 Demo Director Timeline";
     icon: @image-url("../../app/ui/assets/branding/toolkit-256.png");
     preferred-width: 1500px;
@@ -186,7 +194,7 @@ export component DirectorStripWindow inherits Window {
                     height: 24px;
                     Caption { text: "CLIP  " + root.start-tick; color: Colors.cream; }
                     Rectangle { horizontal-stretch: 1; background: #00000000; }
-                    Text { text: "CURRENT TICK  " + root.current-tick; color: Colors.blue-text; font-family: "TF2 Build"; font-size: 13px; vertical-alignment: center; }
+                    Text { text: "CURRENT TICK  " + root.current-tick; DirectorGuideAnchor { target-id: 4; pane: 1; width: parent.width; height: parent.height; } color: Colors.blue-text; font-family: "TF2 Build"; font-size: 13px; vertical-alignment: center; }
                     Rectangle { horizontal-stretch: 1; background: #00000000; }
                     Caption { text: "OUT  " + root.end-tick; color: Colors.cream; horizontal-alignment: right; }
                 }
@@ -300,6 +308,9 @@ export component DirectorCardWindow inherits Window {
     private property <bool> interpolation-setting: root.keyframe-setting == "Interpolation — Position" || root.keyframe-setting == "Interpolation — Rotation" || root.keyframe-setting == "Interpolation — FOV";
     private property <bool> setting-needs-value: root.keyframe-setting == "Time — Shift by seconds" || root.keyframe-setting == "Time — Set absolute seconds" || root.keyframe-setting == "Position — Set X Y Z" || root.keyframe-setting == "Angles — Set Pitch Yaw Roll" || root.keyframe-setting == "FOV — Set value" || root.keyframe-setting == "Rotate — Pitch Yaw Roll" || root.keyframe-setting == "Path offset — Add seconds" || root.keyframe-setting == "Duration — Set seconds";
     in property <string> command-status: "DIRECTOR COMMAND QUEUE READY";
+    in property <bool> guide-active;
+    in property <bool> compact-card;
+    callback guide-requested();
     callback hide-requested();
     callback interaction-toggle-requested();
     callback frag-goto-requested();
@@ -309,6 +320,18 @@ export component DirectorCardWindow inherits Window {
     callback keyframe-action-requested(int, string, string, string);
     callback dismiss-selection-requested();
 
+    Timer {
+        interval: 80ms; running: DirectorGuideFocus.active;
+        triggered => {
+            if DirectorGuideFocus.pane == 2 && DirectorGuideFocus.target >= 1000 {
+                if DirectorGuideFocus.top < controls.absolute-position.y {
+                    controls.viewport-y = Math.min(0px, controls.viewport-y + controls.absolute-position.y - DirectorGuideFocus.top + 2px);
+                } else if DirectorGuideFocus.top + DirectorGuideFocus.target-height > controls.absolute-position.y + controls.height {
+                    controls.viewport-y = Math.max(Math.min(0px, controls.height - controls.viewport-height), controls.viewport-y - (DirectorGuideFocus.top + DirectorGuideFocus.target-height - controls.absolute-position.y - controls.height) - 2px);
+                }
+            } else if (DirectorGuideFocus.target >= 16 && DirectorGuideFocus.target <= 21) || DirectorGuideFocus.target == 29 { controls.viewport-y = 0px; }
+        }
+    }
     changed keyframe-setting => {
         if root.keyframe-setting == "Interpolation — Rotation" {
             root.keyframe-choice = "sLinear";
@@ -328,13 +351,15 @@ export component DirectorCardWindow inherits Window {
 
             HorizontalLayout {
                 height: 28px;
+                DirectorButton { width: 58px; text: root.guide-active ? "PAUSE" : "GUIDE"; clicked => { root.guide-requested(); } }
                 Text { text: root.frag-heading; color: Colors.cream; font-family: "TF2 Build"; font-size: 16px; vertical-alignment: center; }
                 Rectangle { horizontal-stretch: 1; background: #00000000; }
                 Caption { text: "LIVE " + root.current-tick; color: Colors.blue-text; horizontal-alignment: right; }
             }
 
             Rectangle {
-                height: 146px;
+                height: root.compact-card ? 92px : 146px;
+                DirectorGuideAnchor { target-id: 5; width: parent.width; height: parent.height; }
                 background: Colors.panel;
                 border-width: 1px;
                 border-color: #343633;
@@ -344,8 +369,8 @@ export component DirectorCardWindow inherits Window {
                     HorizontalLayout {
                         spacing: 12px;
                         Rectangle {
-                            width: 66px;
-                            height: 66px;
+                            width: root.compact-card ? 34px : 66px;
+                            height: root.compact-card ? 34px : 66px;
                             background: Colors.blue;
                             border-width: 1px;
                             border-color: Colors.blue-line;
@@ -372,13 +397,14 @@ export component DirectorCardWindow inherits Window {
                 Caption { text: "ARROWS = CAMERA"; color: Colors.blue-text; font-size: 9px; }
             }
 
-            ScrollView {
+            controls := ScrollView {
                 vertical-stretch: 1;
                 vertical-scrollbar-policy: as-needed;
                 horizontal-scrollbar-policy: always-off;
                 VerticalLayout {
                     spacing: 2px;
                     if root.has-selected-keyframe : Rectangle {
+                        DirectorGuideAnchor { target-id: DirectorGuideFocus.target >= 17 && DirectorGuideFocus.target <= 21 ? DirectorGuideFocus.target : 16; width: parent.width; height: parent.height; }
                         height: root.editing-keyframe ? 235px : (root.range-action ? 190px : 155px);
                         background: Colors.panel;
                         border-width: 1px;
@@ -428,7 +454,9 @@ export component DirectorCardWindow inherits Window {
                             DirectorButton { text: "EXECUTE HLAE ACTION"; enabled: root.actions-enabled; tone: #34542e; clicked => { root.keyframe-action-requested(root.selected-keyframe-id, root.keyframe-action, root.keyframe-setting, root.interpolation-setting ? root.keyframe-choice : root.keyframe-value); } }
                         }
                     }
-                    Caption { height: 22px; text: root.command-status; color: Colors.blue-text; font-size: 9px; wrap: word-wrap; }
+                    Rectangle { height: 22px;
+                        DirectorGuideAnchor { target-id: 29; width: parent.width; height: parent.height; }
+                        Caption { width: parent.width; height: parent.height; text: root.command-status; color: Colors.blue-text; font-size: 9px; wrap: word-wrap; } }
                     Text { height: 20px; text: "HLAE KEYFRAME ID  →  DEMO TICK"; color: Colors.green; font-family: "TF2 Build"; font-size: 10px; vertical-alignment: center; }
                     for keyframe in root.keyframes : ShortcutCell {
                         key-name: "" + keyframe.id;
@@ -440,6 +468,7 @@ export component DirectorCardWindow inherits Window {
                     }
                     Text { height: 20px; text: "MIRV SHORTCUTS"; color: Colors.cream; font-family: "TF2 Build"; font-size: 10px; vertical-alignment: center; }
                     for shortcut in root.shortcuts : ShortcutCell {
+                        guide-id: shortcut.guide-id;
                         key-name: shortcut.key;
                         action-name: shortcut.label;
                         enabled: root.actions-enabled;
@@ -451,24 +480,26 @@ export component DirectorCardWindow inherits Window {
             HorizontalLayout {
                 height: 42px;
                 spacing: 6px;
-                DirectorButton { horizontal-stretch: 1; text: root.panel-toggle-key + "  HIDE PANEL"; enabled: root.actions-enabled; clicked => { root.hide-requested(); } }
-                DirectorButton { horizontal-stretch: 1; text: root.interaction-toggle-key + (root.interaction-mode ? "  RETURN TO TF2" : "  ENABLE CLICKS"); enabled: root.actions-enabled; tone: root.interaction-mode ? #34542e : Colors.blue; clicked => { root.interaction-toggle-requested(); } }
+                DirectorButton { guide-id: 28; horizontal-stretch: 1; text: root.panel-toggle-key + "  HIDE PANEL"; enabled: root.actions-enabled; clicked => { root.hide-requested(); } }
+                DirectorButton { guide-id: 2; horizontal-stretch: 1; text: root.interaction-toggle-key + (root.interaction-mode ? "  RETURN TO TF2" : "  ENABLE CLICKS"); enabled: root.actions-enabled; tone: root.interaction-mode ? #34542e : Colors.blue; clicked => { root.interaction-toggle-requested(); } }
             }
             // Keep file and quit actions in dedicated full-width rows so they
             // never compete with navigation/focus buttons at narrow heights.
             DirectorButton {
+                guide-id: 23;
                 text: root.load-campath-key + "  LOAD CAMPATH XML";
                 enabled: root.actions-enabled;
                 tone: #34542e;
                 clicked => { root.load-campath-requested(); }
             }
             DirectorButton {
+                guide-id: 30;
                 text: "CLOSE TF2";
                 tone: #652f27;
                 clicked => { root.quit-tf2-requested(); }
             }
-            Text { height: 30px; text: root.record-order; color: Colors.blue-text; font-family: "TF2 Build"; font-size: 9px; horizontal-alignment: center; vertical-alignment: center; wrap: word-wrap; }
-            Caption { height: 18px; text: root.interaction-mode ? "DIRECTOR CLICK MODE • TF2 INPUT RELEASED" : "PRESS " + root.interaction-toggle-key + " TO RELEASE TF2 INPUT AND CLICK DIRECTOR"; color: root.interaction-mode ? Colors.green : Colors.muted; font-size: 9px; horizontal-alignment: center; }
+            Text { height: root.compact-card ? 0px : 30px; visible: !root.compact-card; text: root.record-order; color: Colors.blue-text; font-family: "TF2 Build"; font-size: 9px; horizontal-alignment: center; vertical-alignment: center; wrap: word-wrap; }
+            Caption { height: root.compact-card ? 0px : 18px; visible: !root.compact-card; text: root.interaction-mode ? "DIRECTOR CLICK MODE • TF2 INPUT RELEASED" : "PRESS " + root.interaction-toggle-key + " TO RELEASE TF2 INPUT AND CLICK DIRECTOR"; color: root.interaction-mode ? Colors.green : Colors.muted; font-size: 9px; horizontal-alignment: center; }
         }
     }
 }
