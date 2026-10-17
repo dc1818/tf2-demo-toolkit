@@ -1472,7 +1472,7 @@ fn build_director_session(
         (
             "overlay_panel_toggle",
             &shortcuts.overlay_panel_toggle,
-            "Hide / show cue panel",
+            "Hide / show overlay",
         ),
         (
             "overlay_interaction_toggle",

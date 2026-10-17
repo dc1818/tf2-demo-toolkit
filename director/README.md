@@ -2,7 +2,7 @@
 
 TF2 Demo Director is the camera companion for TF2 Demo Toolkit's manual HLAE recording mode. Select a candidate and launch a manual session from the main app; it opens the Director with that clip's timeline and camera controls.
 
-The timeline sits across the top of the screen, and the control panel sits on the right. These are desktop windows, so HLAE's game capture does not include them. The saved panel shortcut (`C` by default) hides or restores the control panel.
+The timeline sits across the top of the screen, and the control panel sits on the right. These are desktop windows, so HLAE's game capture does not include them. The saved overlay shortcut (`C` by default) hides or restores the control panel, timeline, and active tutorial together. The tutorial resumes at the same step.
 
 Use the Director to seek through a clip, add and edit campath keyframes, preview the path, and save or load campath XML files. The main application handles the recording profile, output files, and restoring TF2 settings when the session ends.
 
