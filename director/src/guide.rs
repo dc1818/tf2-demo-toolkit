@@ -145,7 +145,7 @@ pub const STEPS: &[Step] = &[
     Step { title: "Stop recording", body: "Stop the current capture. Let Toolkit finish preparing or transferring the output before opening it. Stopping capture does not close TF2.", shortcut: "stop_recording" },
     Step { title: "Toggle the HUD", body: "Show or hide the in-game HUD for the shot. This changes what TF2 renders; the Director panel is a separate desktop overlay.", shortcut: "toggle_hud" },
     Step { title: "Show controls", body: "Display the manual-session control reference in TF2. The keys shown by this guide and Director must reflect your configured shortcuts.", shortcut: "show_help" },
-    Step { title: "Hide or show the panel", body: "Toggle the side panel while keeping the top timeline visible. Hiding the panel does not stop capture or close Director.", shortcut: "overlay_panel_toggle" },
+    Step { title: "Hide or show the overlay", body: "Toggle the Director panel, timeline and this guide together. Show the overlay again to continue at this step. Hiding the overlay does not stop capture or close Director.", shortcut: "overlay_panel_toggle" },
     Step { title: "Command feedback and fallback", body: "Watch the command status for delivery feedback. Actions normally execute automatically. If TF2 reports that wait is unavailable, the configured emergency fallback key executes the queued action while TF2 has focus.", shortcut: "execute_director_action" },
     Step { title: "Finish and restore", body: "CLOSE TF2 ends the game session. Toolkit finishes the output and restores your original config. Check the Toolkit status area for Original config restored.", shortcut: "" },
 ];

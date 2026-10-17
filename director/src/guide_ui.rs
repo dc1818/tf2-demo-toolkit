@@ -8,6 +8,8 @@ struct Tour {
     active: bool,
     previous_panel: bool,
     previous_interaction: bool,
+    hidden_with_overlay: bool,
+    resume_click_mode: bool,
 }
 impl Tour {
     fn persist(&self, window: &DirectorGuideWindow) {
@@ -61,6 +63,7 @@ impl Tour {
             self.previous_panel = panel.get();
             self.previous_interaction = interaction.get();
         }
+        self.hidden_with_overlay = false;
         set_panel_visibility(strip, card, panel, true);
         if !interaction.get() {
             toggle_overlay_interaction(strip, card, interaction);
@@ -92,6 +95,7 @@ impl Tour {
         restore: bool,
     ) {
         self.active = false;
+        self.hidden_with_overlay = false;
         let _ = window.hide();
         card.set_guide_active(false);
         card.global::<DirectorGuideFocus>().set_active(false);
@@ -129,6 +133,8 @@ pub(super) fn bind(
         active: false,
         previous_panel: false,
         previous_interaction: false,
+        hidden_with_overlay: false,
+        resume_click_mode: false,
     }));
     {
         let (weak_window, weak_strip, weak_card) =
@@ -222,6 +228,57 @@ pub(super) fn bind(
             }
         });
     }
+    {
+        let (weak_window, weak_strip, weak_card) =
+            (window.as_weak(), strip.as_weak(), card.as_weak());
+        let (tour, interaction, ready) = (tour.clone(), interaction.clone(), ready.clone());
+        card.on_overlay_visibility_changed(move |visible| {
+            let (Some(window), Some(strip), Some(card)) = (
+                weak_window.upgrade(),
+                weak_strip.upgrade(),
+                weak_card.upgrade(),
+            ) else {
+                return;
+            };
+            // start/pause may deliberately restore the overlay while holding this
+            // state; they already handle guide visibility in that case.
+            let Ok(mut tour) = tour.try_borrow_mut() else {
+                return;
+            };
+            if !tour.active {
+                return;
+            }
+            if !visible {
+                tour.hidden_with_overlay = true;
+                tour.resume_click_mode = interaction.get();
+                let _ = window.hide();
+                card.global::<DirectorGuideFocus>().set_active(false);
+                strip.global::<DirectorGuideFocus>().set_active(false);
+                if interaction.get() {
+                    toggle_overlay_interaction(&strip, &card, &interaction);
+                }
+            } else if tour.hidden_with_overlay && ready.get() {
+                // Re-check Options before restoring, even between polling ticks.
+                if !matches!(tour.store.preferences(), Ok(p) if p.enabled) {
+                    return;
+                }
+                tour.hidden_with_overlay = false;
+                if tour.resume_click_mode && !interaction.get() {
+                    toggle_overlay_interaction(&strip, &card, &interaction);
+                }
+                if let Err(error) = window.show() {
+                    card.set_command_status(format!("Guide: {error}").into());
+                    return;
+                }
+                card.global::<DirectorGuideFocus>().set_active(true);
+                strip.global::<DirectorGuideFocus>().set_active(true);
+                maintain_overlay_stack(&strip, &card, Some(&window));
+                let _ = window
+                    .window()
+                    .with_winit_window(|native| native.focus_window());
+            }
+        });
+    }
     let weak = window.as_weak();
     window.window().on_close_requested(move || {
         if let Some(window) = weak.upgrade() {
@@ -247,7 +304,9 @@ pub(super) fn bind(
                 return;
             }
         };
-        if tour.active && (!ready.get() || !prefs.enabled || !panel.get() || !interaction.get()) {
+        if tour.active
+            && (!ready.get() || !prefs.enabled || (!tour.hidden_with_overlay && !interaction.get()))
+        {
             // Respect a user's new focus/panel choice. A reload or Options disable restores prior input.
             let restore = panel.get() && interaction.get();
             tour.pause(&window, &strip, &card, &panel, &interaction, restore);
@@ -270,13 +329,12 @@ pub(super) fn bind(
                 }
             }
         }
-        if tour.active {
+        if tour.active && !tour.hidden_with_overlay && panel.get() {
             // Keep conditional examples truthful without touching actual selected-keyframe fields.
             window.set_example(
                 (16..=20).contains(&tour.progress.step) && !card.get_has_selected_keyframe(),
             );
             place(&window, &strip, &card, monitor.get());
-            let _ = window.window().with_winit_window(force_topmost);
         }
     });
     Ok(Some((window, timer)))
@@ -317,11 +375,19 @@ fn place(
     };
     let (x, y) = clamp_position(anchor_x, anchor_y, width, height, available_w, available_h);
     let _ = window.window().with_winit_window(|native| {
-        let _ = native.request_inner_size(winit::dpi::LogicalSize::new(width, height));
-        native.set_outer_position(winit::dpi::PhysicalPosition::new(
+        // A native resize can recreate the render surface. Do not request the
+        // same size/position every polling tick while TF2 owns the foreground.
+        let size = winit::dpi::LogicalSize::new(width, height);
+        if native.inner_size() != size.to_physical::<u32>(native.scale_factor()) {
+            let _ = native.request_inner_size(size);
+        }
+        let position = winit::dpi::PhysicalPosition::new(
             g.position.x + (x * g.scale) as i32,
             g.position.y + (y * g.scale) as i32,
-        ));
+        );
+        if native.outer_position().ok() != Some(position) {
+            native.set_outer_position(position);
+        }
     });
 }
 fn clamp_position(x: f64, y: f64, w: f64, h: f64, screen_w: f64, screen_h: f64) -> (f64, f64) {
@@ -394,7 +460,7 @@ mod rendered_tests {
     }
     slint::slint! {
         import { OptionsPage } from "../app/ui/options.slint";
-        component OptionsPreview inherits Window {
+        export component OptionsPreview inherits Window {
             width: 1000px; height: 600px;
             background: #181918;
             in property <bool> compact;
@@ -469,6 +535,28 @@ mod rendered_tests {
         assert!(store.progress().unwrap().seen);
         assert!(card.get_guide_active());
         assert!(interaction.get());
+        window.invoke_action(2);
+        assert_eq!(window.get_step(), 1);
+        for _ in 0..3 {
+            set_panel_visibility(&strip, &card, &panel, false);
+            assert!(!strip.window().is_visible());
+            assert!(!card.window().is_visible());
+            assert!(!window.window().is_visible());
+            assert!(!interaction.get());
+            pump(&clock);
+            maintain_overlay_stack(&strip, &card, Some(&window));
+            assert!(!window.window().is_visible());
+            assert!(card.get_guide_active());
+            assert_eq!(window.get_step(), 1);
+            set_panel_visibility(&strip, &card, &panel, true);
+            pump(&clock);
+            assert!(strip.window().is_visible());
+            assert!(card.window().is_visible());
+            assert!(window.window().is_visible());
+            assert!(interaction.get());
+            assert_eq!(window.get_step(), 1);
+        }
+        window.invoke_action(1);
         card.set_keyframe_value("original".into());
         card.set_selected_keyframe_id(42);
         for index in 0..30 {
@@ -510,9 +598,12 @@ mod rendered_tests {
         pump(&clock);
         assert_eq!(window.get_step(), 1);
         assert!(card.get_guide_active());
+        set_panel_visibility(&strip, &card, &panel, false);
         prefs.enabled = false;
         store.save_preferences(&mut prefs).unwrap();
         pump(&clock);
+        set_panel_visibility(&strip, &card, &panel, true);
+        assert!(!window.window().is_visible());
         assert!(!card.get_guide_active());
         assert!(!interaction.get());
         prefs.enabled = true;
