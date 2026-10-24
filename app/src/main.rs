@@ -1247,7 +1247,7 @@ fn main() -> Result<()> {
 
 /// Fit guided pages to their content while retaining Candidates' wide layout.
 /// Windows display scaling is already reflected in the monitor's logical size.
-fn fit_window_to_page(ui: &AppWindow) {
+fn fit_window_to_page(ui: &AppWindow, initial: bool) {
     let _ = ui.window().with_winit_window(|window| {
         if window.is_maximized() || ui.get_selected_page() == 4 { return; }
         let Some(monitor) = window.current_monitor()
@@ -1263,26 +1263,35 @@ fn fit_window_to_page(ui: &AppWindow) {
         } else { base_height };
         let width = requested_width.min((screen.width - 48.0).max(800.0));
         let height = requested_height.min((screen.height - 100.0).max(420.0));
+        let previous_position = window.outer_position().ok();
         let _ = window.request_inner_size(winit::dpi::LogicalSize::new(width, height));
-        let origin = monitor.position();
-        window.set_outer_position(winit::dpi::PhysicalPosition::new(
-            origin.x + (((screen.width - width) / 2.0).max(0.0) * scale) as i32,
-            origin.y + (((screen.height - height) / 4.0).max(0.0) * scale) as i32,
-        ));
+        if initial {
+            // Reserve room for the widest/tallest page when choosing the initial
+            // anchor. Later navigation grows right/down without re-centering.
+            let envelope_width = 1480.0_f64.min((screen.width - 48.0).max(800.0));
+            let envelope_height = 860.0_f64.min((screen.height - 100.0).max(420.0));
+            let origin = monitor.position();
+            window.set_outer_position(winit::dpi::PhysicalPosition::new(
+                origin.x + (((screen.width - envelope_width) / 2.0).max(0.0) * scale) as i32,
+                origin.y + (((screen.height - envelope_height) / 4.0).max(0.0) * scale) as i32,
+            ));
+        } else if let Some(position) = previous_position {
+            window.set_outer_position(position);
+        }
     });
 }
 
 fn bind_page_window_size(ui: &AppWindow) {
     let weak = ui.as_weak();
     ui.on_page_layout_changed(move |_| {
-        if let Some(ui) = weak.upgrade() { fit_window_to_page(&ui); }
+        if let Some(ui) = weak.upgrade() { fit_window_to_page(&ui, false); }
     });
 }
 
 fn center_window_on_startup(ui: &AppWindow) {
     let weak = ui.as_weak();
     slint::Timer::single_shot(Duration::ZERO, move || {
-        if let Some(ui) = weak.upgrade() { fit_window_to_page(&ui); }
+        if let Some(ui) = weak.upgrade() { fit_window_to_page(&ui, true); }
     });
 }
 

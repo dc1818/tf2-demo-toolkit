@@ -145,10 +145,10 @@ component AppHeader inherits Rectangle {
         }
         HorizontalLayout {
             height: 44px; spacing: 5px;
-            Tf2Tab { text: "PARSE DEMOS"; active: root.page == 0; clicked => { root.navigate(0); } }
-            Tf2Tab { text: "CANDIDATES"; active: root.page == 1; enabled: root.has-export; clicked => { root.navigate(1); } }
-            Tf2Tab { guide-id: 18; text: "RECORDING SETTINGS"; active: root.page == 2; enabled: root.has-export; min-width: 225px; clicked => { root.navigate(2); } }
-            Tf2Tab { guide-id: 39; text: "OPTIONS"; active: root.page == 3 || root.page == 5; clicked => { root.navigate(3); } }
+            Tf2Tab { width: 180px; text: "PARSE DEMOS"; active: root.page == 0; clicked => { root.navigate(0); } }
+            Tf2Tab { width: 180px; text: "CANDIDATES"; active: root.page == 1; enabled: root.has-export; clicked => { root.navigate(1); } }
+            Tf2Tab { width: 240px; guide-id: 18; text: "RECORDING SETTINGS"; active: root.page == 2; enabled: root.has-export; clicked => { root.navigate(2); } }
+            Tf2Tab { width: 160px; guide-id: 39; text: "OPTIONS"; active: root.page == 3 || root.page == 5; clicked => { root.navigate(3); } }
             Rectangle { horizontal-stretch: 1; }
         }
     }
