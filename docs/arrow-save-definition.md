@@ -40,7 +40,7 @@ Examples for later acceptance fixtures:
 | 40 | 75 | 60, but teammate also gets another heal | Depends | Must replay other heal/cap | Uncertain until reconciled |
 | 40 | 75 | Actual teammate dies anyway | 0 | <= 0 | Not a surviving save at that death |
 
-The exact immediate-window duration and candidate/scoring activation require
-a concrete calibration proposal. Existing UI, scores, tags and candidate
-generation remain unchanged. This document records the owner's clarified
-requirement; it is not a claim that A04 is implemented.
+Activation update (November 5, 2026): the owner requested enabling the detector.
+The conservative implementation uses a one-second window and adds new
+crossbow_save candidates with score 30, preserving existing candidates and
+all UI layout. See arrow-save-validation.md for criteria, tests and limits.

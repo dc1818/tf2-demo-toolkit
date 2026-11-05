@@ -555,6 +555,7 @@ fn main() -> Result<(), MainError> {
         "format_version": 1,
         "source_demo": input_path.to_string_lossy(),
         "packet_count": packet_count,
+        "server_tick_interval": match_state.interval_per_tick,
         "state_sample_count": state_delta_writer.sample_count,
         "demo_capture": capture_metadata(&header, usercmd_packet_count, server_info_stv),
         "mode_signals": mode_signals,
