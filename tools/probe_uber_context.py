@@ -11,6 +11,10 @@ from pathlib import Path
 import sys
 
 
+PROTECTION_FIELDS = ("invulnerable", "invulnerability_wearing_off",
+                     "uber_bullet_resist", "uber_blast_resist", "uber_fire_resist")
+
+
 def uid(value):
     return value if type(value) is int and 0 < value < 65535 else None
 
@@ -138,7 +142,7 @@ def probe(directory, rate, seconds=8):
                     "recent_damage": valid_damage, "invulnerability_events": [],
                     "recipient_kills": [], "same_team_kills": [],
                     "recipient_death_ticks": [], "last_observed_alive_tick": None,
-                    "boundary": None,
+                    "boundary": None, "protection_observations": [],
                     "_identity": (before.get("entity_id"), before.get("steam_id"), team)
                         if before else None,
                 }
@@ -214,6 +218,15 @@ def probe(directory, rate, seconds=8):
                     elif (t and player.get("in_pvs") is True
                           and player.get("life_state") == "alive"):
                         result["last_observed_alive_tick"] = t
+                    if t and any(field in player for field in PROTECTION_FIELDS):
+                        observed = {
+                            field: player.get(field) if type(player.get(field)) is bool else None
+                            for field in PROTECTION_FIELDS
+                        }
+                        history = result["protection_observations"]
+                        if not history or history[-1]["conditions"] != observed:
+                            history.append({"server_tick": t, "conditions": observed})
+
                 if t:
                     states[user] = t, player
 

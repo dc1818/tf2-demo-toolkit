@@ -90,6 +90,10 @@ pub struct Player {
     pub weapons: [Handle; 3],
     pub handle: Handle,
     pub(crate) conditions: [u8; 20],
+    // Decoder provenance for optional protection evidence only. Do not serialize
+    // or change the existing condition API/bit layout.
+    #[serde(skip)]
+    pub(crate) protection_condition_words: [Option<u32>; 6],
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Default, TryFromPrimitive)]
@@ -173,6 +177,33 @@ impl Player {
         }
     }
 
+    /// Observed protection condition, preserving unknown separately from false.
+    /// The first word has two wire sources; a set bit in either is evidence,
+    /// but absence is known only after both sources have been observed.
+    pub fn observed_protection_condition(&self, condition: PlayerCondition) -> Option<bool> {
+        if !self.in_pvs || self.state != PlayerState::Alive {
+            return None;
+        }
+        let index = condition as usize / 32;
+        let mask = 1u32 << (condition as usize % 32);
+        if index == 0 {
+            let base = self.protection_condition_words[0];
+            let exclusive = self.protection_condition_words[5];
+            if base.is_some_and(|word| word & mask != 0)
+                || exclusive.is_some_and(|word| word & mask != 0)
+            {
+                Some(true)
+            } else if base.is_some() && exclusive.is_some() {
+                Some(false)
+            } else {
+                None
+            }
+        } else {
+            self.protection_condition_words.get(index).copied().flatten()
+                .map(|word| word & mask != 0)
+        }
+    }
+
     pub fn conditions(&self) -> impl Iterator<Item = PlayerCondition> + '_ {
         (0..=(PlayerCondition::MAX as u8)).filter_map(|cond_int| {
             let byte = cond_int / 8;
@@ -202,6 +233,50 @@ impl Player {
 #[cfg(test)]
 mod condition_tests {
     use super::*;
+
+    #[test]
+    fn protection_evidence_requires_observation_and_preserves_legacy_api() {
+        let mut player = Player::default();
+        player.in_pvs = true;
+        assert_eq!(player.observed_protection_condition(PlayerCondition::Invulnerable), None);
+        // Legacy callers retain their previous default-false semantics.
+        assert!(!player.has_condition(PlayerCondition::Invulnerable));
+        player.protection_condition_words[0] = Some(1 << 5);
+        assert_eq!(player.observed_protection_condition(PlayerCondition::Invulnerable), Some(true));
+        player.protection_condition_words[0] = Some(0);
+        assert_eq!(player.observed_protection_condition(PlayerCondition::Invulnerable), None);
+        player.protection_condition_words[5] = Some(0);
+        assert_eq!(player.observed_protection_condition(PlayerCondition::Invulnerable), Some(false));
+        player.protection_condition_words[5] = Some(1 << 5);
+        assert_eq!(player.observed_protection_condition(PlayerCondition::Invulnerable), Some(true));
+    }
+
+    #[test]
+    fn protection_words_are_independent_and_visibility_gated() {
+        let mut player = Player::default();
+        player.in_pvs = true;
+        player.protection_condition_words[0] = Some(1 << 8);
+        player.protection_condition_words[1] = Some(1 << (59 - 32));
+        assert_eq!(player.observed_protection_condition(PlayerCondition::InvulnerableWearingOff), Some(true));
+        assert_eq!(player.observed_protection_condition(PlayerCondition::MedigunUberBlastResist), Some(true));
+        assert_eq!(player.observed_protection_condition(PlayerCondition::MedigunUberBulletResist), Some(false));
+        player.in_pvs = false;
+        assert_eq!(player.observed_protection_condition(PlayerCondition::MedigunUberBlastResist), None);
+        player.in_pvs = true;
+        player.state = PlayerState::Death;
+        assert_eq!(player.observed_protection_condition(PlayerCondition::MedigunUberBlastResist), None);
+    }
+
+    #[test]
+    fn old_serialized_player_does_not_invent_condition_provenance() {
+        let mut player = Player::default();
+        player.in_pvs = true;
+        let encoded = serde_json::to_value(&player).unwrap();
+        assert!(encoded.get("protection_condition_words").is_none());
+        let text = serde_json::to_string(&encoded).unwrap();
+        let decoded: Player = serde_json::from_str(&text).unwrap();
+        assert_eq!(decoded.observed_protection_condition(PlayerCondition::Invulnerable), None);
+    }
 
     #[test]
     fn condition_bits_support_multiple_conditions_in_one_byte() {

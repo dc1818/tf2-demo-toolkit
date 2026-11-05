@@ -1,5 +1,5 @@
 use crate::demo::data::game_state::{GameState, Handle, PlayerClassData, PlayerState};
-use crate::demo::message::{EntityId, PacketEntity};
+use crate::demo::message::{EntityId, PacketEntity, UpdateType};
 use crate::demo::parser::analyser::{Class, Team};
 use crate::demo::sendprop::SendPropIdentifier;
 use crate::demo::vector::{Vector, VectorXY};
@@ -74,6 +74,9 @@ pub fn handle_player_entity(
     const CLOAK_LEVEL: SendPropIdentifier =
         SendPropIdentifier::new("DT_TFPlayerShared", "m_flCloakMeter");
 
+    if !entity.in_pvs || !player.in_pvs || entity.update_type == UpdateType::Enter {
+        player.protection_condition_words = [None; 6];
+    }
     player.in_pvs = entity.in_pvs;
 
     for prop in entity.props(parser_state) {
@@ -129,26 +132,37 @@ pub fn handle_player_entity(
                 player.weapons[2] = handle;
             }
             PLAYER_COND | PLAYER_COND_BITS => {
+                let source = if prop.identifier == PLAYER_COND { 0 } else { 5 };
+                player.protection_condition_words[source] =
+                    i64::try_from(&prop.value).ok().map(|word| word as u32);
                 player.conditions[0..4].copy_from_slice(
                     &i64::try_from(&prop.value).unwrap_or_default().to_le_bytes()[0..4],
                 );
             }
             PLAYER_COND_EX1 => {
+                player.protection_condition_words[1] =
+                    i64::try_from(&prop.value).ok().map(|word| word as u32);
                 player.conditions[4..8].copy_from_slice(
                     &i64::try_from(&prop.value).unwrap_or_default().to_le_bytes()[0..4],
                 );
             }
             PLAYER_COND_EX2 => {
+                player.protection_condition_words[2] =
+                    i64::try_from(&prop.value).ok().map(|word| word as u32);
                 player.conditions[8..12].copy_from_slice(
                     &i64::try_from(&prop.value).unwrap_or_default().to_le_bytes()[0..4],
                 );
             }
             PLAYER_COND_EX3 => {
+                player.protection_condition_words[3] =
+                    i64::try_from(&prop.value).ok().map(|word| word as u32);
                 player.conditions[12..16].copy_from_slice(
                     &i64::try_from(&prop.value).unwrap_or_default().to_le_bytes()[0..4],
                 );
             }
             PLAYER_COND_EX4 => {
+                player.protection_condition_words[4] =
+                    i64::try_from(&prop.value).ok().map(|word| word as u32);
                 player.conditions[16..20].copy_from_slice(
                     &i64::try_from(&prop.value).unwrap_or_default().to_le_bytes()[0..4],
                 );

@@ -31,6 +31,11 @@ struct PlayerStateSample {
     shield_charging: bool,
     blast_jumping: bool,
     kritz_boosted: bool,
+    invulnerable: Option<bool>,
+    invulnerability_wearing_off: Option<bool>,
+    uber_bullet_resist: Option<bool>,
+    uber_blast_resist: Option<bool>,
+    uber_fire_resist: Option<bool>,
     health: u16,
     max_health: u16,
     life_state: String,
@@ -63,6 +68,11 @@ impl PlayerStateSample {
             shield_charging: player.has_condition(PlayerCondition::ShieldCharge),
             blast_jumping: player.has_condition(PlayerCondition::BlastJumping),
             kritz_boosted: player.has_condition(PlayerCondition::CritBoosted),
+            invulnerable: player.observed_protection_condition(PlayerCondition::Invulnerable),
+            invulnerability_wearing_off: player.observed_protection_condition(PlayerCondition::InvulnerableWearingOff),
+            uber_bullet_resist: player.observed_protection_condition(PlayerCondition::MedigunUberBulletResist),
+            uber_blast_resist: player.observed_protection_condition(PlayerCondition::MedigunUberBlastResist),
+            uber_fire_resist: player.observed_protection_condition(PlayerCondition::MedigunUberFireResist),
             health: player.health,
             max_health: player.max_health,
             life_state: format!("{:?}", player.state).to_ascii_lowercase(),
@@ -586,4 +596,32 @@ fn main() -> Result<(), MainError> {
     );
 
     Ok(())
+}
+
+#[cfg(test)]
+mod protection_export_tests {
+    use super::*;
+
+    #[test]
+    fn unknown_protection_serializes_as_null_without_changing_legacy_fields() {
+        let player = Player::default();
+        let value = serde_json::to_value(PlayerStateSample::from_player(&player)).unwrap();
+        for field in ["invulnerable", "invulnerability_wearing_off", "uber_bullet_resist",
+                      "uber_blast_resist", "uber_fire_resist"] {
+            assert!(value.get(field).unwrap().is_null(), "{field}");
+        }
+        assert_eq!(value["scoped"], false);
+        assert_eq!(value["blast_jumping"], false);
+        assert_eq!(value["kritz_boosted"], false);
+    }
+
+    #[test]
+    fn legacy_reader_can_ignore_optional_fields() {
+        #[derive(serde::Deserialize)]
+        struct LegacyReader { health: u16, scoped: bool }
+        let value = serde_json::to_value(PlayerStateSample::from_player(&Player::default())).unwrap();
+        let legacy: LegacyReader = serde_json::from_value(value).unwrap();
+        assert_eq!(legacy.health, 0);
+        assert!(!legacy.scoped);
+    }
 }

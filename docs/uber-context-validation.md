@@ -67,9 +67,10 @@ In comp at demo tick 19796, the initial target's pre-deployment health was
 had one kill within the observation window. This is useful review context,
 **not a verified life saved**. No playback labels or precision/recall claims.
 
-## Proposal A03-P1 — awaiting owner approval
+## Proposal A03-P1 — approved November 5, 2026
 
-Before adding parser output, obtain approval for this exact narrow change:
+Owner response: “yes do that.” Approval covers this narrow exporter extension,
+not new candidate generation, scoring or UI. Approved scope:
 
 - Add optional player snapshot fields invulnerable,
   invulnerability_wearing_off, uber_bullet_resist, uber_blast_resist,

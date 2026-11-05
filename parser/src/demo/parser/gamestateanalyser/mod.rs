@@ -61,6 +61,9 @@ impl MessageHandler for GameStateAnalyser {
                     self.handle_entity(entity, parser_state);
                 }
                 for id in &message.removed_entities {
+                    if let Some(player) = self.state.players.iter_mut().find(|p| p.entity == *id) {
+                        player.protection_condition_words = [None; 6];
+                    }
                     self.state.projectile_destroy(*id);
                     self.state.remove_building(*id);
                 }
@@ -269,7 +272,14 @@ impl GameStateAnalyser {
             crate::demo::data::UserInfo::parse_from_string_table(index as u16, text, data)?
         {
             let id = user_info.entity_id;
-            self.state.get_or_create_player(id).info = Some(user_info.into());
+            let player = self.state.get_or_create_player(id);
+            if player.info.as_ref().is_none_or(|old| {
+                old.user_id != user_info.player_info.user_id
+                    || old.steam_id != user_info.player_info.steam_id
+            }) {
+                player.protection_condition_words = [None; 6];
+            }
+            player.info = Some(user_info.into());
         }
 
         Ok(())

@@ -121,6 +121,19 @@ class UberContextTests(unittest.TestCase):
         self.assertEqual([r["window_end_reason"] for r in rows],
                          ["next_deployment", "time_limit"])
 
+    def test_optional_protection_fields_and_legacy_exports(self):
+        row, = self.run_probe([self.deploy()], self.base() + [
+            state(3, 102, player(invulnerable=True, uber_blast_resist=False)),
+            state(4, 103, player(invulnerable=True, uber_blast_resist=False)),
+            state(5, 104, player(invulnerable=None, uber_blast_resist=None))])
+        observations = row["protection_observations"]
+        self.assertEqual(len(observations), 2)
+        self.assertTrue(observations[0]["conditions"]["invulnerable"])
+        self.assertIsNone(observations[1]["conditions"]["invulnerable"])
+        legacy, = self.run_probe([self.deploy()], self.base())
+        self.assertEqual(legacy["protection_observations"], [])
+        self.assertEqual(legacy["life_saved"], "unknown")
+
     def test_cli_rejects_invalid_rate(self):
         result = subprocess.run([sys.executable, str(SCRIPT), ".", "--tick-rate", "nan"],
                                 text=True, capture_output=True)
