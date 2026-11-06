@@ -63,6 +63,8 @@ impl MessageHandler for GameStateAnalyser {
                 for id in &message.removed_entities {
                     if let Some(player) = self.state.players.iter_mut().find(|p| p.entity == *id) {
                         player.protection_condition_words = [None; 6];
+                        player.medigun_target_observed = None;
+                        player.damage_blocked_total = None;
                     }
                     self.state.projectile_destroy(*id);
                     self.state.remove_building(*id);
@@ -278,6 +280,8 @@ impl GameStateAnalyser {
                     || old.steam_id != user_info.player_info.steam_id
             }) {
                 player.protection_condition_words = [None; 6];
+                player.medigun_target_observed = None;
+                player.damage_blocked_total = None;
             }
             player.info = Some(user_info.into());
         }

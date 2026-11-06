@@ -94,6 +94,10 @@ pub struct Player {
     // or change the existing condition API/bit layout.
     #[serde(skip)]
     pub(crate) protection_condition_words: [Option<u32>; 6],
+    #[serde(skip)]
+    pub(crate) damage_blocked_total: Option<u32>,
+    #[serde(skip)]
+    pub(crate) medigun_target_observed: Option<Option<EntityId>>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Default, TryFromPrimitive)]
@@ -204,6 +208,22 @@ impl Player {
         }
     }
 
+    /// Current-round scoreboard total. Unknown is not a zero baseline.
+    pub fn observed_damage_blocked_total(&self) -> Option<u32> {
+        self.damage_blocked_total
+    }
+
+    /// None = unknown; Some(None) = explicitly decoded no target.
+    pub fn observed_medigun_target(&self) -> Option<Option<EntityId>> {
+        if self.in_pvs && self.state == PlayerState::Alive
+            && matches!(self.class_data, PlayerClassData::Medic { .. })
+        {
+            self.medigun_target_observed
+        } else {
+            None
+        }
+    }
+
     pub fn conditions(&self) -> impl Iterator<Item = PlayerCondition> + '_ {
         (0..=(PlayerCondition::MAX as u8)).filter_map(|cond_int| {
             let byte = cond_int / 8;
@@ -265,6 +285,32 @@ mod condition_tests {
         player.in_pvs = true;
         player.state = PlayerState::Death;
         assert_eq!(player.observed_protection_condition(PlayerCondition::MedigunUberBlastResist), None);
+    }
+
+    #[test]
+    fn uber_observations_preserve_unknown_and_visibility_semantics() {
+        let mut player = Player::default();
+        assert_eq!(player.observed_damage_blocked_total(),None);
+        player.damage_blocked_total = Some(0);
+        assert_eq!(player.observed_damage_blocked_total(),Some(0));
+        player.medigun_target_observed = Some(Some(6u32.into()));
+        assert_eq!(player.observed_medigun_target(),None);
+        player.in_pvs = true;
+        player.state = PlayerState::Alive;
+        player.class_data = PlayerClassData::default_for_class(Class::Medic);
+        assert_eq!(player.observed_medigun_target(),Some(Some(6u32.into())));
+        player.medigun_target_observed = Some(None);
+        assert_eq!(player.observed_medigun_target(),Some(None));
+        let encoded = serde_json::to_string(&player).unwrap();
+        assert!(!encoded.contains("damage_blocked_total"));
+        assert!(!encoded.contains("medigun_target_observed"));
+        let decoded:Player = serde_json::from_str(&encoded).unwrap();
+        assert_eq!(decoded.observed_damage_blocked_total(),None);
+        assert_eq!(decoded.observed_medigun_target(),None);
+        player.in_pvs = false;
+        assert_eq!(player.observed_medigun_target(),None);
+        // Scoreboard evidence remains global, even out of PVS.
+        assert_eq!(player.observed_damage_blocked_total(),Some(0));
     }
 
     #[test]

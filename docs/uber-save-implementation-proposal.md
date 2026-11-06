@@ -1,7 +1,9 @@
 # A03-P2 — complete Uber-save candidate pipeline
 
-Status: implementation proposal; exporter changes await owner approval.
-A03 is not completed by this proposal. Do not count it as a finished feature.
+Status: approved by owner and implemented on `work/demo-toolkit-roadmap`.
+See [native implementation and measured verification](uber-save-validation.md).
+The original proposal alone did not complete A03; the linked runtime pipeline
+and tests now replace the earlier diagnostic-only status.
 
 ## Requested result
 
@@ -95,7 +97,7 @@ If the available counters still cannot support unambiguous lethal-damage
 attribution, do not claim completion or silently substitute a probable-save
 heuristic. Present the measured limitation and a separate proposal instead.
 
-## Approval requested
+## Approval scope (subsequently approved)
 
 Approve the two additive evidence fields and the supported-evidence candidate
 pipeline above. This does not authorize a UI redesign, a heuristic fallback,

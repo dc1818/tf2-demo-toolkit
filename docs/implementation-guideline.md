@@ -1,7 +1,7 @@
 # Demo Toolkit — Technical Implementation Guideline
 
-**Version:** 1.0 • **Date:** November 4, 2026 • **Owner / product approver:** Dalton Cornwell
-**Status:** Proposed guideline for review. No implementation authorized by creation of this document.
+**Version:** 1.1 • **Updated:** November 6, 2026 • **Owner / product approver:** Dalton Cornwell
+**Status:** Active implementation guideline. Owner authorized work on `work/demo-toolkit-roadmap`; approvals and measured progress are recorded in section 15.
 **Repository:** https://github.com/dc1818/tf2-demo-toolkit
 **Audited baseline:** `568e2434c4aa04367cc6b767f2f0cabf3f7e62aa`
 
@@ -9,7 +9,7 @@
 
 This document defines the work needed to complete the missing and partial features in the preceding source audit. It also tracks unresolved reported defects separately from missing features. It is intended to guide future coding sessions, reviews, regression tests and beta releases without losing existing functionality.
 
-**The current task is documentation only.** Do not change application code, settings, data, UI, repository branches, releases or the user's TF2 installation as part of this document's delivery. Future implementation requires a subsequent instruction to begin. Approval of this document is not blanket approval of all proposed behavior changes or mockups.
+The original document delivery was documentation only. Subsequent owner instructions authorized implementation on a separate branch. This does not authorize merging/pushing to main, unapproved behavior changes, or UI changes. Approval of this guideline remains distinct from approval of individual behavior proposals and mockups; see the current register in section 15.
 
 ### Mandatory preservation rules
 
@@ -80,7 +80,7 @@ Gate codes used below:
 - **U:** UI mockup approval before presentation implementation.
 - **D:** data/output migration proposal and approval where existing persisted behavior changes.
 
-The entire backlog is Planned; no gate is approved by this document. For each ID track owner, baseline SHA, proposal/ADR, approval reference, dependency IDs, branch/PR, fixtures, test results, residual limitations and release version.
+Creation of the original guideline approved no gates. Current implementation approvals and status supersede that initial planning state only where recorded in section 15. For each ID track owner, baseline SHA, proposal/ADR, approval reference, dependency IDs, branch/PR, fixtures, test results, residual limitations and release version.
 
 ## 5. Shared technical foundations
 
@@ -118,8 +118,8 @@ All entries below inherit evidence, versioning, compatibility and scoring rules.
 | --- | --- | --- |
 | A01 High-velocity kills — Missing | Measure attacker speed around the kill, duration and airborne context. Separate speed from inferred rocket-jump/surf cause. | Fast movement positive; ordinary sprint, teleport, respawn and isolated corrupt velocity negatives. Missing movement evidence stays unknown. |
 | A02 Ubersaw charge gain — Missing | Correlate confirmed Ubersaw contacts with charge changes and patient/weapon state. Count nonlethal hits, not only kills. | Hit causing charge increase; miss, capped charge, deployment/drain and ordinary healing charge gain distinguished. |
-| A03 Life-saving Über and outcome — Missing | Correlate activation/recipient protection with incoming threat, survival and later team impact. Distinguish rescue evidence from post-Über kills. | Protected likely-lethal scenario and two-pipe example; routine Über and unrelated later win negatives. Report likely/prevented observed damage only where defensible. |
-| A04 Life-saving crossbow heal — Missing | Associate heal amount/timing, health and subsequent observed damage. Compute a bounded counterfactual health estimate with uncertainty. | Save-like sequence; overheal, another simultaneous healer, missing damage, death despite heal and long delay cases. Never state certain death from speculative future damage. |
+| A03 Life-saving Über and outcome — Implemented; automated checks passed | Correlate activation/recipient protection with incoming threat, survival and later team impact. Distinguish rescue evidence from post-Über kills. | Protected likely-lethal scenario and two-pipe example; routine Über and unrelated later win negatives. Report likely/prevented observed damage only where defensible. |
+| A04 Life-saving crossbow heal — Implemented; automated checks passed | Associate heal amount/timing, health and subsequent observed damage. Compute a bounded counterfactual health estimate with uncertainty. | Save-like sequence; overheal, another simultaneous healer, missing damage, death despite heal and long delay cases. Never state certain death from speculative future damage. |
 | A05 Long-distance airborne/medic arrows — Partial | Distinguish healing bolts from damaging arrows; measure launch-to-impact separation and target movement/class. Combine evidence without duplicate bonuses. | Long/short distance, airborne/grounded, medic/nonmedic, healing/damage and missing projectile cases. |
 | A06 Sticky traps — Missing | Associate owned planted stickies, dwell time, detonation cluster and victims. Evaluate medic picks/player advantage separately. | Stationary trap vs sticky spam, simultaneous unrelated detonations, owner change and no kill. Reliable attribution is prerequisite. |
 | A07 Airblast pit kills — Missing | Correlate credited push/airblast evidence, displacement and environmental death within a bounded window. | Airblast fall positive; ordinary fall, rocket knockback, reflect projectile kill and ambiguous attribution negatives/unknown. |
@@ -299,8 +299,34 @@ No need to answer these all at once. Prepare concrete alternatives and evidence 
 
 Record current branch/HEAD, user approvals, completed IDs, remaining blockers, tests run, files changed and next safe step. Re-read this guideline and the latest approval register after a chat interruption. Never infer that an unapproved proposal became approved during the interruption.
 
-## 15. Initial approval and completion register
+## 15. Current approval and completion register
 
-**All A01–A19, C01–C09, R01–R06 and D01–D08 remain Planned. All V01–V09 remain Investigation.** Initial status is inherited from the code audit, not an implementation promise. There are 42 feature requirements and 9 validation investigations in this version. No application changes, mockups or behavior changes are approved by creation of this document.
+Updated November 6, 2026. Work branch: `work/demo-toolkit-roadmap`;
+[draft PR #62](https://github.com/dc1818/tf2-demo-toolkit/pull/62).
+**Do not merge or push to main until all work is finished and the owner gives explicit permission.**
 
-The first future implementation session should reconcile current source, establish fixtures and present the first concrete change proposals. Keep this document versioned and update requirement status only with linked evidence.
+There are **42 feature requirements and 9 validation investigations**.
+**2/42 feature implementations are now present in the native pipeline (A03/A04),
+with automated checks passed; 0/42 are released from this work branch.**
+Implementation is not the same as owner/native-runtime verification. The other
+40 feature rows retain their audited Missing/Partial states and are not counted
+as newly finished. V01–V09 remain investigations, not nine completed fixes.
+
+| Scope | Approval / current status | Evidence and remaining work |
+| --- | --- | --- |
+| Branch implementation | Owner: “using this documentation get started do all of this work on a seperate branch do not push to main until we are completely done and i give permission.” | Draft PR #62; main untouched. Checkpoints on the work branch are authorized. |
+| A03-P1 shared protection observations | Approved and implemented | [Protection export](protection-export.md): five nullable observations; legacy semantics preserved. This foundation is not an additional completed feature ID. |
+| A04 crossbow saves | Owner: “okay enable it”; implemented in native normal analysis | [Definition](arrow-save-definition.md), [validation](arrow-save-validation.md); real STV positive, synthetic afterburn/projectile/cap/negative cases, existing candidates preserved. Owner playback/live capture verification remains. |
+| A03-P2 Uber saves and follow-ups | Owner approved the proposal and said “yes go ahead” to normal frag/Medic candidate integration; implemented in native normal analysis | [Approved proposal](uber-save-implementation-proposal.md), [implementation/validation](uber-save-validation.md). Two additive counter/target fields, lethal/cumulative bounds, outcome tracking, candidate export/cues, legacy parity and error/unknown handling. 26 A03 tests, real STV positive; no heuristic fallback. Owner playback/live capture verification remains. |
+| A01/A02 | Not counted implemented | Earlier offline prototype artifacts are absent from the recovered checkout. Reconstruct/revalidate those checkpoints before claiming runtime completion. The native parser/analyzer does not yet implement these requested detectors. |
+| Other features and V01–V09 | No new completion claim | Follow the dependency plan and prepare scoped proposals where a B/U/D gate applies. Do not silently implement UI or existing-score changes. |
+
+Latest local verification for A03: 77 actual-source headless module tests,
+16 parser/exporter tests and 18 Python tests passed. Real fixture runs preserved
+all 68 pre-existing candidates (57 STV including A04, 11 POV); the STV run adds
+one independent Uber-save candidate. Full native CI and any live TF2/HLAE checks
+must be recorded separately; these counts are not a claim of GUI/recording tests.
+
+Keep this register current at every feature checkpoint and record release/CI
+results in the per-feature validation document. Do not infer approvals from
+elapsed time or turn an offline prototype into a completion claim.

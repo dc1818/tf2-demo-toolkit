@@ -1,5 +1,7 @@
 #[path = "analyzer/arrow_saves.rs"]
 mod arrow_saves;
+#[path = "analyzer/uber_saves.rs"]
+mod uber_saves;
 
 use crate::{
     models::{Candidate, DemoContext, TickTagGroup},
@@ -280,6 +282,10 @@ fn analyze_export_internal(
         candidate.bookmark_tick.is_some() || candidate.kill_count() != 1 || candidate.overall_score >= 25.0
     });
     arrow_saves::append(
+        export, &events, &rounds, &context, &manifest, &source_demo, &map_name,
+        &mut candidates, cancelled, governor,
+    )?;
+    uber_saves::append(
         export, &events, &rounds, &context, &manifest, &source_demo, &map_name,
         &mut candidates, cancelled, governor,
     )?;

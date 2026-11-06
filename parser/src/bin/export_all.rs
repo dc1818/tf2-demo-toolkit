@@ -43,6 +43,13 @@ struct PlayerStateSample {
     weapon_handles: [i64; 3],
     medic_charge: Option<u8>,
     medigun: Option<String>,
+    damage_blocked_total: Option<u32>,
+    medigun_target: Option<MedigunTargetSample>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+struct MedigunTargetSample {
+    entity_id: Option<u32>,
 }
 
 impl PlayerStateSample {
@@ -84,6 +91,10 @@ impl PlayerStateSample {
             ],
             medic_charge,
             medigun,
+            damage_blocked_total: player.observed_damage_blocked_total(),
+            medigun_target: player.observed_medigun_target().map(|target| MedigunTargetSample {
+                entity_id: target.map(u32::from),
+            }),
         }
     }
 }
@@ -611,6 +622,8 @@ mod protection_export_tests {
                       "uber_blast_resist", "uber_fire_resist"] {
             assert!(value.get(field).unwrap().is_null(), "{field}");
         }
+        assert_eq!(value["damage_blocked_total"], serde_json::Value::Null);
+        assert_eq!(value["medigun_target"], serde_json::Value::Null);
         assert_eq!(value["scoped"], false);
         assert_eq!(value["blast_jumping"], false);
         assert_eq!(value["kritz_boosted"], false);
