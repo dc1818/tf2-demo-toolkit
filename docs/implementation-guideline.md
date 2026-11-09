@@ -1,6 +1,6 @@
 # Demo Toolkit — Technical Implementation Guideline
 
-**Version:** 1.1 • **Updated:** November 6, 2026 • **Owner / product approver:** Dalton Cornwell
+**Version:** 1.2 • **Updated:** November 9, 2026 • **Owner / product approver:** Dalton Cornwell
 **Status:** Active implementation guideline. Owner authorized work on `work/demo-toolkit-roadmap`; approvals and measured progress are recorded in section 15.
 **Repository:** https://github.com/dc1818/tf2-demo-toolkit
 **Audited baseline:** `568e2434c4aa04367cc6b767f2f0cabf3f7e62aa`
@@ -116,8 +116,8 @@ All entries below inherit evidence, versioning, compatibility and scoring rules.
 
 | ID / status | Required implementation | Acceptance evidence and counterexamples |
 | --- | --- | --- |
-| A01 High-velocity kills — Missing | Measure attacker speed around the kill, duration and airborne context. Separate speed from inferred rocket-jump/surf cause. | Fast movement positive; ordinary sprint, teleport, respawn and isolated corrupt velocity negatives. Missing movement evidence stays unknown. |
-| A02 Ubersaw charge gain — Missing | Correlate confirmed Ubersaw contacts with charge changes and patient/weapon state. Count nonlethal hits, not only kills. | Hit causing charge increase; miss, capped charge, deployment/drain and ordinary healing charge gain distinguished. |
+| A01 High-velocity kills — Offline prototype reported; native integration missing | Measure attacker speed around the kill, duration and airborne context. Separate speed from inferred rocket-jump/surf cause. | Fast movement positive; ordinary sprint, teleport, respawn and isolated corrupt velocity negatives. Missing movement evidence stays unknown. |
+| A02 Ubersaw charge gain — Offline prototype reported; native integration missing | Correlate confirmed Ubersaw contacts with charge changes and patient/weapon state. Count nonlethal hits, not only kills. | Hit causing charge increase; miss, capped charge, deployment/drain and ordinary healing charge gain distinguished. |
 | A03 Life-saving Über and outcome — Implemented; automated checks passed | Correlate activation/recipient protection with incoming threat, survival and later team impact. Distinguish rescue evidence from post-Über kills. | Protected likely-lethal scenario and two-pipe example; routine Über and unrelated later win negatives. Report likely/prevented observed damage only where defensible. |
 | A04 Life-saving crossbow heal — Implemented; automated checks passed | Associate heal amount/timing, health and subsequent observed damage. Compute a bounded counterfactual health estimate with uncertainty. | Save-like sequence; overheal, another simultaneous healer, missing damage, death despite heal and long delay cases. Never state certain death from speculative future damage. |
 | A05 Long-distance airborne/medic arrows — Partial | Distinguish healing bolts from damaging arrows; measure launch-to-impact separation and target movement/class. Combine evidence without duplicate bonuses. | Long/short distance, airborne/grounded, medic/nonmedic, healing/damage and missing projectile cases. |
@@ -301,7 +301,7 @@ Record current branch/HEAD, user approvals, completed IDs, remaining blockers, t
 
 ## 15. Current approval and completion register
 
-Updated November 6, 2026. Work branch: `work/demo-toolkit-roadmap`;
+Updated November 9, 2026. Work branch: `work/demo-toolkit-roadmap`;
 [draft PR #62](https://github.com/dc1818/tf2-demo-toolkit/pull/62).
 **Do not merge or push to main until all work is finished and the owner gives explicit permission.**
 
@@ -310,7 +310,9 @@ There are **42 feature requirements and 9 validation investigations**.
 with automated checks passed; 0/42 are released from this work branch.**
 Implementation is not the same as owner/native-runtime verification. The other
 40 feature rows retain their audited Missing/Partial states and are not counted
-as newly finished. V01–V09 remain investigations, not nine completed fixes.
+as newly finished. V02/V03/V04 now have scoped recording-recognition and skip-status
+repairs; their full investigation matrices remain open. V01 and V05–V09 remain
+open investigations. These fixes do not increase the 42-feature completion count.
 
 | Scope | Approval / current status | Evidence and remaining work |
 | --- | --- | --- |
@@ -318,14 +320,20 @@ as newly finished. V01–V09 remain investigations, not nine completed fixes.
 | A03-P1 shared protection observations | Approved and implemented | [Protection export](protection-export.md): five nullable observations; legacy semantics preserved. This foundation is not an additional completed feature ID. |
 | A04 crossbow saves | Owner: “okay enable it”; implemented in native normal analysis | [Definition](arrow-save-definition.md), [validation](arrow-save-validation.md); real STV positive, synthetic afterburn/projectile/cap/negative cases, existing candidates preserved. Owner playback/live capture verification remains. |
 | A03-P2 Uber saves and follow-ups | Owner approved the proposal and said “yes go ahead” to normal frag/Medic candidate integration; implemented in native normal analysis | [Approved proposal](uber-save-implementation-proposal.md), [implementation/validation](uber-save-validation.md). Two additive counter/target fields, lethal/cumulative bounds, outcome tracking, candidate export/cues, legacy parity and error/unknown handling. 26 A03 tests, real STV positive; no heuristic fallback. Owner playback/live capture verification remains. |
-| A01/A02 | Not counted implemented | Earlier offline prototype artifacts are absent from the recovered checkout. Reconstruct/revalidate those checkpoints before claiming runtime completion. The native parser/analyzer does not yet implement these requested detectors. |
-| Other features and V01–V09 | No new completion claim | Follow the dependency plan and prepare scoped proposals where a B/U/D gate applies. Do not silently implement UI or existing-score changes. |
+| A01/A02 | Earlier offline prototypes reported; native integration pending | Prior chat reports credit prototype/testing work; those artifacts are absent from the recovered checkout. Recover or explicitly reconstruct and revalidate before claiming runtime completion. See the [audit](implementation-audit-2026-11-09.md). |
+| V02/V03/V04 reliability | Scoped fixes implemented; automated checks passed; live workflow validation remains open | Owner requested proceeding under the guide. Phase 1 repairs restore correct recording identity, persisted status and Yes/No queue semantics without UI or naming changes. [Defects, preservation contract and regression evidence](recording-status-validation.md): three baseline regression failures reproduced, eight new regressions passed, all 199 Linux workspace tests and 18 Python tests passed. |
+| Other features, V01 and V05–V09 | No new completion claim | Follow the dependency plan and prepare scoped proposals where a B/U/D gate applies. Do not silently implement UI or existing-score changes. |
 
 Latest local verification for A03: 77 actual-source headless module tests,
 16 parser/exporter tests and 18 Python tests passed. Real fixture runs preserved
 all 68 pre-existing candidates (57 STV including A04, 11 POV); the STV run adds
 one independent Uber-save candidate. Full native CI and any live TF2/HLAE checks
 must be recorded separately; these counts are not a claim of GUI/recording tests.
+The A03/A04 head `c83b8e0` subsequently passed native Windows/Linux/macOS checks
+and tests, Linux screenshot generation and the Windows optimized build in
+[CI run 42142900112](https://github.com/dc1818/tf2-demo-toolkit/actions/runs/42142900112).
+That run does not cover later reliability edits; their evidence is tracked in
+[recording status validation](recording-status-validation.md).
 
 Keep this register current at every feature checkpoint and record release/CI
 results in the per-feature validation document. Do not infer approvals from
