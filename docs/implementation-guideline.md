@@ -1,6 +1,6 @@
 # Demo Toolkit — Technical Implementation Guideline
 
-**Version:** 1.2 • **Updated:** November 9, 2026 • **Owner / product approver:** Dalton Cornwell
+**Version:** 1.3 • **Updated:** November 9, 2026 • **Owner / product approver:** Dalton Cornwell
 **Status:** Active implementation guideline. Owner authorized work on `work/demo-toolkit-roadmap`; approvals and measured progress are recorded in section 15.
 **Repository:** https://github.com/dc1818/tf2-demo-toolkit
 **Audited baseline:** `568e2434c4aa04367cc6b767f2f0cabf3f7e62aa`
@@ -311,8 +311,9 @@ with automated checks passed; 0/42 are released from this work branch.**
 Implementation is not the same as owner/native-runtime verification. The other
 40 feature rows retain their audited Missing/Partial states and are not counted
 as newly finished. V02/V03/V04 now have scoped recording-recognition and skip-status
-repairs; their full investigation matrices remain open. V01 and V05–V09 remain
-open investigations. These fixes do not increase the 42-feature completion count.
+repairs; V06 now also checks original recovery sources before modifying either
+profile tree. Their full investigation matrices remain open. V01, V05 and
+V07–V09 remain open investigations. These fixes do not increase the 42-feature completion count.
 
 | Scope | Approval / current status | Evidence and remaining work |
 | --- | --- | --- |
@@ -322,7 +323,8 @@ open investigations. These fixes do not increase the 42-feature completion count
 | A03-P2 Uber saves and follow-ups | Owner approved the proposal and said “yes go ahead” to normal frag/Medic candidate integration; implemented in native normal analysis | [Approved proposal](uber-save-implementation-proposal.md), [implementation/validation](uber-save-validation.md). Two additive counter/target fields, lethal/cumulative bounds, outcome tracking, candidate export/cues, legacy parity and error/unknown handling. 26 A03 tests, real STV positive; no heuristic fallback. Owner playback/live capture verification remains. |
 | A01/A02 | Earlier offline prototypes reported; native integration pending | Prior chat reports credit prototype/testing work; those artifacts are absent from the recovered checkout. Recover or explicitly reconstruct and revalidate before claiming runtime completion. See the [audit](implementation-audit-2026-11-09.md). |
 | V02/V03/V04 reliability | Scoped fixes implemented; automated checks passed; live workflow validation remains open | Owner requested proceeding under the guide. Phase 1 repairs restore correct recording identity, persisted status and Yes/No queue semantics without UI or naming changes. [Defects, preservation contract and regression evidence](recording-status-validation.md): three baseline regression failures reproduced, eight new regressions passed, all 199 Linux workspace tests and 18 Python tests passed. |
-| Other features, V01 and V05–V09 | No new completion claim | Follow the dependency plan and prepare scoped proposals where a B/U/D gate applies. Do not silently implement UI or existing-score changes. |
+| V06 restoration | Scoped original-source checks implemented; automated checks passed; live workflow validation remains open | [Profile restoration validation](profile-restore-validation.md): three baseline regression failures reproduced, six new tests passed, all 205 Linux workspace tests passed. Changed/missing originals and partial-restore edits preserve both current trees and backups on failure. No UI change. |
+| Other features, V01, V05 and V07–V09 | No new completion claim | Follow the dependency plan and prepare scoped proposals where a B/U/D gate applies. Do not silently implement UI or existing-score changes. |
 
 Latest local verification for A03: 77 actual-source headless module tests,
 16 parser/exporter tests and 18 Python tests passed. Real fixture runs preserved
@@ -332,8 +334,13 @@ must be recorded separately; these counts are not a claim of GUI/recording tests
 The A03/A04 head `c83b8e0` subsequently passed native Windows/Linux/macOS checks
 and tests, Linux screenshot generation and the Windows optimized build in
 [CI run 42142900112](https://github.com/dc1818/tf2-demo-toolkit/actions/runs/42142900112).
-That run does not cover later reliability edits; their evidence is tracked in
-[recording status validation](recording-status-validation.md).
+That run does not cover later reliability edits. The `ee9d30e` recording-status
+checkpoint subsequently passed the native check/test jobs on Windows, Linux and
+macOS in [CI run 42586185655](https://github.com/dc1818/tf2-demo-toolkit/actions/runs/42586185655);
+its optimized Windows build was not yet complete at the V06 checkpoint. That CI
+run does not cover the subsequent V06 source checks. See [recording status
+validation](recording-status-validation.md) and [profile restoration
+validation](profile-restore-validation.md) for each checkpoint's evidence.
 
 Keep this register current at every feature checkpoint and record release/CI
 results in the per-feature validation document. Do not infer approvals from

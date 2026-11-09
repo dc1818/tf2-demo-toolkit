@@ -2631,6 +2631,7 @@ fn restore_recording_profile_at(session: &RecordingProfileSession, pointer: &Pat
     if windows_process_state(&session.tf_process_name) != Some(false) {
         bail!("TF2 may still be running; its temporary profile and backups were retained for recovery");
     }
+    verify_profile_restore_sources(session)?;
     let custom = session.game_directory.join("custom");
     let cfg_folder = session.game_directory.join("cfg");
     let cfg_folder_backup = session.backup_directory.join("cfg_original");
@@ -2724,6 +2725,59 @@ fn restore_recording_profile_at(session: &RecordingProfileSession, pointer: &Pat
 fn restore_lock() -> &'static Mutex<()> {
     static RESTORE_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
     RESTORE_LOCK.get_or_init(|| Mutex::new(()))
+}
+
+/// Check every available original before moving either tree. A final checksum
+/// alone detects a damaged backup only after consuming it and replacing the live
+/// folders. Retried restores may have already moved one original into place.
+fn verify_profile_restore_sources(session: &RecordingProfileSession) -> Result<()> {
+    for (folder, backup_name, originally_existed, expected) in [
+        ("cfg", "cfg_original", session.original_cfg_folder_existed, &session.original_cfg_fingerprint),
+        ("custom", "custom_original", session.original_custom_existed, &session.original_custom_fingerprint),
+    ] {
+        // Older recovery records have no whole-tree fingerprint. Keep their
+        // existing individual-file recovery and final verification paths.
+        let Some(expected) = expected else { continue };
+        let current = session.game_directory.join(folder);
+        let backup = session.backup_directory.join(backup_name);
+        let backup_present = match fs::symlink_metadata(&backup) {
+            Ok(_) => true,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => false,
+            Err(error) => return Err(error).context(format!("could not inspect recovery source {}", backup.display())),
+        };
+        if !backup_present && !originally_existed {
+            // No original tree exists to check; the temporary tree is removed
+            // later by the established fresh-install restoration path.
+            continue;
+        }
+        let source = if backup_present { &backup } else { &current };
+        let excluded = session.temporary_paths.iter()
+            .filter_map(|path| path.strip_prefix(&current).ok())
+            .map(|relative| source.join(relative))
+            .collect::<Vec<_>>();
+        let actual = profile_tree_fingerprint(source, &excluded)
+            .with_context(|| format!("could not verify recovery source {}; current files and backups were retained", source.display()))?;
+        if &actual != expected {
+            bail!(
+                "recovery source {} does not match the original file snapshot; current files, backups and the recovery record were retained",
+                source.display()
+            );
+        }
+        if folder == "custom" {
+            // The final verifier also compares these legacy-compatible copies.
+            // Check them now, while the verified original custom tree is intact.
+            for relative in &session.hitsound_files {
+                let hitsound_backup = session.backup_directory.join("hitsounds_original").join(relative);
+                if !files_match(&source.join(relative), &hitsound_backup)? {
+                    bail!(
+                        "hitsound recovery copy {} does not match the original custom tree; current files, backups and the recovery record were retained",
+                        hitsound_backup.display()
+                    );
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 fn track_hlae_launcher(profile: &mut RecordingProfileSession, child: &mut std::process::Child) -> Result<()> {
@@ -6378,6 +6432,139 @@ mod recording_tests {
             assert!(!session.backup_directory.exists());
             fs::remove_dir_all(root).unwrap();
         }
+    }
+
+    #[test]
+    fn restore_preflight_changed_backup_preserves_both_trees_until_repaired() {
+        for relative in ["cfg_original/config.cfg", "custom_original/hitsound/sound/ui/hitsound.wav",
+            "hitsounds_original/hitsound/sound/ui/hitsound.wav"] {
+            let root = recovery_test_root("restore-preflight-changed");
+            let game = root.join("tf");
+            let pointer = root.join("active.json");
+            write_profile_fixture(&game);
+            let session = stage_recording_profile_at(&game, "test", "tf2tk_test_nonexistent.exe",
+                &profile_test_settings(), vec![], &pointer).unwrap();
+            let changed = session.backup_directory.join(relative);
+            let original = fs::read(&changed).unwrap();
+            fs::write(&changed, b"external change or corruption").unwrap();
+            let current_cfg = profile_tree_fingerprint(&game.join("cfg"), &[]).unwrap();
+            let current_custom = profile_tree_fingerprint(&game.join("custom"), &[]).unwrap();
+            let backups = profile_tree_fingerprint(&session.backup_directory, &[]).unwrap();
+
+            assert!(restore_recording_profile_at(&session, &pointer).is_err());
+            assert!(pointer.is_file());
+            assert_eq!(profile_tree_fingerprint(&game.join("cfg"), &[]).unwrap(), current_cfg);
+            assert_eq!(profile_tree_fingerprint(&game.join("custom"), &[]).unwrap(), current_custom);
+            assert_eq!(profile_tree_fingerprint(&session.backup_directory, &[]).unwrap(), backups);
+            assert_eq!(fs::read(&changed).unwrap(), b"external change or corruption");
+
+            // Simulate the user resolving the discrepancy; ordinary recovery can retry.
+            fs::write(&changed, original).unwrap();
+            restore_recording_profile_at(&session, &pointer).unwrap();
+            assert!(!pointer.exists());
+            assert_eq!(fs::read(game.join("cfg/config.cfg")).unwrap(), b"bind q slot2");
+            assert_eq!(fs::read(game.join("custom/hitsound/sound/ui/hitsound.wav")).unwrap(), b"original hitsound");
+            restore_recording_profile_at(&session, &pointer).unwrap();
+            fs::remove_dir_all(root).unwrap();
+        }
+    }
+
+    #[test]
+    fn restore_preflight_missing_backup_does_not_consume_other_originals() {
+        let root = recovery_test_root("restore-preflight-missing");
+        let game = root.join("tf");
+        let pointer = root.join("active.json");
+        write_profile_fixture(&game);
+        let session = stage_recording_profile_at(&game, "test", "tf2tk_test_nonexistent.exe",
+            &profile_test_settings(), vec![], &pointer).unwrap();
+        let cfg_backup = session.backup_directory.join("cfg_original");
+        let retained = root.join("misplaced original cfg");
+        fs::rename(&cfg_backup, &retained).unwrap();
+        let current = profile_tree_fingerprint(&game.join("custom"), &[]).unwrap();
+        assert!(restore_recording_profile_at(&session, &pointer).is_err());
+        assert!(session.backup_directory.join("custom_original").is_dir());
+        assert_eq!(profile_tree_fingerprint(&game.join("custom"), &[]).unwrap(), current);
+        assert!(pointer.is_file());
+        fs::rename(&retained, &cfg_backup).unwrap();
+        restore_recording_profile_at(&session, &pointer).unwrap();
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn restore_preflight_partial_restore_preserves_new_edits_and_remaining_backup() {
+        let root = recovery_test_root("restore-preflight-partial");
+        let game = root.join("tf");
+        let pointer = root.join("active.json");
+        write_profile_fixture(&game);
+        let session = stage_recording_profile_at(&game, "test", "tf2tk_test_nonexistent.exe",
+            &profile_test_settings(), vec![], &pointer).unwrap();
+        restore_original_directory(&game.join("cfg"), &session.backup_directory.join("cfg_original"), true).unwrap();
+        fs::write(game.join("cfg/config.cfg"), b"new user edit after interrupted recovery").unwrap();
+        assert!(restore_recording_profile_at(&session, &pointer).is_err());
+        assert!(session.backup_directory.join("custom_original").is_dir());
+        assert!(pointer.is_file());
+        assert_eq!(fs::read(game.join("cfg/config.cfg")).unwrap(), b"new user edit after interrupted recovery");
+        fs::write(game.join("cfg/config.cfg"), b"bind q slot2").unwrap();
+        restore_recording_profile_at(&session, &pointer).unwrap();
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn restore_preflight_accepts_valid_partial_restoration_in_either_order() {
+        for (folder, backup) in [("cfg", "cfg_original"), ("custom", "custom_original")] {
+            let root = recovery_test_root("restore-preflight-valid-partial");
+            let game = root.join("tf");
+            let pointer = root.join("active.json");
+            write_profile_fixture(&game);
+            let cfg_hash = profile_tree_fingerprint(&game.join("cfg"), &[]).unwrap();
+            let custom_hash = profile_tree_fingerprint(&game.join("custom"), &[]).unwrap();
+            let session = stage_recording_profile_at(&game, "test", "tf2tk_test_nonexistent.exe",
+                &profile_test_settings(), vec![], &pointer).unwrap();
+            restore_original_directory(&game.join(folder), &session.backup_directory.join(backup), true).unwrap();
+            restore_recording_profile_at(&session, &pointer).unwrap();
+            assert_eq!(profile_tree_fingerprint(&game.join("cfg"), &[]).unwrap(), cfg_hash);
+            assert_eq!(profile_tree_fingerprint(&game.join("custom"), &[]).unwrap(), custom_hash);
+            assert!(!pointer.exists());
+            fs::remove_dir_all(root).unwrap();
+        }
+    }
+
+    #[test]
+    fn restore_preflight_maps_temporary_exclusions_into_backup_tree() {
+        let root = recovery_test_root("restore-preflight-exclusions");
+        let game = root.join("tf");
+        let pointer = root.join("active.json");
+        write_profile_fixture(&game);
+        let temporary = game.join("cfg/tf2_demo_toolkit_batch/test");
+        fs::create_dir_all(&temporary).unwrap();
+        fs::write(temporary.join("start.cfg"), b"generated setup").unwrap();
+        let session = stage_recording_profile_at(&game, "test", "tf2tk_test_nonexistent.exe",
+            &profile_test_settings(), vec![temporary.clone()], &pointer).unwrap();
+        fs::write(session.backup_directory.join("cfg_original/tf2_demo_toolkit_batch/test/start.cfg"),
+            b"different generated content").unwrap();
+        restore_recording_profile_at(&session, &pointer).unwrap();
+        assert_eq!(fs::read(game.join("cfg/config.cfg")).unwrap(), b"bind q slot2");
+        assert!(!temporary.exists());
+        assert!(!pointer.exists());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn restore_preflight_preserves_legacy_recovery_without_fingerprints() {
+        let root = recovery_test_root("restore-preflight-legacy");
+        let game = root.join("tf");
+        let pointer = root.join("active.json");
+        write_profile_fixture(&game);
+        let mut session = stage_recording_profile_at(&game, "test", "tf2tk_test_nonexistent.exe",
+            &profile_test_settings(), vec![], &pointer).unwrap();
+        session.original_cfg_fingerprint = None;
+        session.original_custom_fingerprint = None;
+        write_active_profile(&session, &pointer).unwrap();
+        restore_recording_profile_at(&session, &pointer).unwrap();
+        assert_eq!(fs::read(game.join("cfg/config.cfg")).unwrap(), b"bind q slot2");
+        assert_eq!(fs::read(game.join("custom/hitsound/sound/ui/hitsound.wav")).unwrap(), b"original hitsound");
+        assert!(!pointer.exists());
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
