@@ -1905,6 +1905,7 @@ fn bind_batch_callbacks(ui: &AppWindow, state: &Arc<Mutex<State>>) {
                                 ui.set_has_export(true);
                                 ui.set_selected_page(1);
                                 guide_ui::results_loaded(&ui, &state);
+                                reconcile_recorded_outputs(ui.as_weak(), state.clone(), root);
                             }
                         });
                     }
@@ -2399,11 +2400,16 @@ fn bind_candidate_callbacks(ui: &AppWindow, state: &Arc<Mutex<State>>) {
             ui.set_status_text("Wait for the active recording or output-recovery process to finish before starting another batch".into());
             return;
         }
-        let (mut selected, mut settings, recorded_count) = {
-            let state = state_for_record.lock();
-            let recorded_count = state.selected.iter().zip(&state.recorded).filter(|(selected, recorded)| **selected && **recorded).count();
-            (selected_candidates(&state).into_iter().cloned().collect::<Vec<_>>(), state.settings.clone(), recorded_count)
+        let (selection, mut settings) = {
+            let mut state = state_for_record.lock();
+            let selection = state.recording_index.selection_snapshot(&state.candidates, &state.selected);
+            state.recorded = selection.recorded.clone();
+            (selection, state.settings.clone())
         };
+        let recorded_count = selection.recorded_count();
+        let mut selected = selection.candidates(false);
+        // The visible REC flags and the prompt must use the same refreshed snapshot.
+        refresh_candidates(&ui, &state_for_record, &ui.get_filter_text(), ui.get_minimum_score());
         let mut replace_existing = false;
         sync_settings_from_ui(&ui, &mut settings);
         if !settings.tf2_executable.is_file() {
@@ -2440,10 +2446,7 @@ fn bind_candidate_callbacks(ui: &AppWindow, state: &Arc<Mutex<State>>) {
                     replace_existing = true;
                 }
                 rfd::MessageDialogResult::No => {
-                    let state = state_for_record.lock();
-                    selected = state.candidates.iter().zip(&state.selected).zip(&state.recorded)
-                        .filter_map(|((candidate, selected), recorded)| (*selected && !*recorded).then(|| candidate.clone()))
-                        .collect();
+                    selected = selection.candidates(true);
                 }
                 _ => {
                     ui.set_status_text("Recording cancelled".into());
@@ -2876,7 +2879,8 @@ fn reconcile_recorded_outputs(
             let Some(ui) = weak.upgrade() else { return };
             {
                 let mut current = state.lock();
-                if current.export_root.as_ref() != Some(&export_root) {
+                if current.export_root.as_ref() != Some(&export_root)
+                    || current.settings.recording_output_directory != output_root {
                     return;
                 }
                 current

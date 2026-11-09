@@ -1075,6 +1075,27 @@ pub struct RecordingIndex {
     entries: HashMap<String, RecordingEntry>,
 }
 
+/// One immutable view for the table, prompt count, and Yes/No batch selection.
+/// Recheck indexed artifacts when the action starts: cached UI flags can outlive
+/// a video that the user deleted or moved outside the application.
+pub struct RecordingSelection {
+    pub recorded: Vec<bool>,
+    selected: Vec<(Candidate, bool)>,
+}
+
+impl RecordingSelection {
+    pub fn recorded_count(&self) -> usize {
+        self.selected.iter().filter(|(_, recorded)| *recorded).count()
+    }
+
+    pub fn candidates(&self, skip_recorded: bool) -> Vec<Candidate> {
+        self.selected.iter()
+            .filter(|(_, recorded)| !skip_recorded || !*recorded)
+            .map(|(candidate, _)| candidate.clone())
+            .collect()
+    }
+}
+
 impl RecordingIndex {
     pub fn empty() -> Self {
         Self {
@@ -1114,11 +1135,22 @@ impl RecordingIndex {
     /// walking it once for every candidate made large exported batches appear to freeze.
     /// A single background reconciliation pass handles outputs that have not yet been indexed.
     pub fn is_recorded_indexed(&self, candidate: &Candidate) -> bool {
-        recording_keys(candidate).into_iter().flatten().any(|key| {
+        let keys = recording_keys(candidate);
+        let expected_token = keys[0].as_deref().map(recording_key_token);
+        keys.iter().flatten().any(|key| {
             self.entries
-                .get(&key)
-                .is_some_and(|entry| output_still_exists(&entry.output_path))
+                .get(key)
+                .is_some_and(|entry| indexed_output_matches(entry, expected_token))
         })
+    }
+
+    pub fn selection_snapshot(&self, candidates: &[Candidate], selected: &[bool]) -> RecordingSelection {
+        let recorded: Vec<_> = candidates.iter().map(|candidate| self.is_recorded_indexed(candidate)).collect();
+        let selected = candidates.iter().enumerate()
+            .filter(|(index, _)| selected.get(*index).copied().unwrap_or(false))
+            .map(|(index, candidate)| (candidate.clone(), recorded[index]))
+            .collect();
+        RecordingSelection { recorded, selected }
     }
 
     /// Existing helper-owned outputs for a candidate. Used only for an
@@ -1126,9 +1158,11 @@ impl RecordingIndex {
     /// has finalized and been indexed successfully.
     fn existing_outputs(&self, candidate: &Candidate) -> Vec<PathBuf> {
         let mut outputs = HashSet::new();
-        for key in recording_keys(candidate).into_iter().flatten() {
-            if let Some(entry) = self.entries.get(&key) {
-                if output_still_exists(&entry.output_path) {
+        let keys = recording_keys(candidate);
+        let expected_token = keys[0].as_deref().map(recording_key_token);
+        for key in keys.iter().flatten() {
+            if let Some(entry) = self.entries.get(key) {
+                if indexed_output_matches(entry, expected_token) {
                     outputs.insert(entry.output_path.clone());
                 }
             }
@@ -1158,8 +1192,11 @@ impl RecordingIndex {
             let old_ticks = format!("t{}-{}", candidate.clip_start_tick, candidate.clip_end_tick);
             if let Some(output) = outputs.iter().find(|path| {
                 let name = recording_output_name(path);
-                name.contains(&format!("__k{token}"))
-                    || (name.contains(&candidate_id) && name.contains(&old_ticks))
+                // Explicit content identity outranks the legacy name/tick fallback.
+                // Otherwise identical candidate IDs in two demos claim each other's clips.
+                recording_token_matches(&name, token).unwrap_or_else(|| {
+                    name.contains(&candidate_id) && name.contains(&old_ticks)
+                })
             }) {
                 if self.register(candidate, output.clone()).is_ok() {
                     added += 1;
@@ -1189,8 +1226,7 @@ impl RecordingIndex {
         for (key, path) in relocated {
             if let Some(mut entry) = self.entries.get(&key).cloned() {
                 entry.output_path = path;
-                self.entries.insert(key, entry.clone());
-                let _ = self.append(entry);
+                let _ = self.store_entry(entry);
             }
         }
         added
@@ -1198,11 +1234,12 @@ impl RecordingIndex {
 
     pub fn merge_missing_entries(&mut self, other: &RecordingIndex) {
         for (key, entry) in &other.entries {
+            let token = Some(recording_key_token(key));
             let current_exists = self
                 .entries
                 .get(key)
-                .is_some_and(|current| output_still_exists(&current.output_path));
-            if !current_exists && output_still_exists(&entry.output_path) {
+                .is_some_and(|current| indexed_output_matches(current, token));
+            if !current_exists && indexed_output_matches(entry, token) {
                 self.entries.insert(key.clone(), entry.clone());
             }
         }
@@ -1256,9 +1293,10 @@ impl RecordingIndex {
     }
 
     fn store_entry(&mut self, entry: RecordingEntry) -> Result<()> {
+        self.append(entry.clone())?;
         let key = entry.recording_key.clone();
-        self.entries.insert(key, entry.clone());
-        self.append(entry)
+        self.entries.insert(key, entry);
+        Ok(())
     }
 
     fn append(&self, entry: RecordingEntry) -> Result<()> {
@@ -2593,6 +2631,7 @@ fn restore_recording_profile_at(session: &RecordingProfileSession, pointer: &Pat
     if windows_process_state(&session.tf_process_name) != Some(false) {
         bail!("TF2 may still be running; its temporary profile and backups were retained for recovery");
     }
+    verify_profile_restore_sources(session)?;
     let custom = session.game_directory.join("custom");
     let cfg_folder = session.game_directory.join("cfg");
     let cfg_folder_backup = session.backup_directory.join("cfg_original");
@@ -2686,6 +2725,59 @@ fn restore_recording_profile_at(session: &RecordingProfileSession, pointer: &Pat
 fn restore_lock() -> &'static Mutex<()> {
     static RESTORE_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
     RESTORE_LOCK.get_or_init(|| Mutex::new(()))
+}
+
+/// Check every available original before moving either tree. A final checksum
+/// alone detects a damaged backup only after consuming it and replacing the live
+/// folders. Retried restores may have already moved one original into place.
+fn verify_profile_restore_sources(session: &RecordingProfileSession) -> Result<()> {
+    for (folder, backup_name, originally_existed, expected) in [
+        ("cfg", "cfg_original", session.original_cfg_folder_existed, &session.original_cfg_fingerprint),
+        ("custom", "custom_original", session.original_custom_existed, &session.original_custom_fingerprint),
+    ] {
+        // Older recovery records have no whole-tree fingerprint. Keep their
+        // existing individual-file recovery and final verification paths.
+        let Some(expected) = expected else { continue };
+        let current = session.game_directory.join(folder);
+        let backup = session.backup_directory.join(backup_name);
+        let backup_present = match fs::symlink_metadata(&backup) {
+            Ok(_) => true,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => false,
+            Err(error) => return Err(error).context(format!("could not inspect recovery source {}", backup.display())),
+        };
+        if !backup_present && !originally_existed {
+            // No original tree exists to check; the temporary tree is removed
+            // later by the established fresh-install restoration path.
+            continue;
+        }
+        let source = if backup_present { &backup } else { &current };
+        let excluded = session.temporary_paths.iter()
+            .filter_map(|path| path.strip_prefix(&current).ok())
+            .map(|relative| source.join(relative))
+            .collect::<Vec<_>>();
+        let actual = profile_tree_fingerprint(source, &excluded)
+            .with_context(|| format!("could not verify recovery source {}; current files and backups were retained", source.display()))?;
+        if &actual != expected {
+            bail!(
+                "recovery source {} does not match the original file snapshot; current files, backups and the recovery record were retained",
+                source.display()
+            );
+        }
+        if folder == "custom" {
+            // The final verifier also compares these legacy-compatible copies.
+            // Check them now, while the verified original custom tree is intact.
+            for relative in &session.hitsound_files {
+                let hitsound_backup = session.backup_directory.join("hitsounds_original").join(relative);
+                if !files_match(&source.join(relative), &hitsound_backup)? {
+                    bail!(
+                        "hitsound recovery copy {} does not match the original custom tree; current files, backups and the recovery record were retained",
+                        hitsound_backup.display()
+                    );
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 fn track_hlae_launcher(profile: &mut RecordingProfileSession, child: &mut std::process::Child) -> Result<()> {
@@ -5712,6 +5804,29 @@ fn recording_output_name(path: &Path) -> String {
         .to_ascii_lowercase()
 }
 
+/// None denotes a legacy/renamed name without a generated identity field.
+/// A recognized but foreign/malformed field is Some(false), never a legacy fallback.
+fn recording_token_matches(name: &str, expected: &str) -> Option<bool> {
+    let (_, field) = name.rsplit_once("__k")?;
+    let token = field.get(..24)?;
+    if !token.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return None;
+    }
+    let suffix = &field[24..];
+    let suffix = suffix.split_once('.').map_or(suffix, |(stem, _)| stem);
+    let valid_suffix = suffix.is_empty() || suffix.strip_prefix('_').is_some_and(|number| {
+        !number.is_empty() && number.bytes().all(|byte| byte.is_ascii_digit())
+            && number.parse::<usize>().is_ok_and(|number| number >= 2)
+    });
+    Some(token.eq_ignore_ascii_case(expected) && valid_suffix)
+}
+
+fn indexed_output_matches(entry: &RecordingEntry, expected_token: Option<&str>) -> bool {
+    output_still_exists(&entry.output_path) && expected_token.is_none_or(|token| {
+        recording_token_matches(&recording_output_name(&entry.output_path), token).unwrap_or(true)
+    })
+}
+
 fn final_recording_outputs(root: &Path) -> Vec<PathBuf> {
     let mut outputs = Vec::new();
     let videos = root.join("Videos");
@@ -6320,6 +6435,139 @@ mod recording_tests {
     }
 
     #[test]
+    fn restore_preflight_changed_backup_preserves_both_trees_until_repaired() {
+        for relative in ["cfg_original/config.cfg", "custom_original/hitsound/sound/ui/hitsound.wav",
+            "hitsounds_original/hitsound/sound/ui/hitsound.wav"] {
+            let root = recovery_test_root("restore-preflight-changed");
+            let game = root.join("tf");
+            let pointer = root.join("active.json");
+            write_profile_fixture(&game);
+            let session = stage_recording_profile_at(&game, "test", "tf2tk_test_nonexistent.exe",
+                &profile_test_settings(), vec![], &pointer).unwrap();
+            let changed = session.backup_directory.join(relative);
+            let original = fs::read(&changed).unwrap();
+            fs::write(&changed, b"external change or corruption").unwrap();
+            let current_cfg = profile_tree_fingerprint(&game.join("cfg"), &[]).unwrap();
+            let current_custom = profile_tree_fingerprint(&game.join("custom"), &[]).unwrap();
+            let backups = profile_tree_fingerprint(&session.backup_directory, &[]).unwrap();
+
+            assert!(restore_recording_profile_at(&session, &pointer).is_err());
+            assert!(pointer.is_file());
+            assert_eq!(profile_tree_fingerprint(&game.join("cfg"), &[]).unwrap(), current_cfg);
+            assert_eq!(profile_tree_fingerprint(&game.join("custom"), &[]).unwrap(), current_custom);
+            assert_eq!(profile_tree_fingerprint(&session.backup_directory, &[]).unwrap(), backups);
+            assert_eq!(fs::read(&changed).unwrap(), b"external change or corruption");
+
+            // Simulate the user resolving the discrepancy; ordinary recovery can retry.
+            fs::write(&changed, original).unwrap();
+            restore_recording_profile_at(&session, &pointer).unwrap();
+            assert!(!pointer.exists());
+            assert_eq!(fs::read(game.join("cfg/config.cfg")).unwrap(), b"bind q slot2");
+            assert_eq!(fs::read(game.join("custom/hitsound/sound/ui/hitsound.wav")).unwrap(), b"original hitsound");
+            restore_recording_profile_at(&session, &pointer).unwrap();
+            fs::remove_dir_all(root).unwrap();
+        }
+    }
+
+    #[test]
+    fn restore_preflight_missing_backup_does_not_consume_other_originals() {
+        let root = recovery_test_root("restore-preflight-missing");
+        let game = root.join("tf");
+        let pointer = root.join("active.json");
+        write_profile_fixture(&game);
+        let session = stage_recording_profile_at(&game, "test", "tf2tk_test_nonexistent.exe",
+            &profile_test_settings(), vec![], &pointer).unwrap();
+        let cfg_backup = session.backup_directory.join("cfg_original");
+        let retained = root.join("misplaced original cfg");
+        fs::rename(&cfg_backup, &retained).unwrap();
+        let current = profile_tree_fingerprint(&game.join("custom"), &[]).unwrap();
+        assert!(restore_recording_profile_at(&session, &pointer).is_err());
+        assert!(session.backup_directory.join("custom_original").is_dir());
+        assert_eq!(profile_tree_fingerprint(&game.join("custom"), &[]).unwrap(), current);
+        assert!(pointer.is_file());
+        fs::rename(&retained, &cfg_backup).unwrap();
+        restore_recording_profile_at(&session, &pointer).unwrap();
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn restore_preflight_partial_restore_preserves_new_edits_and_remaining_backup() {
+        let root = recovery_test_root("restore-preflight-partial");
+        let game = root.join("tf");
+        let pointer = root.join("active.json");
+        write_profile_fixture(&game);
+        let session = stage_recording_profile_at(&game, "test", "tf2tk_test_nonexistent.exe",
+            &profile_test_settings(), vec![], &pointer).unwrap();
+        restore_original_directory(&game.join("cfg"), &session.backup_directory.join("cfg_original"), true).unwrap();
+        fs::write(game.join("cfg/config.cfg"), b"new user edit after interrupted recovery").unwrap();
+        assert!(restore_recording_profile_at(&session, &pointer).is_err());
+        assert!(session.backup_directory.join("custom_original").is_dir());
+        assert!(pointer.is_file());
+        assert_eq!(fs::read(game.join("cfg/config.cfg")).unwrap(), b"new user edit after interrupted recovery");
+        fs::write(game.join("cfg/config.cfg"), b"bind q slot2").unwrap();
+        restore_recording_profile_at(&session, &pointer).unwrap();
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn restore_preflight_accepts_valid_partial_restoration_in_either_order() {
+        for (folder, backup) in [("cfg", "cfg_original"), ("custom", "custom_original")] {
+            let root = recovery_test_root("restore-preflight-valid-partial");
+            let game = root.join("tf");
+            let pointer = root.join("active.json");
+            write_profile_fixture(&game);
+            let cfg_hash = profile_tree_fingerprint(&game.join("cfg"), &[]).unwrap();
+            let custom_hash = profile_tree_fingerprint(&game.join("custom"), &[]).unwrap();
+            let session = stage_recording_profile_at(&game, "test", "tf2tk_test_nonexistent.exe",
+                &profile_test_settings(), vec![], &pointer).unwrap();
+            restore_original_directory(&game.join(folder), &session.backup_directory.join(backup), true).unwrap();
+            restore_recording_profile_at(&session, &pointer).unwrap();
+            assert_eq!(profile_tree_fingerprint(&game.join("cfg"), &[]).unwrap(), cfg_hash);
+            assert_eq!(profile_tree_fingerprint(&game.join("custom"), &[]).unwrap(), custom_hash);
+            assert!(!pointer.exists());
+            fs::remove_dir_all(root).unwrap();
+        }
+    }
+
+    #[test]
+    fn restore_preflight_maps_temporary_exclusions_into_backup_tree() {
+        let root = recovery_test_root("restore-preflight-exclusions");
+        let game = root.join("tf");
+        let pointer = root.join("active.json");
+        write_profile_fixture(&game);
+        let temporary = game.join("cfg/tf2_demo_toolkit_batch/test");
+        fs::create_dir_all(&temporary).unwrap();
+        fs::write(temporary.join("start.cfg"), b"generated setup").unwrap();
+        let session = stage_recording_profile_at(&game, "test", "tf2tk_test_nonexistent.exe",
+            &profile_test_settings(), vec![temporary.clone()], &pointer).unwrap();
+        fs::write(session.backup_directory.join("cfg_original/tf2_demo_toolkit_batch/test/start.cfg"),
+            b"different generated content").unwrap();
+        restore_recording_profile_at(&session, &pointer).unwrap();
+        assert_eq!(fs::read(game.join("cfg/config.cfg")).unwrap(), b"bind q slot2");
+        assert!(!temporary.exists());
+        assert!(!pointer.exists());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn restore_preflight_preserves_legacy_recovery_without_fingerprints() {
+        let root = recovery_test_root("restore-preflight-legacy");
+        let game = root.join("tf");
+        let pointer = root.join("active.json");
+        write_profile_fixture(&game);
+        let mut session = stage_recording_profile_at(&game, "test", "tf2tk_test_nonexistent.exe",
+            &profile_test_settings(), vec![], &pointer).unwrap();
+        session.original_cfg_fingerprint = None;
+        session.original_custom_fingerprint = None;
+        write_active_profile(&session, &pointer).unwrap();
+        restore_recording_profile_at(&session, &pointer).unwrap();
+        assert_eq!(fs::read(game.join("cfg/config.cfg")).unwrap(), b"bind q slot2");
+        assert_eq!(fs::read(game.join("custom/hitsound/sound/ui/hitsound.wav")).unwrap(), b"original hitsound");
+        assert!(!pointer.exists());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn restore_retry_keeps_already_restored_folders_and_verifies_their_contents() {
         let root = recovery_test_root("restore-retry");
         let game = root.join("tf");
@@ -6513,6 +6761,214 @@ mod recording_tests {
 
         assert_eq!(final_recording_outputs(&root), vec![video]);
         fs::remove_dir_all(root).expect("remove categorized output root");
+    }
+
+    fn reliability_candidate(root: &Path, demo_name: &str, bytes: &[u8]) -> Candidate {
+        let demo = root.join(demo_name);
+        fs::write(&demo, bytes).unwrap();
+        Candidate {
+            source_demo: demo.to_string_lossy().into_owned(),
+            candidate_id: "same-candidate".into(),
+            attacker_user_id: 7,
+            clip_start_tick: 100,
+            clip_end_tick: 200,
+            point_of_kill_ticks: vec![120, 180],
+            ..Candidate::default()
+        }
+    }
+
+    fn reliability_index(root: &Path) -> RecordingIndex {
+        RecordingIndex::load_from_path(&root.join("index.ndjson"), 1_000_000, 100)
+    }
+
+    fn reliability_video(root: &Path, name: &str) -> PathBuf {
+        let path = root.join("Videos").join("Multi Kill").join(name);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, b"fixture media bytes, not playable video").unwrap();
+        path
+    }
+
+    #[test]
+    fn reliability_foreign_recording_token_cannot_fall_back_to_matching_ticks() {
+        let root = recovery_test_root("foreign-recording-token");
+        let a = reliability_candidate(&root, "a.dem", b"demo A");
+        let b = reliability_candidate(&root, "b.dem", b"demo B");
+        let key = recording_key(&a).unwrap();
+        let video = reliability_video(&root, &format!(
+            "a__same-candidate__t100-200__k{}.mp4", recording_key_token(&key)
+        ));
+        let mut index = reliability_index(&root);
+        assert_eq!(index.reconcile_output_root(&[b.clone()], &root), 0);
+        assert!(!index.is_recorded_indexed(&b));
+        assert_eq!(index.reconcile_output_root(&[a.clone()], &root), 1);
+        assert!(index.is_recorded_indexed(&a));
+        assert!(video.is_file());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn reliability_recording_token_requires_an_exact_field() {
+        let root = recovery_test_root("recording-token-boundary");
+        let candidate = reliability_candidate(&root, "demo.dem", b"demo");
+        let key = recording_key(&candidate).unwrap();
+        for suffix in ["f", "-other", "_invalid"] {
+            let path = reliability_video(&root, &format!(
+                "demo__same-candidate__t100-200__k{}{suffix}.mp4", recording_key_token(&key)
+            ));
+            let mut index = reliability_index(&root);
+            assert_eq!(index.reconcile_output_root(&[candidate.clone()], &root), 0, "{suffix}");
+            fs::remove_file(path).unwrap();
+        }
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn reliability_legacy_and_suffixed_outputs_remain_discoverable() {
+        for name_kind in ["legacy", "modern", "suffix", "frames"] {
+            let root = recovery_test_root(name_kind);
+            let candidate = reliability_candidate(&root, "demo.dem", b"demo");
+            let key = recording_key(&candidate).unwrap();
+            let base = format!("demo__same-candidate__t100-200__k{}", recording_key_token(&key));
+            if name_kind == "frames" {
+                let frames = root.join("Image Sequences").join(&base).join("Frames");
+                fs::create_dir_all(&frames).unwrap();
+                fs::write(frames.join("00001.tga"), b"frame fixture").unwrap();
+            } else {
+                let name = match name_kind {
+                    "legacy" => "001_same-candidate_t100-200.mp4".into(),
+                    "suffix" => format!("{base}_2.mp4"),
+                    _ => format!("{base}.mp4"),
+                };
+                reliability_video(&root, &name);
+            }
+            let mut index = reliability_index(&root);
+            assert_eq!(index.reconcile_output_root(&[candidate.clone()], &root), 1, "{name_kind}");
+            assert_eq!(index.reconcile_output_root(&[candidate.clone()], &root), 0);
+            assert!(reliability_index(&root).is_recorded_indexed(&candidate));
+            fs::remove_dir_all(root).unwrap();
+        }
+    }
+
+    #[test]
+    fn reliability_failed_index_write_does_not_publish_recorded_status() {
+        let root = recovery_test_root("failed-index-write");
+        let candidate = reliability_candidate(&root, "demo.dem", b"demo");
+        let video = reliability_video(&root, "video.mp4");
+        let mut index = reliability_index(&root);
+        // A directory at the index filename fails portably, even when tests run as root.
+        fs::create_dir(&index.path).unwrap();
+        assert!(index.register(&candidate, video.clone()).is_err());
+        assert!(!index.is_recorded_indexed(&candidate));
+        assert!(video.is_file());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn reliability_old_false_match_is_not_recorded_or_a_replacement_target() {
+        let root = recovery_test_root("old-false-match");
+        let a = reliability_candidate(&root, "a.dem", b"demo A");
+        let b = reliability_candidate(&root, "b.dem", b"demo B");
+        let key = recording_key(&a).unwrap();
+        let video = reliability_video(&root, &format!(
+            "a__same-candidate__t100-200__k{}.mp4", recording_key_token(&key)
+        ));
+        let mut index = reliability_index(&root);
+        // Reproduce an index persisted by the old name/tick fallback.
+        index.register(&b, video.clone()).unwrap();
+        let reloaded = reliability_index(&root);
+        assert!(!reloaded.is_recorded_indexed(&b));
+        assert!(reloaded.existing_outputs(&b).is_empty());
+        assert!(video.exists());
+        // Repair by discovering the correctly attributed output, without deleting data.
+        assert_eq!(index.reconcile_output_root(&[a.clone(), b.clone()], &root), 1);
+        assert!(index.is_recorded_indexed(&a));
+        assert!(!index.is_recorded_indexed(&b));
+        let b_key = recording_key(&b).unwrap();
+        reliability_video(&root, &format!(
+            "b__same-candidate__t100-200__k{}.mp4", recording_key_token(&b_key)
+        ));
+        assert_eq!(index.reconcile_output_root(&[b.clone()], &root), 1);
+        let mut stale_ui_index = reloaded;
+        stale_ui_index.merge_missing_entries(&index);
+        assert!(stale_ui_index.is_recorded_indexed(&b));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn reliability_selection_refreshes_deleted_outputs_and_preserves_choices() {
+        let root = recovery_test_root("selection-refresh");
+        let mut candidates = Vec::new();
+        let mut index = reliability_index(&root);
+        let mut videos = Vec::new();
+        for (number, bytes) in [b"first".as_slice(), b"second", b"third"].iter().enumerate() {
+            let mut candidate = reliability_candidate(&root, &format!("{number}.dem"), bytes);
+            candidate.candidate_id = format!("candidate-{number}");
+            let video = reliability_video(&root, &format!("{number}.mp4"));
+            index.register(&candidate, video.clone()).unwrap();
+            videos.push(video);
+            candidates.push(candidate);
+        }
+        let selected = vec![true, true, false];
+        let all_recorded = index.selection_snapshot(&candidates, &selected);
+        assert_eq!(all_recorded.recorded_count(), 2);
+        assert!(all_recorded.candidates(true).is_empty());
+        assert_eq!(all_recorded.candidates(false).len(), 2);
+
+        fs::remove_file(&videos[0]).unwrap();
+        let mixed = index.selection_snapshot(&candidates, &selected);
+        assert_eq!(mixed.recorded, vec![false, true, true]);
+        assert_eq!(mixed.recorded_count(), 1);
+        assert_eq!(mixed.candidates(true)[0].candidate_id, "candidate-0");
+        assert_eq!(mixed.candidates(false).len(), 2);
+        // No/Yes/Cancel decisions do not change the underlying user's selection.
+        assert_eq!(selected, vec![true, true, false]);
+        assert_eq!(mixed.candidates(true).len(), 1);
+        assert!(index.selection_snapshot(&candidates, &[]).candidates(false).is_empty());
+
+        // Empty artifacts are not recorded, just like absent artifacts.
+        fs::write(&videos[1], b"").unwrap();
+        let none_recorded = index.selection_snapshot(&candidates, &selected);
+        assert_eq!(none_recorded.recorded_count(), 0);
+        assert_eq!(none_recorded.candidates(true).len(), 2);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn reliability_copied_demo_and_renamed_media_keep_their_recording() {
+        let root = recovery_test_root("relocated-output");
+        let candidate = reliability_candidate(&root, "original.dem", b"portable demo content");
+        let old_output = reliability_video(&root, "original.mp4");
+        let mut index = reliability_index(&root);
+        index.register(&candidate, old_output.clone()).unwrap();
+        let copy = reliability_candidate(&root, "copied.dem", b"portable demo content");
+        assert!(index.is_recorded_indexed(&copy));
+
+        let alternate = root.join("other output root");
+        let renamed = alternate.join("Videos").join("My renamed clip.mp4");
+        fs::create_dir_all(renamed.parent().unwrap()).unwrap();
+        fs::rename(&old_output, &renamed).unwrap();
+        assert!(!index.is_recorded_indexed(&copy));
+        index.reconcile_output_root(&[copy.clone()], &alternate);
+        assert!(index.is_recorded_indexed(&copy));
+        assert!(reliability_index(&root).is_recorded_indexed(&candidate));
+        assert_eq!(index.existing_outputs(&copy), vec![renamed]);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn reliability_legacy_index_keys_remain_readable() {
+        let root = recovery_test_root("legacy-index-key");
+        let candidate = reliability_candidate(&root, "old.dem", b"legacy demo");
+        let output = reliability_video(&root, "001_same-candidate_t100-200.mp4");
+        let mut index = reliability_index(&root);
+        index.store_entry(RecordingEntry {
+            recording_key: legacy_recording_key(&candidate).unwrap(),
+            output_path: output.clone(),
+            ..RecordingEntry::default()
+        }).unwrap();
+        assert!(reliability_index(&root).is_recorded_indexed(&candidate));
+        assert_eq!(index.existing_outputs(&candidate), vec![output]);
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

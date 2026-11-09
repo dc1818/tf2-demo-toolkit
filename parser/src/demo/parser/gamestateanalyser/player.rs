@@ -1,5 +1,5 @@
 use crate::demo::data::game_state::{GameState, Handle, PlayerClassData, PlayerState};
-use crate::demo::message::{EntityId, PacketEntity};
+use crate::demo::message::{EntityId, PacketEntity, UpdateType};
 use crate::demo::parser::analyser::{Class, Team};
 use crate::demo::sendprop::SendPropIdentifier;
 use crate::demo::vector::{Vector, VectorXY};
@@ -74,6 +74,10 @@ pub fn handle_player_entity(
     const CLOAK_LEVEL: SendPropIdentifier =
         SendPropIdentifier::new("DT_TFPlayerShared", "m_flCloakMeter");
 
+    if !entity.in_pvs || !player.in_pvs || entity.update_type == UpdateType::Enter {
+        player.protection_condition_words = [None; 6];
+        player.medigun_target_observed = None;
+    }
     player.in_pvs = entity.in_pvs;
 
     for prop in entity.props(parser_state) {
@@ -86,7 +90,11 @@ pub fn handle_player_entity(
                 player.max_health = i64::try_from(&prop.value).unwrap_or_default() as u16
             }
             LIFE_STATE_PROP => {
-                player.state = PlayerState::new(i64::try_from(&prop.value).unwrap_or_default())
+                let next = PlayerState::new(i64::try_from(&prop.value).unwrap_or_default());
+                if next != player.state {
+                    player.medigun_target_observed = None;
+                }
+                player.state = next
             }
             FLAGS_PROP => {
                 player.flags = i64::try_from(&prop.value).unwrap_or_default() as u32;
@@ -129,26 +137,37 @@ pub fn handle_player_entity(
                 player.weapons[2] = handle;
             }
             PLAYER_COND | PLAYER_COND_BITS => {
+                let source = if prop.identifier == PLAYER_COND { 0 } else { 5 };
+                player.protection_condition_words[source] =
+                    i64::try_from(&prop.value).ok().map(|word| word as u32);
                 player.conditions[0..4].copy_from_slice(
                     &i64::try_from(&prop.value).unwrap_or_default().to_le_bytes()[0..4],
                 );
             }
             PLAYER_COND_EX1 => {
+                player.protection_condition_words[1] =
+                    i64::try_from(&prop.value).ok().map(|word| word as u32);
                 player.conditions[4..8].copy_from_slice(
                     &i64::try_from(&prop.value).unwrap_or_default().to_le_bytes()[0..4],
                 );
             }
             PLAYER_COND_EX2 => {
+                player.protection_condition_words[2] =
+                    i64::try_from(&prop.value).ok().map(|word| word as u32);
                 player.conditions[8..12].copy_from_slice(
                     &i64::try_from(&prop.value).unwrap_or_default().to_le_bytes()[0..4],
                 );
             }
             PLAYER_COND_EX3 => {
+                player.protection_condition_words[3] =
+                    i64::try_from(&prop.value).ok().map(|word| word as u32);
                 player.conditions[12..16].copy_from_slice(
                     &i64::try_from(&prop.value).unwrap_or_default().to_le_bytes()[0..4],
                 );
             }
             PLAYER_COND_EX4 => {
+                player.protection_condition_words[4] =
+                    i64::try_from(&prop.value).ok().map(|word| word as u32);
                 player.conditions[16..20].copy_from_slice(
                     &i64::try_from(&prop.value).unwrap_or_default().to_le_bytes()[0..4],
                 );
@@ -200,7 +219,12 @@ pub fn handle_player_resource(
                             if player.class != class {
                                 player.class = class;
                                 player.class_data = PlayerClassData::default_for_class(class);
+                                player.medigun_target_observed = None;
                             }
+                        }
+                        "m_iDamageBlocked" => {
+                            player.damage_blocked_total = i64::try_from(&prop.value).ok()
+                                .and_then(|value| u32::try_from(value).ok());
                         }
                         "m_iChargeLevel" => {
                             if let PlayerClassData::Medic { charge, .. } = &mut player.class_data {
@@ -215,5 +239,42 @@ pub fn handle_player_resource(
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod uber_resource_tests {
+    use super::*;
+    use crate::demo::message::packetentities::BaselineIndex;
+    use crate::demo::packet::datatable::ClassId;
+    use crate::demo::sendprop::{SendProp, SendPropValue};
+
+    fn entity(value:SendPropValue, table:&str, name:&str)->PacketEntity {
+        PacketEntity{server_class:ClassId::from(0),entity_index:99u32.into(),
+            props:vec![SendProp{index:0,identifier:SendPropIdentifier::new(table,name),value}],
+            in_pvs:true,update_type:UpdateType::Delta,serial_number:0,
+            delay:None,delta:None,baseline_index:BaselineIndex::First}
+    }
+    #[test]
+    fn resource_slot_is_entity_index_and_invalid_is_unknown_not_zero() {
+        let mut state=GameState::default();
+        state.get_or_create_player(7u32.into());state.get_or_create_player(17u32.into());
+        let parser=ParserState::new(24, |_|true,true);
+        for (raw,expected) in [(140,Some(140)),(183,Some(183)),(0,Some(0)),(-1,None)] {
+            handle_player_resource(&mut state,&entity(SendPropValue::Integer(raw),"m_iDamageBlocked","007"),&parser);
+            assert_eq!(state.players[0].observed_damage_blocked_total(),expected);
+            assert_eq!(state.players[1].observed_damage_blocked_total(),None);
+        }
+    }
+    #[test]
+    fn a_new_life_does_not_restore_a_target_from_the_previous_life() {
+        let mut state=GameState::default();
+        let p=state.get_or_create_player(7u32.into());
+        p.in_pvs=true;p.state=PlayerState::Death;p.medigun_target_observed=Some(Some(6u32.into()));
+        let mut e=entity(SendPropValue::Integer(0),"DT_BasePlayer","m_lifeState");
+        e.entity_index=7u32.into();
+        handle_player_entity(&mut state,&e,&ParserState::new(24, |_|true,true));
+        assert_eq!(state.players[0].medigun_target_observed,None);
+        assert_eq!(state.players[0].state,PlayerState::Alive);
     }
 }

@@ -31,6 +31,11 @@ struct PlayerStateSample {
     shield_charging: bool,
     blast_jumping: bool,
     kritz_boosted: bool,
+    invulnerable: Option<bool>,
+    invulnerability_wearing_off: Option<bool>,
+    uber_bullet_resist: Option<bool>,
+    uber_blast_resist: Option<bool>,
+    uber_fire_resist: Option<bool>,
     health: u16,
     max_health: u16,
     life_state: String,
@@ -38,6 +43,13 @@ struct PlayerStateSample {
     weapon_handles: [i64; 3],
     medic_charge: Option<u8>,
     medigun: Option<String>,
+    damage_blocked_total: Option<u32>,
+    medigun_target: Option<MedigunTargetSample>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+struct MedigunTargetSample {
+    entity_id: Option<u32>,
 }
 
 impl PlayerStateSample {
@@ -63,6 +75,11 @@ impl PlayerStateSample {
             shield_charging: player.has_condition(PlayerCondition::ShieldCharge),
             blast_jumping: player.has_condition(PlayerCondition::BlastJumping),
             kritz_boosted: player.has_condition(PlayerCondition::CritBoosted),
+            invulnerable: player.observed_protection_condition(PlayerCondition::Invulnerable),
+            invulnerability_wearing_off: player.observed_protection_condition(PlayerCondition::InvulnerableWearingOff),
+            uber_bullet_resist: player.observed_protection_condition(PlayerCondition::MedigunUberBulletResist),
+            uber_blast_resist: player.observed_protection_condition(PlayerCondition::MedigunUberBlastResist),
+            uber_fire_resist: player.observed_protection_condition(PlayerCondition::MedigunUberFireResist),
             health: player.health,
             max_health: player.max_health,
             life_state: format!("{:?}", player.state).to_ascii_lowercase(),
@@ -74,6 +91,10 @@ impl PlayerStateSample {
             ],
             medic_charge,
             medigun,
+            damage_blocked_total: player.observed_damage_blocked_total(),
+            medigun_target: player.observed_medigun_target().map(|target| MedigunTargetSample {
+                entity_id: target.map(u32::from),
+            }),
         }
     }
 }
@@ -545,6 +566,7 @@ fn main() -> Result<(), MainError> {
         "format_version": 1,
         "source_demo": input_path.to_string_lossy(),
         "packet_count": packet_count,
+        "server_tick_interval": match_state.interval_per_tick,
         "state_sample_count": state_delta_writer.sample_count,
         "demo_capture": capture_metadata(&header, usercmd_packet_count, server_info_stv),
         "mode_signals": mode_signals,
@@ -586,4 +608,34 @@ fn main() -> Result<(), MainError> {
     );
 
     Ok(())
+}
+
+#[cfg(test)]
+mod protection_export_tests {
+    use super::*;
+
+    #[test]
+    fn unknown_protection_serializes_as_null_without_changing_legacy_fields() {
+        let player = Player::default();
+        let value = serde_json::to_value(PlayerStateSample::from_player(&player)).unwrap();
+        for field in ["invulnerable", "invulnerability_wearing_off", "uber_bullet_resist",
+                      "uber_blast_resist", "uber_fire_resist"] {
+            assert!(value.get(field).unwrap().is_null(), "{field}");
+        }
+        assert_eq!(value["damage_blocked_total"], serde_json::Value::Null);
+        assert_eq!(value["medigun_target"], serde_json::Value::Null);
+        assert_eq!(value["scoped"], false);
+        assert_eq!(value["blast_jumping"], false);
+        assert_eq!(value["kritz_boosted"], false);
+    }
+
+    #[test]
+    fn legacy_reader_can_ignore_optional_fields() {
+        #[derive(serde::Deserialize)]
+        struct LegacyReader { health: u16, scoped: bool }
+        let value = serde_json::to_value(PlayerStateSample::from_player(&Player::default())).unwrap();
+        let legacy: LegacyReader = serde_json::from_value(value).unwrap();
+        assert_eq!(legacy.health, 0);
+        assert!(!legacy.scoped);
+    }
 }

@@ -1,3 +1,8 @@
+#[path = "analyzer/arrow_saves.rs"]
+mod arrow_saves;
+#[path = "analyzer/uber_saves.rs"]
+mod uber_saves;
+
 use crate::{
     models::{Candidate, DemoContext, TickTagGroup},
     scheduler::RuntimeGovernor,
@@ -276,6 +281,14 @@ fn analyze_export_internal(
     candidates.retain(|candidate| {
         candidate.bookmark_tick.is_some() || candidate.kill_count() != 1 || candidate.overall_score >= 25.0
     });
+    arrow_saves::append(
+        export, &events, &rounds, &context, &manifest, &source_demo, &map_name,
+        &mut candidates, cancelled, governor,
+    )?;
+    uber_saves::append(
+        export, &events, &rounds, &context, &manifest, &source_demo, &map_name,
+        &mut candidates, cancelled, governor,
+    )?;
     candidates.sort_by(|left, right| right.overall_score.total_cmp(&left.overall_score).then(left.clip_start_tick.cmp(&right.clip_start_tick)));
     profile.stage_seconds.insert("candidate_grouping_and_scoring".into(), started.elapsed().as_secs_f64());
 
