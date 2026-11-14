@@ -4965,7 +4965,7 @@ fn finalize_encoded_video(
         );
     }
     wait_for_stable_file(&muxing, Duration::from_secs(20))?;
-    move_file(&muxing, &clip.final_output_path)?;
+    move_encoded_recording(&muxing, &clip.final_output_path)?;
     let _ = fs::remove_file(&video);
     let _ = fs::remove_file(&audio);
     remove_empty_tree(working);
@@ -5175,6 +5175,48 @@ fn wait_for_stable_file(path: &Path, timeout: Duration) -> Result<u64> {
         thread::sleep(Duration::from_millis(250));
     }
     bail!("output did not become stable: {}", path.display())
+}
+
+fn move_encoded_recording(source: &Path, destination: &Path) -> Result<()> {
+    if let Some(parent) = destination.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    match fs::rename(source, destination) {
+        Ok(()) => Ok(()),
+        Err(_) => copy_encoded_recording(source, destination, |from, to| fs::copy(from, to)),
+    }
+}
+
+fn copy_encoded_recording(
+    source: &Path,
+    destination: &Path,
+    copy: impl FnOnce(&Path, &Path) -> io::Result<u64>,
+) -> Result<()> {
+    let parent = destination
+        .parent()
+        .context("encoded recording output has no parent directory")?;
+    let process_id = std::process::id();
+    let nonce = Utc::now().timestamp_nanos_opt().unwrap_or_default();
+    let staging = (0u32..)
+        .find_map(|attempt| {
+            let path = parent.join(format!(".tf2tk-{process_id}-{nonce:x}-{attempt}"));
+            match fs::create_dir(&path) {
+                Ok(()) => Some(Ok(path)),
+                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => None,
+                Err(error) => Some(Err(error)),
+            }
+        })
+        .context("could not allocate an encoded recording transfer directory")??;
+    let _cleanup = TemporaryPathGuard::new(vec![staging.clone()]);
+    let partial = staging.join("video.part");
+
+    // Recovery recognizes the final path by its presence. Publish only after
+    // the copy is complete, using a rename within the destination volume.
+    copy(source, &partial)?;
+    OpenOptions::new().write(true).open(&partial)?.sync_all()?;
+    fs::rename(&partial, destination)?;
+    fs::remove_file(source)?;
+    Ok(())
 }
 
 fn move_file(source: &Path, destination: &Path) -> Result<()> {
@@ -7042,6 +7084,62 @@ mod recording_tests {
         }).unwrap();
         assert!(reliability_index(&root).is_recorded_indexed(&candidate));
         assert_eq!(index.existing_outputs(&candidate), vec![output]);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn encoded_video_transfer_interruption_leaves_no_new_output() {
+        assert_encoded_video_transfer_retry(false);
+    }
+
+    #[test]
+    fn encoded_video_transfer_interruption_preserves_existing_output() {
+        assert_encoded_video_transfer_retry(true);
+    }
+
+    fn assert_encoded_video_transfer_retry(existing_output: bool) {
+        let root = recovery_test_root("encoded-transfer");
+        let source = root.join("source.mp4");
+        let output_root = root.join("output");
+        let category = output_root.join("Videos/Uncategorized");
+        fs::create_dir_all(&category).unwrap();
+        let destination = category.join("clip.mp4");
+        let complete_bytes = b"complete muxed video fixture";
+        fs::write(&source, complete_bytes).unwrap();
+        if existing_output {
+            fs::write(&destination, b"old recording fixture").unwrap();
+        }
+
+        for _ in 0..2 {
+            let result = copy_encoded_recording(&source, &destination, |_, copy_target| {
+                fs::write(copy_target, b"partial bytes")?;
+                Err(io::Error::other("simulated interrupted copy"))
+            });
+            assert_eq!(result.unwrap_err().to_string(), "simulated interrupted copy");
+            assert_eq!(fs::read(&source).unwrap(), complete_bytes);
+            if existing_output {
+                assert_eq!(fs::read(&destination).unwrap(), b"old recording fixture");
+            } else {
+                assert!(!output_still_exists(&destination), "partial copy became a recording");
+                assert!(final_recording_outputs(&output_root).is_empty());
+            }
+            assert_eq!(fs::read_dir(&category).unwrap().count(), usize::from(existing_output));
+        }
+
+        copy_encoded_recording(&source, &destination, |from, to| {
+            let copied = fs::copy(from, to)?;
+            if existing_output {
+                assert_eq!(fs::read(&destination).unwrap(), b"old recording fixture");
+            } else {
+                assert!(!destination.exists());
+            }
+            assert_eq!(fs::read(&source).unwrap(), complete_bytes);
+            Ok(copied)
+        })
+        .unwrap();
+        assert_eq!(fs::read(&destination).unwrap(), complete_bytes);
+        assert!(!source.exists());
+        assert_eq!(fs::read_dir(&category).unwrap().count(), 1);
         fs::remove_dir_all(root).unwrap();
     }
 

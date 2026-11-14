@@ -65,3 +65,27 @@ entry leaves a different capture's frame alone. Both use synthetic files.
 Both passed after the repair on Windows with Rust 1.88.0. The locked workspace
 run passed 201 tests and reproduced the same ten Windows sandbox failures
 listed above. Live TF2/HLAE image capture remains unverified.
+
+## Encoded batch transfer (V07-P3)
+
+Baseline `3bf4fea21167186533c5b1bec1c9a163c371ad25`. When rename
+failed, such as for a different output volume, the batch finalizer copied
+muxed video directly to the final path. A fault-injected copy reproduced two
+failures: a new partial file looked like a recording, and an existing
+destination was overwritten with partial bytes.
+
+The copy fallback now writes to a unique staging directory on the destination
+volume. It flushes the staged file before renaming it to the final path and
+deletes the source only after that rename. Ordinary errors clean up the
+staging directory. Abrupt termination can leave a staging directory, whose
+contents are outside the recording scan. Source cleanup can be retried after
+publication. Same-volume moves, manual captures, and image transfers retain
+their existing paths.
+
+Both regressions passed after the repair. Each exercises two interrupted
+copies followed by a successful retry. On Windows with Rust 1.88.0, the
+locked workspace suite passed all 213 tests. The Python suite passed 17 tests
+and reproduced the existing Windows temporary-file cleanup failure. The
+transfer tests use synthetic files and fault injection. Live cross-volume
+TF2/HLAE capture and recovery remain open, as does assessment of files
+already left at final paths by earlier builds.

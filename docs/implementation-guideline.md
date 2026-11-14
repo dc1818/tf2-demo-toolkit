@@ -1,6 +1,6 @@
 # Demo Toolkit — Technical Implementation Guideline
 
-**Version:** 1.5 • **Updated:** November 14, 2026 • **Owner / product approver:** Dalton Cornwell
+**Version:** 1.6 • **Updated:** November 14, 2026 • **Owner / product approver:** Dalton Cornwell
 **Status:** Active implementation guideline. Owner authorized work on `work/demo-toolkit-roadmap`; approvals and measured progress are recorded in section 15.
 **Repository:** https://github.com/dc1818/tf2-demo-toolkit
 **Audited baseline:** `568e2434c4aa04367cc6b767f2f0cabf3f7e62aa`
@@ -316,7 +316,8 @@ as newly finished. V02/V03/V04 now have scoped recording-recognition and skip-st
 repairs; V06 now also checks original recovery sources before modifying either
 profile tree. V07-P1 keeps failed finalizations pending before they can alter
 the manifest's output fields or replace the recorded index entry. V07-P2
-limits image recovery to source frames and audio with a known capture prefix. V01
+limits image recovery to source frames and audio with a known capture prefix.
+V07-P3 publishes cross-volume batch video copies only when complete. V01
 prevents identical selected rows from queuing duplicate captures. The full
 investigation matrices remain open. These fixes do not increase the 42-feature
 completion count.
@@ -332,6 +333,7 @@ completion count.
 | V06 restoration | Scoped original-source checks implemented; automated checks passed; live workflow validation remains open | [Profile restoration validation](profile-restore-validation.md): three baseline regression failures reproduced, six new tests passed, all 205 Linux workspace tests passed. Changed/missing originals and partial-restore edits preserve both current trees and backups on failure. No UI change. |
 | V07-P1 recovery finalization | Scoped fix implemented; broader V07 and live TF2/HLAE verification remain open | [Recovery finalization validation](recording-recovery-validation.md) covers the two regressions, preservation contract and test results. |
 | V07-P2 image artifact discovery | Scoped fix implemented; native image-capture verification remains open | [Image artifact validation](recording-recovery-validation.md#image-capture-artifact-discovery-v07-p2) documents the accepted inputs and baseline failures. |
+| V07-P3 encoded batch transfer | Scoped fix implemented; both regressions and the Windows Rust workspace suite passed | [Encoded transfer validation](recording-recovery-validation.md#encoded-batch-transfer-v07-p3) documents the fault injection and remaining live checks. |
 | V01 repeating clips | Exact selected-row duplicates fixed; other causes and live capture remain open | [Duplicate queue validation](recording-queue-validation.md) records the reproduction, distinct-perspective regression and verification limits. |
 | Other features, V05, V08 and V09 | No new completion claim | Follow the dependency plan and prepare scoped proposals where a B/U/D gate applies. Do not silently implement UI or existing-score changes. |
 
