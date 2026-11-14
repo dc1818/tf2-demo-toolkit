@@ -24,6 +24,7 @@ use crate::{
 const ONE_SECOND_TICKS: i64 = 67;
 const DEMO_READY_MARKER: &str = "TF2FRAG_MANUAL_PAUSED_AT_START";
 const DEMO_RELOAD_MARKER: &str = "TF2FRAG_MANUAL_SAFE_RESTART_FROM_ZERO";
+const HLAE_KEYFRAME_HEADER: &str = "passed? selected? id : tick[offset]";
 const DEMO_READY_TIMEOUT: Duration = Duration::from_secs(20 * 60);
 const DIRECT_CONTROL_READY_TIMEOUT: Duration = Duration::from_secs(15);
 const DIRECTOR_ACTION_ACK_TIMEOUT: Duration = Duration::from_secs(8);
@@ -615,7 +616,7 @@ fn run_inner(session_path: PathBuf) -> Result<()> {
         let mut reported_error = false;
         let mut keyframe_refresh_due = None::<Instant>;
         let mut keyframe_snapshot_gate = KeyframeSnapshotGate::default();
-        let mut transient_empty_retries = 0_u8;
+        let mut unverified_snapshot_retries = 0_u8;
         telemetry_timer.start(TimerMode::Repeated, Duration::from_millis(15), move || {
             let (Some(strip), Some(card)) = (weak_strip.upgrade(), weak_card.upgrade()) else {
                 return;
@@ -683,7 +684,7 @@ fn run_inner(session_path: PathBuf) -> Result<()> {
                         );
                     }
                     if poll.keyframes_refreshing {
-                        transient_empty_retries = 0;
+                        unverified_snapshot_retries = 0;
                         // Keep the last complete HLAE table visible while the next
                         // print is still arriving. Clearing it here caused every
                         // mutation/seek to flash an empty timeline.
@@ -699,9 +700,10 @@ fn run_inner(session_path: PathBuf) -> Result<()> {
                     if poll.keyframe_empty_snapshot_authorized {
                         keyframe_snapshot_gate.authorize_empty_snapshot();
                     }
+                    let mut retry_snapshot = false;
                     if let Some(keys) = poll.keyframe_snapshot {
                         if keyframe_snapshot_gate.accept(keys.len()) {
-                            transient_empty_retries = 0;
+                            unverified_snapshot_retries = 0;
                             let rows = keys
                                 .iter()
                                 .filter(|key| {
@@ -744,15 +746,23 @@ fn run_inner(session_path: PathBuf) -> Result<()> {
                             card.set_command_status(
                                 "SEEK SETTLING — KEEPING LAST VERIFIED KEYFRAMES".into(),
                             );
-                            // Retry a bounded number of times. The markers stay
-                            // visible even if HLAE continues returning a transient
-                            // empty table, and the timer cannot become a busy loop.
-                            if transient_empty_retries < 2 {
-                                transient_empty_retries += 1;
-                                keyframe_refresh_due =
-                                    Some(Instant::now() + Duration::from_millis(300));
-                            }
+                            retry_snapshot = true;
                         }
+                    } else if poll.keyframe_snapshot_invalid {
+                        append_telemetry_diagnostic(
+                            &telemetry_diagnostic,
+                            "status=INCOMPLETE_KEYFRAME_SNAPSHOT_REJECTED",
+                        );
+                        card.set_command_status(
+                            "KEYFRAMES REFRESHING — KEEPING LAST VERIFIED MARKERS".into(),
+                        );
+                        retry_snapshot = true;
+                    }
+                    // Malformed and transient empty tables share one retry
+                    // budget. Neither can replace the last complete models.
+                    if retry_snapshot && unverified_snapshot_retries < 2 {
+                        unverified_snapshot_retries += 1;
+                        keyframe_refresh_due = Some(Instant::now() + Duration::from_millis(300));
                     }
                     for sequence in poll.action_acks {
                         let status = action_queue.borrow_mut().acknowledge(sequence);
@@ -2150,7 +2160,7 @@ impl TickLogTail {
         if line.contains(DIRECTOR_KEYFRAME_BEGIN_PREFIX) {
             self.keyframe_capture = Some(Vec::new());
             self.keyframe_capture_invalid = false;
-            self.keyframe_capture_saw_header = false;
+            self.keyframe_capture_saw_header = line.contains(HLAE_KEYFRAME_HEADER);
             return;
         }
         if line.contains(DIRECTOR_KEYFRAME_END_PREFIX) {
@@ -2160,27 +2170,28 @@ impl TickLogTail {
                 // remains a valid empty snapshot.
                 if !self.keyframe_capture_invalid && self.keyframe_capture_saw_header {
                     poll.keyframe_snapshot = Some(snapshot);
+                } else {
+                    poll.keyframe_snapshot_invalid = true;
                 }
             }
             self.keyframe_capture_invalid = false;
             self.keyframe_capture_saw_header = false;
             return;
         }
-        // HLAE prints a header and dashed separators before its rows. They are
-        // part of the active capture, not an empty snapshot boundary.
-        if self.keyframe_capture.is_some()
-            && (line.contains("passed? selected? id : tick[offset]")
-                || line.trim_end().ends_with("----"))
-        {
-            if line.contains("passed? selected? id : tick[offset]") {
-                self.keyframe_capture_saw_header = true;
-            }
+        // A pure separator has no row delimiter. Keep row-shaped lines in
+        // the parser even if a truncated tick is followed by dashes.
+        if self.keyframe_capture.is_some() && line.contains(HLAE_KEYFRAME_HEADER) {
+            self.keyframe_capture_saw_header = true;
             return;
         }
         if let (Some(capture), Some(key)) =
             (self.keyframe_capture.as_mut(), parse_campath_key(line))
         {
-            capture.push(key);
+            if usize::try_from(key.id).ok() == Some(capture.len()) {
+                capture.push(key);
+            } else {
+                self.keyframe_capture_invalid = true;
+            }
             return;
         }
         if self.keyframe_capture.is_some() && line.contains(" : ") {
@@ -2223,6 +2234,7 @@ struct TelemetryPoll {
     demo_ready: bool,
     tick_updates: Vec<TickUpdate>,
     keyframe_snapshot: Option<Vec<ParsedCampathKey>>,
+    keyframe_snapshot_invalid: bool,
     keyframes_refreshing: bool,
     keyframe_empty_snapshot_authorized: bool,
     action_acks: Vec<u64>,
@@ -2292,15 +2304,49 @@ fn parse_action_ack(line: &str) -> Option<u64> {
 
 fn parse_campath_key(line: &str) -> Option<ParsedCampathKey> {
     let (left, right) = line.split_once(" : ")?;
+    // If the console joined row prefixes, accepting just the first row
+    // would silently drop the next key.
+    if right.contains(" : ") {
+        return None;
+    }
     let mut fields = left.split_whitespace().rev();
     let id = fields.next()?.parse::<i32>().ok()?;
     let selected = fields.next()?.eq_ignore_ascii_case("Y");
     // AdvancedFX removed commas from mirv_campath print in newer releases.
     // The tick remains the first field in both the old comma-separated and
     // current whitespace-separated formats.
-    let tick_text = right.split_whitespace().next()?.trim_end_matches(',');
-    let tick = parse_campath_tick(tick_text)?;
+    let tick_field = right.trim_start();
+    let tick_field = tick_field.strip_prefix(',').unwrap_or(tick_field);
+    let tick_text = tick_field.split_whitespace().next()?.trim_end_matches(',');
+    let tick = parse_campath_tick(tick_text).or_else(|| parse_joined_campath_tick(tick_text))?;
     Some(ParsedCampathKey { id, tick, selected })
+}
+
+fn parse_joined_campath_tick(value: &str) -> Option<i64> {
+    // Some Source console logs join HLAE's separate tick and demo-clock
+    // writes. Only split a sub-hour clock at an unambiguous boundary.
+    let (minutes_and_tick, clock_end) = value.split_once('m')?;
+    let (seconds, trailing_tick) = clock_end.split_once('s')?;
+    let is_clock_field = |field: &str, width| {
+        !field.is_empty()
+            && field.len() <= width
+            && field.bytes().all(|byte| byte.is_ascii_digit())
+            && field.parse::<u8>().is_ok_and(|number| number < 60)
+    };
+    if !is_clock_field(seconds, 2) {
+        return None;
+    }
+    if !trailing_tick.is_empty() {
+        return (minutes_and_tick.len() == 2 && is_clock_field(minutes_and_tick, 2))
+            .then(|| parse_campath_tick(trailing_tick))
+            .flatten();
+    }
+    let boundary = minutes_and_tick.len().checked_sub(2)?;
+    let minutes = minutes_and_tick.get(boundary..)?;
+    if !is_clock_field(minutes, 2) {
+        return None;
+    }
+    parse_campath_tick(minutes_and_tick.get(..boundary)?)
 }
 
 fn parse_campath_tick(value: &str) -> Option<i64> {
@@ -2855,6 +2901,86 @@ mod tests {
                 },
             ])
         );
+    }
+
+    #[test]
+    fn keyframe_row_ending_in_separator_cannot_publish_incomplete_table() {
+        let mut tail = TickLogTail::new(PathBuf::new());
+        let mut poll = TelemetryPoll::default();
+        for line in [
+            DIRECTOR_KEYFRAME_BEGIN_PREFIX,
+            "passed? selected? id : tick[offset](approximate!) , demoTime[offset](approximate!)",
+            "11/14/2026 - 19:32:18: ----------------------------------------------------",
+            "11/14/2026 - 19:32:18: Y n 0 : 6013 , 01m30s , 466.084320",
+            "11/14/2026 - 19:32:18: Y n 1 : 6028 , 01m30s , 466.308960",
+            "11/14/2026 - 19:32:18: Y n 2 : ----",
+            DIRECTOR_KEYFRAME_END_PREFIX,
+        ] {
+            tail.consume_line(line, "TF2FRAG_DIRECTOR_TICK", &mut poll);
+        }
+        assert!(poll.keyframe_snapshot.is_none());
+        assert!(poll.keyframe_snapshot_invalid);
+
+        let mut retry = TelemetryPoll::default();
+        for line in [
+            DIRECTOR_KEYFRAME_BEGIN_PREFIX,
+            "passed? selected? id : tick[offset](approximate!) , demoTime[offset](approximate!)",
+            "11/14/2026 - 19:32:18: ----------------------------------------------------",
+            "11/14/2026 - 19:32:18: Y n 0 : 6013 , 01m30s , 466.084320",
+            "11/14/2026 - 19:32:18: Y n 1 : 6028 , 01m30s , 466.308960",
+            "11/14/2026 - 19:32:18: Y n 2 : 6046 , 01m31s , 466.576508",
+            DIRECTOR_KEYFRAME_END_PREFIX,
+        ] {
+            tail.consume_line(line, "TF2FRAG_DIRECTOR_TICK", &mut retry);
+        }
+        assert!(!retry.keyframe_snapshot_invalid);
+        let keys = retry.keyframe_snapshot.unwrap();
+        assert_eq!(
+            keys.iter().map(|key| (key.id, key.tick)).collect::<Vec<_>>(),
+            [(0, 6013), (1, 6028), (2, 6046)]
+        );
+    }
+
+    #[test]
+    fn source_console_joined_tick_and_clock_can_preserve_all_three_keys() {
+        let mut tail = TickLogTail::new(PathBuf::new());
+        let mut poll = TelemetryPoll::default();
+        for line in [
+            "TF2FRAG_DIRECTOR_KEYFRAMES_BEGIN passed? selected? id : tick[offset](approximate!) , demoTime[offset](approximate!)",
+            "11/14/2026 - 19:37:45: Y n 0 : 601301m30s , , 466.084747",
+            "11/14/2026 - 19:37:45: Y n 1 : , 01m30s6028 , , 466.307343",
+            "11/14/2026 - 19:37:45: Y n 2 : 6046 , ----",
+            DIRECTOR_KEYFRAME_END_PREFIX,
+        ] {
+            tail.consume_line(line, "TF2FRAG_DIRECTOR_TICK", &mut poll);
+        }
+        let keys = poll.keyframe_snapshot.unwrap();
+        assert_eq!(
+            keys.iter().map(|key| (key.id, key.tick)).collect::<Vec<_>>(),
+            [(0, 6013), (1, 6028), (2, 6046)]
+        );
+        for malformed in ["01m30s", "601301m60s", "42m07sbad", "601301h01m30s", "7m12s6013"] {
+            assert_eq!(parse_joined_campath_tick(malformed), None, "{malformed}");
+        }
+    }
+
+    #[test]
+    fn keyframe_snapshot_rejects_merged_rows_and_nonconsecutive_ids() {
+        for damaged_row in ["Y n 1 : 6028 , 01m30sY n 2 : , 466.307037", "Y n 2 : 6046"] {
+            let mut tail = TickLogTail::new(PathBuf::new());
+            let mut poll = TelemetryPoll::default();
+            for line in [
+                DIRECTOR_KEYFRAME_BEGIN_PREFIX,
+                HLAE_KEYFRAME_HEADER,
+                "Y n 0 : 6013",
+                damaged_row,
+                DIRECTOR_KEYFRAME_END_PREFIX,
+            ] {
+                tail.consume_line(line, "TF2FRAG_DIRECTOR_TICK", &mut poll);
+            }
+            assert!(poll.keyframe_snapshot.is_none());
+            assert!(poll.keyframe_snapshot_invalid);
+        }
     }
 
     #[test]

@@ -1,6 +1,6 @@
 # Demo Toolkit — Technical Implementation Guideline
 
-**Version:** 1.7 • **Updated:** November 14, 2026 • **Owner / product approver:** Dalton Cornwell
+**Version:** 1.8 • **Updated:** November 14, 2026 • **Owner / product approver:** Dalton Cornwell
 **Status:** Active implementation guideline. Owner authorized work on `work/demo-toolkit-roadmap`; approvals and measured progress are recorded in section 15.
 **Repository:** https://github.com/dc1818/tf2-demo-toolkit
 **Audited baseline:** `568e2434c4aa04367cc6b767f2f0cabf3f7e62aa`
@@ -303,7 +303,7 @@ Record current branch/HEAD, user approvals, completed IDs, remaining blockers, t
 
 Updated November 14, 2026. Roadmap branch: `work/demo-toolkit-roadmap`;
 [draft PR #62](https://github.com/dc1818/tf2-demo-toolkit/pull/62).
-The V07 and V01 reliability checkpoints are on the separate
+The V07, V01 and V09 reliability checkpoints are on the separate
 `work/ralph-recovery-pilot` branch.
 **Do not merge or push to main until all work is finished and the owner gives explicit permission.**
 
@@ -336,7 +336,8 @@ completion count.
 | V07-P3 encoded batch transfer | Scoped fix implemented and verified with a live Windows cross-volume batch MP4 capture | [Automated validation](recording-recovery-validation.md#encoded-batch-transfer-v07-p3) and [live recovery](recording-live-validation.md#interrupted-transfer-recovery-v07-p3) cover the interrupted transfer and repeat restart. The broader V07 matrix remains open. |
 | V01 repeating clips | Exact selected-row duplicates fixed; other causes and live capture remain open | [Duplicate queue validation](recording-queue-validation.md) records the reproduction, distinct-perspective regression and verification limits. |
 | V08 recording FPS | Tested Windows batch MP4 at 60 and 120 FPS; both matched the configured rate | [Playback measurements](recording-live-validation.md#recording-fps-v08) include frame counts, stream durations, timing limits and outstanding cases. |
-| Other features, V05 and V09 | No new completion claim | Follow the dependency plan and prepare scoped proposals where a B/U/D gate applies. Do not silently implement UI or existing-score changes. |
+| V09 / D01 Director keyframe synchronization | Scoped parser and refresh repair verified in live Windows Safe Restart and backward seek | [Director validation](director-keyframe-validation.md) records the partial-table defect, runtime screenshots, model checks and remaining cases. |
+| Other features and V05 | No new completion claim | Follow the dependency plan and prepare scoped proposals where a B/U/D gate applies. Do not silently implement UI or existing-score changes. |
 
 Latest local verification for A03: 77 actual-source headless module tests,
 16 parser/exporter tests and 18 Python tests passed. Real fixture runs preserved
