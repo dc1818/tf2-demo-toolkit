@@ -45,3 +45,23 @@ The fixtures exercise recovery ordering with synthetic bytes. Live Windows
 TF2/HLAE verification and the broader V07 crash-stage matrix remain open.
 Finalizer side effects before an error and indexes written by older versions
 are outside the scope of this repair.
+
+## Image capture artifact discovery (V07-P2)
+
+Baseline `19de8d3b1ca65f6ec96bf99c5d0042a06a709ef8`. The image artifact
+scan treated an empty capture prefix as a match for every nonempty file in
+the game directory. The finalizer also attempted to move arbitrary entries
+sharing the prefix, including directories and text files.
+
+The batch scan and image finalizer now share a predicate. It requires a known
+capture prefix and a nonempty regular TGA, JPEG or WAV file. A legacy entry
+with no capture prefix can still use the existing completed-output fallback.
+Frame and audio paths and the output index format are unchanged.
+
+Two regression tests reproduced the baseline failures. One verifies that
+the finalizer transfers a frame and its WAV while retaining a similarly named
+text file and directory. The other verifies that an unidentifiable legacy
+entry leaves a different capture's frame alone. Both use synthetic files.
+Both passed after the repair on Windows with Rust 1.88.0. The locked workspace
+run passed 201 tests and reproduced the same ten Windows sandbox failures
+listed above. Live TF2/HLAE image capture remains unverified.

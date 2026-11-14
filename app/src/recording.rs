@@ -4591,6 +4591,18 @@ fn process_recording_markers(
     *processed_lines = lines.len();
 }
 
+fn is_image_capture_file(path: &Path, capture_base: &str) -> bool {
+    !capture_base.trim().is_empty()
+        && path.file_name().and_then(|name| name.to_str())
+            .is_some_and(|name| name.starts_with(capture_base))
+        && path.extension().and_then(|extension| extension.to_str())
+            .is_some_and(|extension| {
+                matches!(extension.to_ascii_lowercase().as_str(), "tga" | "jpg" | "jpeg" | "wav")
+            })
+        && fs::symlink_metadata(path)
+            .is_ok_and(|metadata| metadata.is_file() && metadata.len() > 0)
+}
+
 fn capture_artifacts_exist(clip: &PreparedClip, game: &Path, settings: &AppSettings) -> bool {
     if settings.recording_format.contains("Image") {
         return fs::read_dir(game)
@@ -4598,14 +4610,7 @@ fn capture_artifacts_exist(clip: &PreparedClip, game: &Path, settings: &AppSetti
             .into_iter()
             .flatten()
             .filter_map(|entry| entry.ok())
-            .any(|entry| {
-                entry.path().is_file()
-                    && entry
-                        .file_name()
-                        .to_str()
-                        .is_some_and(|name| name.starts_with(&clip.capture_base))
-                    && fs::metadata(entry.path()).is_ok_and(|metadata| metadata.len() > 0)
-            });
+            .any(|entry| is_image_capture_file(&entry.path(), &clip.capture_base));
     }
     let Some(working) = &clip.working_path else {
         return false;
@@ -4858,11 +4863,7 @@ fn finalize_image_sequence(clip: &PreparedClip, game: &Path) -> Result<PathBuf> 
     while Instant::now() < deadline {
         sources = fs::read_dir(game)?
             .filter_map(|entry| entry.ok().map(|entry| entry.path()))
-            .filter(|path| {
-                path.file_name()
-                    .and_then(|value| value.to_str())
-                    .is_some_and(|value| value.starts_with(&clip.capture_base))
-            })
+            .filter(|path| is_image_capture_file(path, &clip.capture_base))
             .collect();
         if !sources.is_empty() {
             break;
@@ -7041,6 +7042,53 @@ mod recording_tests {
         }).unwrap();
         assert!(reliability_index(&root).is_recorded_indexed(&candidate));
         assert_eq!(index.existing_outputs(&candidate), vec![output]);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn image_finalization_only_moves_matching_capture_files() {
+        let root = recovery_test_root("image-capture-files");
+        let game = root.join("tf");
+        fs::create_dir(&game).unwrap();
+        let frames = root.join("output/Frames");
+        let audio = root.join("output/Audio");
+        let clip = prepared_clip_from_manifest(&StoredRecordingClip {
+            candidate_id: "image-fixture".into(),
+            recording_identifier: "image-fixture".into(),
+            native_capture_base: "capture".into(),
+            frames_path: Some(frames.clone()),
+            audio_path: Some(audio.clone()),
+            ..StoredRecordingClip::default()
+        });
+        fs::write(game.join("capture0001.tga"), b"frame").unwrap();
+        fs::write(game.join("capture.wav"), b"audio").unwrap();
+        let unrelated = game.join("capture_notes.txt");
+        fs::write(&unrelated, b"notes").unwrap();
+        let matching_directory = game.join("capture_old.tga");
+        fs::create_dir(&matching_directory).unwrap();
+
+        let output = finalize_image_sequence(&clip, &game).unwrap();
+        assert_eq!(output, root.join("output"));
+        assert_eq!(fs::read(frames.join("frame0001.tga")).unwrap(), b"frame");
+        assert_eq!(fs::read(audio.join("image-fixture.wav")).unwrap(), b"audio");
+        assert_eq!(fs::read(unrelated).unwrap(), b"notes");
+        assert!(matching_directory.is_dir());
+        assert_eq!(fs::read_dir(&frames).unwrap().count(), 1);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn legacy_image_manifest_without_capture_prefix_does_not_claim_files() {
+        let root = recovery_test_root("image-capture-missing-prefix");
+        let clip = prepared_clip_from_manifest(&StoredRecordingClip::default());
+        let settings = AppSettings {
+            recording_format: "TGA Image Sequence".into(),
+            ..AppSettings::default()
+        };
+        let unrelated = root.join("other_capture0001.tga");
+        fs::write(&unrelated, b"frame").unwrap();
+        assert!(!capture_artifacts_exist(&clip, &root, &settings));
+        assert_eq!(fs::read(unrelated).unwrap(), b"frame");
         fs::remove_dir_all(root).unwrap();
     }
 
