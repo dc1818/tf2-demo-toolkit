@@ -6049,6 +6049,15 @@ fn recover_one_recording_session(
     settings: &AppSettings,
     report: &mut RecordingRecoveryReport,
 ) {
+    recover_one_recording_session_with_index(session, settings, report, &index_path());
+}
+
+fn recover_one_recording_session_with_index(
+    session: &Path,
+    settings: &AppSettings,
+    report: &mut RecordingRecoveryReport,
+    recording_index_path: &Path,
+) {
     let diagnostic_log = session.join("hlae_recording_diagnostics.log");
     let manifest_path = [
         session.join("recording_manifest.json"),
@@ -6125,13 +6134,15 @@ fn recover_one_recording_session(
     } else {
         tf2_game_directory(&recovery_settings.tf2_executable).unwrap_or_default()
     };
-    let mut index = RecordingIndex::load();
+    let mut index = RecordingIndex::load_from_path(
+        recording_index_path,
+        MAX_RECORDING_INDEX_BYTES,
+        MAX_RECORDING_INDEX_ENTRIES,
+    );
     let mut all_complete = true;
 
     for stored in &manifest.clips {
         let clip = prepared_clip_from_manifest(stored);
-        let mut artifact_finalize_failed = false;
-        let mut artifact_finalize_error = None;
         let existing_output = stored
             .actual_output_path
             .as_ref()
@@ -6158,9 +6169,7 @@ fn recover_one_recording_session(
             match result {
                 Ok(output) => (Some(output), true),
                 Err(error) => {
-                    artifact_finalize_failed = true;
                     all_complete = false;
-                    artifact_finalize_error = Some(error.to_string());
                     log_recording_diagnostic(
                         &diagnostic_log,
                         format!(
@@ -6171,7 +6180,16 @@ fn recover_one_recording_session(
                     report
                         .errors
                         .push(format!("{}: {}", stored.candidate_id, error));
-                    (existing_output, false)
+                    // The fallback may be an incomplete destination from this failed attempt.
+                    update_recording_manifest(
+                        session,
+                        Some(&stored.recording_identifier),
+                        "RecoveryPending",
+                        None,
+                        None,
+                        Some(&error.to_string()),
+                    );
+                    continue;
                 }
             }
         } else {
@@ -6242,18 +6260,13 @@ fn recover_one_recording_session(
                 log_recording_diagnostic(&diagnostic_log, format!("RECOVERY WARNING: replacement was indexed, but {} could not be removed: {error}", previous.display()));
             }
         }
-        let recovered_status = if artifact_finalize_failed {
-            "RecoveryPending"
-        } else {
-            "Completed"
-        };
         update_recording_manifest(
             session,
             Some(&stored.recording_identifier),
-            recovered_status,
+            "Completed",
             Some(&output),
             Some(&fingerprint),
-            artifact_finalize_error.as_deref(),
+            None,
         );
         log_recording_diagnostic(
             &diagnostic_log,
@@ -6968,6 +6981,107 @@ mod recording_tests {
         }).unwrap();
         assert!(reliability_index(&root).is_recorded_indexed(&candidate));
         assert_eq!(index.existing_outputs(&candidate), vec![output]);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn recovery_finalize_failure_does_not_index_a_fallback() {
+        assert_failed_recovery_preserves_recordings(false);
+    }
+
+    #[test]
+    fn recovery_finalize_failure_does_not_replace_previous_output() {
+        assert_failed_recovery_preserves_recordings(true);
+    }
+
+    fn assert_failed_recovery_preserves_recordings(replace_existing: bool) {
+        let root = recovery_test_root("failed-finalization");
+        let session = root.join("tf2_demo_toolkit_batch_pending");
+        let game = root.join("tf");
+        fs::create_dir_all(&session).unwrap();
+        fs::create_dir_all(&game).unwrap();
+        let source_frame = game.join("capture0000.tga");
+        fs::write(&source_frame, b"source frame fixture").unwrap();
+        let fallback = root.join("fallback.tga");
+        fs::write(&fallback, b"fallback fixture").unwrap();
+        let previous = root.join("previous.tga");
+        let recording_index_path = root.join("index.ndjson");
+        let recording_key = "recovery-fixture-key";
+        if replace_existing {
+            fs::write(&previous, b"previous recording fixture").unwrap();
+            reliability_index(&root)
+                .store_entry(RecordingEntry {
+                    recording_key: recording_key.into(),
+                    candidate_id: "recovery-fixture".into(),
+                    output_path: previous.clone(),
+                    ..RecordingEntry::default()
+                })
+                .unwrap();
+        }
+        let original_index = replace_existing.then(|| fs::read(&recording_index_path).unwrap());
+
+        let manifest_path = session.join("recording_manifest.json");
+        write_json_atomic(
+            &manifest_path,
+            &json!({
+                "output_format": "TGA Image Sequence",
+                "game_directory": game,
+                "clips": [{
+                    "candidate_id": "recovery-fixture",
+                    "recording_key": recording_key,
+                    "recording_identifier": "fixture-identifier",
+                    "native_capture_base": "capture",
+                    "expected_output_path": fallback,
+                    "replace_existing": replace_existing,
+                    "status": "Capturing"
+                }]
+            }),
+        )
+        .unwrap();
+
+        let settings = AppSettings::default();
+        let expected_error = "image sequence has no Frames directory";
+        for _ in 0..2 {
+            let mut report = RecordingRecoveryReport::default();
+            recover_one_recording_session_with_index(
+                &session,
+                &settings,
+                &mut report,
+                &recording_index_path,
+            );
+            assert_eq!(report.errors, [format!("recovery-fixture: {expected_error}")]);
+            assert_eq!(report.retained_sessions, 1);
+            assert_eq!(report.removed_sessions, 0);
+            assert_eq!(report.recovered_clips, 0);
+
+            let index = reliability_index(&root);
+            if replace_existing {
+                assert_eq!(index.entries[recording_key].output_path, previous);
+                assert_eq!(fs::read(&previous).unwrap(), b"previous recording fixture");
+                assert_eq!(
+                    fs::read(&recording_index_path).unwrap().as_slice(),
+                    original_index.as_deref().unwrap()
+                );
+            } else {
+                assert!(index.entries.is_empty(), "failed recovery indexed the fallback");
+                assert!(!recording_index_path.exists());
+            }
+            assert_eq!(report.indexed_clips, 0);
+
+            let manifest: serde_json::Value =
+                serde_json::from_slice(&fs::read(&manifest_path).unwrap()).unwrap();
+            let clip = &manifest["clips"][0];
+            assert_eq!(manifest["batch_status"], "RecoveryPending");
+            assert_eq!(clip["status"], "RecoveryPending");
+            assert_eq!(clip["error"], expected_error);
+            assert!(clip.get("actual_output_path").is_none());
+            assert!(clip.get("output_fingerprint").is_none());
+            let diagnostics = fs::read_to_string(session.join("hlae_recording_diagnostics.log"))
+                .unwrap();
+            assert!(diagnostics.contains(expected_error));
+            assert_eq!(fs::read(&source_frame).unwrap(), b"source frame fixture");
+            assert_eq!(fs::read(&fallback).unwrap(), b"fallback fixture");
+        }
         fs::remove_dir_all(root).unwrap();
     }
 

@@ -1,6 +1,6 @@
 # Demo Toolkit — Technical Implementation Guideline
 
-**Version:** 1.3 • **Updated:** November 9, 2026 • **Owner / product approver:** Dalton Cornwell
+**Version:** 1.4 • **Updated:** November 14, 2026 • **Owner / product approver:** Dalton Cornwell
 **Status:** Active implementation guideline. Owner authorized work on `work/demo-toolkit-roadmap`; approvals and measured progress are recorded in section 15.
 **Repository:** https://github.com/dc1818/tf2-demo-toolkit
 **Audited baseline:** `568e2434c4aa04367cc6b767f2f0cabf3f7e62aa`
@@ -301,8 +301,9 @@ Record current branch/HEAD, user approvals, completed IDs, remaining blockers, t
 
 ## 15. Current approval and completion register
 
-Updated November 9, 2026. Work branch: `work/demo-toolkit-roadmap`;
+Updated November 14, 2026. Roadmap branch: `work/demo-toolkit-roadmap`;
 [draft PR #62](https://github.com/dc1818/tf2-demo-toolkit/pull/62).
+V07-P1 is on the separate `work/ralph-recovery-pilot` branch.
 **Do not merge or push to main until all work is finished and the owner gives explicit permission.**
 
 There are **42 feature requirements and 9 validation investigations**.
@@ -312,8 +313,10 @@ Implementation is not the same as owner/native-runtime verification. The other
 40 feature rows retain their audited Missing/Partial states and are not counted
 as newly finished. V02/V03/V04 now have scoped recording-recognition and skip-status
 repairs; V06 now also checks original recovery sources before modifying either
-profile tree. Their full investigation matrices remain open. V01, V05 and
-V07–V09 remain open investigations. These fixes do not increase the 42-feature completion count.
+profile tree. V07-P1 keeps failed finalizations pending before they can alter
+the manifest's output fields or replace the recorded index entry. Their full
+investigation matrices remain open, as do V01, V05, V08 and V09. These fixes do
+not increase the 42-feature completion count.
 
 | Scope | Approval / current status | Evidence and remaining work |
 | --- | --- | --- |
@@ -324,7 +327,8 @@ V07–V09 remain open investigations. These fixes do not increase the 42-feature
 | A01/A02 | Earlier offline prototypes reported; native integration pending | Prior chat reports credit prototype/testing work; those artifacts are absent from the recovered checkout. Recover or explicitly reconstruct and revalidate before claiming runtime completion. See the [audit](implementation-audit-2026-11-09.md). |
 | V02/V03/V04 reliability | Scoped fixes implemented; automated checks passed; live workflow validation remains open | Owner requested proceeding under the guide. Phase 1 repairs restore correct recording identity, persisted status and Yes/No queue semantics without UI or naming changes. [Defects, preservation contract and regression evidence](recording-status-validation.md): three baseline regression failures reproduced, eight new regressions passed, all 199 Linux workspace tests and 18 Python tests passed. |
 | V06 restoration | Scoped original-source checks implemented; automated checks passed; live workflow validation remains open | [Profile restoration validation](profile-restore-validation.md): three baseline regression failures reproduced, six new tests passed, all 205 Linux workspace tests passed. Changed/missing originals and partial-restore edits preserve both current trees and backups on failure. No UI change. |
-| Other features, V01, V05 and V07–V09 | No new completion claim | Follow the dependency plan and prepare scoped proposals where a B/U/D gate applies. Do not silently implement UI or existing-score changes. |
+| V07-P1 recovery finalization | Scoped fix implemented; broader V07 and live TF2/HLAE verification remain open | [Recovery finalization validation](recording-recovery-validation.md) covers the two regressions, preservation contract and test results. |
+| Other features, V01, V05, V08 and V09 | No new completion claim | Follow the dependency plan and prepare scoped proposals where a B/U/D gate applies. Do not silently implement UI or existing-score changes. |
 
 Latest local verification for A03: 77 actual-source headless module tests,
 16 parser/exporter tests and 18 Python tests passed. Real fixture runs preserved
