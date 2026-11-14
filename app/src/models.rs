@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{collections::BTreeSet, path::PathBuf};
 
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 pub struct DemoContext {
     #[serde(default)]
     pub capture_type: String,
@@ -30,7 +30,7 @@ pub struct DemoContext {
     pub mode_evidence: Vec<String>,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 pub struct TickTagGroup {
     #[serde(default)]
     pub demo_tick: i64,
@@ -40,7 +40,7 @@ pub struct TickTagGroup {
     pub tags: Vec<String>,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 pub struct Candidate {
     #[serde(default)]
     pub candidate_id: String,

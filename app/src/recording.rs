@@ -906,7 +906,9 @@ pub fn estimate_recording_space(
     let mut frame_count = 0u64;
     let mut final_output_bytes = 0u64;
     let mut largest_encoded_working_clip = 0u64;
-    for candidate in candidates {
+    let mut clip_count = 0;
+    for (_, candidate) in unique_recording_candidates(candidates.iter().enumerate()) {
+        clip_count += 1;
         let (start, end) = clip_window(candidate, settings);
         let seconds = (end - start).max(1) as f64 / 66.666_666_7;
         let frames = (seconds * fps as f64).ceil().max(1.0) as u64;
@@ -923,7 +925,7 @@ pub fn estimate_recording_space(
                 largest_encoded_working_clip.max(video_bytes.saturating_add(raw_audio_bytes));
         }
     }
-    let metadata_allowance = 32 * 1024 * 1024 + candidates.len() as u64 * 64 * 1024;
+    let metadata_allowance = 32 * 1024 * 1024 + clip_count as u64 * 64 * 1024;
     let peak_working_bytes = final_output_bytes
         .saturating_add(largest_encoded_working_clip)
         .saturating_add(metadata_allowance);
@@ -931,7 +933,7 @@ pub fn estimate_recording_space(
     let required_free_bytes = peak_working_bytes.saturating_add(safety_headroom_bytes);
     let disk = disk_space_for(&settings.recording_output_directory)?;
     Ok(RecordingSpaceEstimate {
-        clip_count: candidates.len(),
+        clip_count,
         duration_seconds,
         frame_count,
         final_output_bytes,
@@ -1083,6 +1085,24 @@ pub struct RecordingSelection {
     selected: Vec<(Candidate, bool)>,
 }
 
+fn unique_recording_candidates<'a>(
+    candidates: impl Iterator<Item = (usize, &'a Candidate)> + 'a,
+) -> impl Iterator<Item = (usize, &'a Candidate)> + 'a {
+    let mut seen = HashMap::<(&str, &str), Vec<&Candidate>>::new();
+    candidates.filter(move |(_, candidate)| {
+        // IDs can repeat in legacy exports. Compare the full row within each
+        // ID and source demo to preserve different perspectives and evidence.
+        let matching_ids = seen
+            .entry((&candidate.source_demo, &candidate.candidate_id))
+            .or_default();
+        if matching_ids.contains(candidate) {
+            return false;
+        }
+        matching_ids.push(candidate);
+        true
+    })
+}
+
 impl RecordingSelection {
     pub fn recorded_count(&self) -> usize {
         self.selected.iter().filter(|(_, recorded)| *recorded).count()
@@ -1146,10 +1166,12 @@ impl RecordingIndex {
 
     pub fn selection_snapshot(&self, candidates: &[Candidate], selected: &[bool]) -> RecordingSelection {
         let recorded: Vec<_> = candidates.iter().map(|candidate| self.is_recorded_indexed(candidate)).collect();
-        let selected = candidates.iter().enumerate()
-            .filter(|(index, _)| selected.get(*index).copied().unwrap_or(false))
-            .map(|(index, candidate)| (candidate.clone(), recorded[index]))
-            .collect();
+        let selected = unique_recording_candidates(
+            candidates.iter().enumerate()
+                .filter(|(index, _)| selected.get(*index).copied().unwrap_or(false)),
+        )
+        .map(|(index, candidate)| (candidate.clone(), recorded[index]))
+        .collect();
         RecordingSelection { recorded, selected }
     }
 
@@ -6799,6 +6821,44 @@ mod recording_tests {
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(&path, b"fixture media bytes, not playable video").unwrap();
         path
+    }
+
+    #[test]
+    fn identical_selected_rows_queue_once_without_merging_distinct_candidates() {
+        let root = recovery_test_root("duplicate-selected-rows");
+        let candidate = reliability_candidate(&root, "match.dem", b"fixture demo");
+        let mut distinct_candidate = candidate.clone();
+        distinct_candidate.candidate_id = "overlapping-candidate".into();
+        let mut distinct_perspective = candidate.clone();
+        distinct_perspective.demo_context.pov_player_user_id = Some(11);
+        let candidates = [
+            candidate.clone(),
+            candidate,
+            distinct_candidate,
+            distinct_perspective,
+        ];
+        let selected = [true; 4];
+        let index = reliability_index(&root);
+        let snapshot = index.selection_snapshot(&candidates, &selected);
+        assert_eq!(snapshot.recorded, [false; 4]);
+        for skip_recorded in [false, true] {
+            let queue = snapshot.candidates(skip_recorded);
+            assert_eq!(queue.len(), 3);
+            assert_eq!(queue[0].candidate_id, "same-candidate");
+            assert_eq!(queue[1].candidate_id, "overlapping-candidate");
+            assert_eq!(queue[2].demo_context.pov_player_user_id, Some(11));
+        }
+        let settings = AppSettings {
+            recording_output_directory: root.clone(),
+            ..AppSettings::default()
+        };
+        let estimate = estimate_recording_space(&candidates, &settings).unwrap();
+        let queued_estimate =
+            estimate_recording_space(&snapshot.candidates(false), &settings).unwrap();
+        assert_eq!(estimate.clip_count, 3);
+        assert_eq!(estimate.frame_count, queued_estimate.frame_count);
+        assert_eq!(estimate.required_free_bytes, queued_estimate.required_free_bytes);
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
