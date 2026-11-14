@@ -86,6 +86,7 @@ Both regressions passed after the repair. Each exercises two interrupted
 copies followed by a successful retry. On Windows with Rust 1.88.0, the
 locked workspace suite passed all 213 tests. The Python suite passed 17 tests
 and reproduced the existing Windows temporary-file cleanup failure. The
-transfer tests use synthetic files and fault injection. Live cross-volume
-TF2/HLAE capture and recovery remain open, as does assessment of files
-already left at final paths by earlier builds.
+transfer tests use synthetic files and fault injection. A later
+[live cross-volume test](recording-live-validation.md#interrupted-transfer-recovery-v07-p3)
+verified the Windows batch MP4 path. Assessment of files already left at final
+paths by earlier builds remains open.
