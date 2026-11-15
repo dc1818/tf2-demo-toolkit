@@ -132,7 +132,28 @@ same action after restoration is a no-op. The existing batch and manual
 profile fixtures continue to cover the shared restore used after TF2 exits.
 All 218 tests in the locked Windows Rust workspace passed.
 
-These checks use disposable files and simulated registry responses. They
-leave the installed game, settings and registry untouched. Installed-game
-shutdown, settings stored outside the backed-up locations, and real
-registry restoration remain unverified by this checkpoint.
+These automated checks use disposable files and simulated registry
+responses. They leave the installed game, settings and registry untouched.
+
+### Live Windows shutdown checks
+
+November 15, 2026. Tested the restoration code at
+`88026cb28567a5cd82f546727104a958bdac3f88` using a disposable TF2 game
+directory, separate Toolkit data directories, HLAE 2.189.4, and the public
+SourceTV demo [1530633](https://demos.tf/1530633). The game used the standard
+batch recording profile, including its DXLevel override. The harness
+compared manifests of the complete CFG and custom trees, with a SHA-256
+hash for every file. It also compared the names, types and values of the
+Windows TF2 Settings registry key before and after each run.
+
+| Scenario | Observed result |
+| --- | --- |
+| TF2 exited first | The live batch recorded one clip. The Toolkit's monitor restored the profile, cleared the active recovery record, and reported no failed captures. |
+| Toolkit closed first | While the fixture TF2 process was live and had loaded the recording profile, the harness called the same shutdown routine used by the Toolkit's window-close handler. It returned after TF2 had exited and restoration had cleared the recovery record. |
+
+In both cases the complete CFG and custom trees matched their original
+manifests, and the compared registry values, including `DXLevel_V1`,
+matched their original names, types and data. The installed TF2 directory
+was outside the fixture. This run covered normal batch shutdown. A force
+kill of the Toolkit and settings stored outside those locations remain
+outside the live test.
