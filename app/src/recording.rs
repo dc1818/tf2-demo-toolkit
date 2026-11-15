@@ -2430,24 +2430,7 @@ pub fn launch_hlae_batch(
 }
 
 pub fn recover_interrupted_profile() -> Result<bool> {
-    let pointer = active_profile_path();
-    if !pointer.is_file() {
-        return Ok(false);
-    }
-    let profile: RecordingProfileSession = serde_json::from_slice(&fs::read(&pointer)?)
-        .context("the interrupted recording recovery file is invalid")?;
-    if windows_process_is_running(&profile.tf_process_name) {
-        bail!("a TF2 recording session is still active; close TF2 before reopening the helper");
-    }
-    stop_hlae_launcher(&profile)?;
-    if let Err(error) = restore_recording_profile(&profile) {
-        let _ = fs::write(
-            profile.backup_directory.join("RESTORE_REQUIRED.txt"),
-            error.to_string(),
-        );
-        return Err(error);
-    }
-    Ok(true)
+    restore_retained_profile(&active_profile_path(), false)
 }
 
 pub(crate) fn ensure_profile_inactive(pointer: &Path) -> Result<()> {
@@ -2465,16 +2448,25 @@ pub(crate) fn ensure_profile_inactive(pointer: &Path) -> Result<()> {
 /// closed during recording, stop the TF2 instance launched for that session
 /// and restore the original custom files and configuration before exiting.
 pub fn shutdown_active_recording() -> Result<bool> {
-    let pointer = active_profile_path();
-    if !pointer.is_file() {
-        return Ok(false);
+    restore_retained_profile(&active_profile_path(), true)
+}
+
+fn restore_retained_profile(pointer: &Path, closing_toolkit: bool) -> Result<bool> {
+    let bytes = match fs::read(pointer) {
+        Ok(bytes) => bytes,
+        // The TF2-exit monitor may already have finished restoring.
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(error.into()),
+    };
+    let profile: RecordingProfileSession = serde_json::from_slice(&bytes)
+        .context("the recording recovery file is invalid")?;
+    if !closing_toolkit && windows_process_is_running(&profile.tf_process_name) {
+        bail!("a TF2 recording session is still active; close TF2 before reopening the helper");
     }
-    let profile: RecordingProfileSession = serde_json::from_slice(&fs::read(&pointer)?)
-        .context("the active recording recovery file is invalid")?;
     // A close during loading must also stop the launcher, otherwise it could
     // start TF2 after we have put the player's original profile back.
     stop_hlae_launcher(&profile)?;
-    if windows_process_is_running(&profile.tf_process_name) {
+    if closing_toolkit && windows_process_is_running(&profile.tf_process_name) {
         stop_windows_process(&profile.tf_process_name)?;
         for _ in 0..20 {
             if !windows_process_is_running(&profile.tf_process_name) {
@@ -2489,7 +2481,7 @@ pub fn shutdown_active_recording() -> Result<bool> {
             );
         }
     }
-    if let Err(error) = restore_recording_profile(&profile) {
+    if let Err(error) = restore_recording_profile_with_status(&profile, pointer) {
         let _ = fs::write(
             profile.backup_directory.join("RESTORE_REQUIRED.txt"),
             error.to_string(),
@@ -2634,8 +2626,14 @@ fn stage_recording_profile_at(
 }
 
 fn restore_recording_profile(session: &RecordingProfileSession) -> Result<()> {
-    let result = restore_recording_profile_at(session, &active_profile_path());
-    if result.is_err() { *CONFIG_PHASE.lock() = ConfigPhase::Attention; }
+    restore_recording_profile_with_status(session, &active_profile_path())
+}
+
+fn restore_recording_profile_with_status(session: &RecordingProfileSession, pointer: &Path) -> Result<()> {
+    let result = restore_recording_profile_at(session, pointer);
+    if result.is_err() && pointer == active_profile_path() {
+        *CONFIG_PHASE.lock() = ConfigPhase::Attention;
+    }
     result
 }
 
@@ -2980,9 +2978,14 @@ fn vpk_is_cosmetic(path: &Path) -> Result<bool> {
 
 const TF2_SETTINGS_REGISTRY_KEY: &str = r"HKCU\Software\Valve\Source\tf\Settings";
 
+#[cfg(not(windows))]
+fn capture_dx_level(_selected: &str) -> Result<(bool, bool, String, String)> {
+    Ok((false, false, String::new(), String::new()))
+}
+
+#[cfg(windows)]
 fn capture_dx_level(selected: &str) -> Result<(bool, bool, String, String)> {
-    let applied = cfg!(target_os = "windows")
-        && !selected.trim().is_empty()
+    let applied = !selected.trim().is_empty()
         && !selected.trim().to_ascii_lowercase().starts_with("default");
     if !applied {
         return Ok((false, false, String::new(), String::new()));
@@ -2991,10 +2994,23 @@ fn capture_dx_level(selected: &str) -> Result<(bool, bool, String, String)> {
         "reg.exe",
         &["query", TF2_SETTINGS_REGISTRY_KEY, "/v", "DXLevel_V1"],
     )?;
-    if !output.status.success() {
+    parse_dx_level_query(output.status.success(), &output.stdout, dx_level_registry_value_exists)
+        .context("could not verify TF2's original DXLevel_V1 registry setting")
+}
+
+#[cfg(any(windows, test))]
+fn parse_dx_level_query(
+    query_succeeded: bool,
+    stdout: &[u8],
+    value_exists: impl FnOnce() -> io::Result<bool>,
+) -> Result<(bool, bool, String, String)> {
+    if !query_succeeded {
+        if value_exists()? {
+            bail!("the registry value exists, but reg.exe could not read it");
+        }
         return Ok((true, false, String::new(), String::new()));
     }
-    let text = String::from_utf8_lossy(&output.stdout);
+    let text = String::from_utf8_lossy(stdout);
     for line in text.lines() {
         let values = line.split_whitespace().collect::<Vec<_>>();
         if values
@@ -3005,7 +3021,48 @@ fn capture_dx_level(selected: &str) -> Result<(bool, bool, String, String)> {
             return Ok((true, true, values[1].to_owned(), values[2..].join(" ")));
         }
     }
-    Ok((true, false, String::new(), String::new()))
+    bail!("reg.exe returned no readable DXLevel_V1 value")
+}
+
+#[cfg(windows)]
+fn dx_level_registry_value_exists() -> io::Result<bool> {
+    #[link(name = "advapi32")]
+    extern "system" {
+        fn RegGetValueW(
+            key: isize,
+            subkey: *const u16,
+            value: *const u16,
+            flags: u32,
+            value_type: *mut u32,
+            data: *mut std::ffi::c_void,
+            size: *mut u32,
+        ) -> i32;
+    }
+    const HKEY_CURRENT_USER: isize = 0x8000_0001_u32 as i32 as isize;
+    const RRF_RT_ANY: u32 = 0x0000_ffff;
+    const RRF_NOEXPAND: u32 = 0x1000_0000;
+    const ERROR_FILE_NOT_FOUND: i32 = 2;
+    let subkey: Vec<_> = TF2_SETTINGS_REGISTRY_KEY["HKCU\\".len()..]
+        .encode_utf16().chain(Some(0)).collect();
+    let value: Vec<_> = "DXLevel_V1".encode_utf16().chain(Some(0)).collect();
+    let mut size = 0;
+    // Request the size only to distinguish a missing value from a failed read.
+    let status = unsafe {
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            subkey.as_ptr(),
+            value.as_ptr(),
+            RRF_RT_ANY | RRF_NOEXPAND,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            &mut size,
+        )
+    };
+    match status {
+        0 => Ok(true),
+        ERROR_FILE_NOT_FOUND => Ok(false),
+        error => Err(io::Error::from_raw_os_error(error)),
+    }
 }
 
 fn restore_dx_level(session: &RecordingProfileSession) -> Result<()> {
@@ -6472,6 +6529,65 @@ mod recording_tests {
         }
         fs::write(game.join("custom/mastercomfig.vpk"), test_vpk("cfg", " ", 2)).unwrap();
         fs::write(game.join("custom/cosmetic.vpk"), test_vpk("res", "resource/ui", 1)).unwrap();
+    }
+
+    #[test]
+    fn dx_level_query_failure_only_means_absent_when_confirmed() {
+        assert!(parse_dx_level_query(false, b"", || Ok(true)).is_err());
+        assert!(parse_dx_level_query(false, b"", || {
+            Err(io::Error::from(io::ErrorKind::PermissionDenied))
+        })
+        .is_err());
+        let missing = parse_dx_level_query(false, b"", || Ok(false)).unwrap();
+        assert_eq!(missing, (true, false, String::new(), String::new()));
+        assert!(parse_dx_level_query(true, b"unexpected output", || Ok(false)).is_err());
+        assert_eq!(
+            parse_dx_level_query(true, b"    DXLevel_V1    REG_DWORD    0x62\r\n", || {
+                panic!("a valid registry value does not need a second query")
+            })
+            .unwrap(),
+            (true, true, "REG_DWORD".into(), "0x62".into())
+        );
+    }
+
+    #[test]
+    fn toolkit_close_and_reopen_restore_retained_profile_bytes() {
+        for closing_toolkit in [true, false] {
+            let root = recovery_test_root("retained-profile-entry");
+            let game = root.join("tf");
+            let pointer = root.join("active.json");
+            write_profile_fixture(&game);
+            let cfg_hash = profile_tree_fingerprint(&game.join("cfg"), &[]).unwrap();
+            let custom_hash = profile_tree_fingerprint(&game.join("custom"), &[]).unwrap();
+            let session = stage_recording_profile_at(
+                &game,
+                "fixture",
+                "tf2tk_test_nonexistent.exe",
+                &profile_test_settings(),
+                Vec::new(),
+                &pointer,
+            )
+            .unwrap();
+            fs::write(game.join("cfg/config.cfg"), "temporary recording binds").unwrap();
+            fs::write(game.join("cfg/video.txt"), "temporary video settings").unwrap();
+            let backup = session.backup_directory.join("cfg_original/config.cfg");
+            let original_cfg = fs::read(&backup).unwrap();
+            fs::write(&backup, "damaged backup").unwrap();
+
+            assert!(restore_retained_profile(&pointer, closing_toolkit).is_err());
+            assert!(pointer.is_file());
+            assert!(session.backup_directory.join("RESTORE_REQUIRED.txt").is_file());
+            assert_eq!(fs::read(game.join("cfg/config.cfg")).unwrap(), b"temporary recording binds");
+            fs::write(&backup, original_cfg).unwrap();
+
+            assert!(restore_retained_profile(&pointer, closing_toolkit).unwrap());
+            assert_eq!(profile_tree_fingerprint(&game.join("cfg"), &[]).unwrap(), cfg_hash);
+            assert_eq!(profile_tree_fingerprint(&game.join("custom"), &[]).unwrap(), custom_hash);
+            assert!(!pointer.exists());
+            assert!(!session.backup_directory.exists());
+            assert!(!restore_retained_profile(&pointer, closing_toolkit).unwrap());
+            fs::remove_dir_all(root).unwrap();
+        }
     }
 
     #[test]

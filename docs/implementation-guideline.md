@@ -1,6 +1,6 @@
 # Demo Toolkit — Technical Implementation Guideline
 
-**Version:** 1.8 • **Updated:** November 14, 2026 • **Owner / product approver:** Dalton Cornwell
+**Version:** 1.9 • **Updated:** November 15, 2026 • **Owner / product approver:** Dalton Cornwell
 **Status:** Active implementation guideline. Owner authorized work on `work/demo-toolkit-roadmap`; approvals and measured progress are recorded in section 15.
 **Repository:** https://github.com/dc1818/tf2-demo-toolkit
 **Audited baseline:** `568e2434c4aa04367cc6b767f2f0cabf3f7e62aa`
@@ -301,9 +301,9 @@ Record current branch/HEAD, user approvals, completed IDs, remaining blockers, t
 
 ## 15. Current approval and completion register
 
-Updated November 14, 2026. Roadmap branch: `work/demo-toolkit-roadmap`;
+Updated November 15, 2026. Roadmap branch: `work/demo-toolkit-roadmap`;
 [draft PR #62](https://github.com/dc1818/tf2-demo-toolkit/pull/62).
-The V07, V01 and V09 reliability checkpoints are on the separate
+The later V06, V07, V01 and V09 reliability checkpoints are on the separate
 `work/ralph-recovery-pilot` branch.
 **Do not merge or push to main until all work is finished and the owner gives explicit permission.**
 
@@ -330,7 +330,7 @@ completion count.
 | A03-P2 Uber saves and follow-ups | Owner approved the proposal and said “yes go ahead” to normal frag/Medic candidate integration; implemented in native normal analysis | [Approved proposal](uber-save-implementation-proposal.md), [implementation/validation](uber-save-validation.md). Two additive counter/target fields, lethal/cumulative bounds, outcome tracking, candidate export/cues, legacy parity and error/unknown handling. 26 A03 tests, real STV positive; no heuristic fallback. Owner playback/live capture verification remains. |
 | A01/A02 | Earlier offline prototypes reported; native integration pending | Prior chat reports credit prototype/testing work; those artifacts are absent from the recovered checkout. Recover or explicitly reconstruct and revalidate before claiming runtime completion. See the [audit](implementation-audit-2026-11-09.md). |
 | V02/V03/V04 reliability | Scoped fixes implemented; automated checks passed; live workflow validation remains open | Owner requested proceeding under the guide. Phase 1 repairs restore correct recording identity, persisted status and Yes/No queue semantics without UI or naming changes. [Defects, preservation contract and regression evidence](recording-status-validation.md): three baseline regression failures reproduced, eight new regressions passed, all 199 Linux workspace tests and 18 Python tests passed. |
-| V06 restoration | Scoped original-source checks implemented; automated checks passed; live workflow validation remains open | [Profile restoration validation](profile-restore-validation.md): three baseline regression failures reproduced, six new tests passed, all 205 Linux workspace tests passed. Changed/missing originals and partial-restore edits preserve both current trees and backups on failure. No UI change. |
+| V06 restoration | Scoped original-source and shutdown recovery checks implemented; installed-game verification remains open | [Profile restoration validation](profile-restore-validation.md) records byte-for-byte fixture restoration after Toolkit close and on next-start recovery, plus the Windows DXLevel backup check. |
 | V07-P1 recovery finalization | Scoped fix implemented; broader V07 and live TF2/HLAE verification remain open | [Recovery finalization validation](recording-recovery-validation.md) covers the two regressions, preservation contract and test results. |
 | V07-P2 image artifact discovery | Scoped fix implemented; native image-capture verification remains open | [Image artifact validation](recording-recovery-validation.md#image-capture-artifact-discovery-v07-p2) documents the accepted inputs and baseline failures. |
 | V07-P3 encoded batch transfer | Scoped fix implemented and verified with a live Windows cross-volume batch MP4 capture | [Automated validation](recording-recovery-validation.md#encoded-batch-transfer-v07-p3) and [live recovery](recording-live-validation.md#interrupted-transfer-recovery-v07-p3) cover the interrupted transfer and repeat restart. The broader V07 matrix remains open. |

@@ -105,3 +105,34 @@ and a retry after final verification fails.
 
 Rollback is a source revert on the work branch; no data migration is needed.
 Do not merge or push to main without the owner's explicit final permission.
+
+## Toolkit close and next-start recovery (V06)
+
+November 15, 2026. Baseline `70bc5a8a54957d7ce585bc94944e9e47fac32fdf`.
+Normal TF2 exit in both recording modes uses the shared file restore and
+verification routine. A normal Toolkit close uses that routine after
+stopping the recording launcher and waiting for TF2 to exit. If the Toolkit
+is forcibly terminated, its recovery record allows the next start to
+retry once TF2 is closed. If verification fails during a normal window
+close, the Toolkit stays open with the recovery data available.
+
+The Windows `DXLevel_V1` snapshot previously treated any failed registry
+query as an absent value. The new check requires Windows to confirm that
+the value is absent. A failed or unreadable snapshot stops staging before
+the original profile trees are moved. Restoration also uses the stricter
+read to verify the registry value before discarding recovery data.
+
+The registry-response regression failed with the original logic. A
+separate fixture test exercises the production retained-profile entry point
+in both close and startup modes. A damaged backup leaves the temporary
+configuration, backup and recovery record in place. After repair, both
+paths restore the complete CFG/custom tree fingerprints, including
+bindings, video options, overrides, HUD and hitsound files. Repeating the
+same action after restoration is a no-op. The existing batch and manual
+profile fixtures continue to cover the shared restore used after TF2 exits.
+All 218 tests in the locked Windows Rust workspace passed.
+
+These checks use disposable files and simulated registry responses. They
+leave the installed game, settings and registry untouched. Installed-game
+shutdown, settings stored outside the backed-up locations, and real
+registry restoration remain unverified by this checkpoint.
