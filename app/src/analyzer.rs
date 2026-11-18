@@ -755,8 +755,9 @@ fn last_player_flag_tick(scan: &StateScan, user: i64, tick: i64, key: &str, wind
 /// Airshots require a recent, observed grounded-to-airborne transition followed
 /// by sustained vertical motion. Absolute Z height is deliberately irrelevant:
 /// standing or walking on a high ledge is not an airshot. `impact_guard_ticks`
-/// moves the evidence cutoff earlier than the reported hurt tick so projectile
-/// knockback (especially the Loose Cannon collision) cannot certify itself.
+/// moves the airborne evidence cutoff earlier than the reported hurt tick so
+/// projectile knockback (especially the Loose Cannon collision) cannot certify
+/// itself. A landing can invalidate an earlier jump until the impact tick.
 fn player_airborne_before_impact(
     scan: &StateScan,
     user: i64,
@@ -766,12 +767,12 @@ fn player_airborne_before_impact(
     let Some(history) = scan.player_history.get(&user) else { return false };
     let evidence_tick = impact_tick.saturating_sub(impact_guard_ticks.max(0));
     let grounded_tick = history.iter().rev().find_map(|(tick, state)| {
-        (*tick < evidence_tick
+        (*tick < impact_tick
             && *tick >= evidence_tick - AIRSHOT_GROUNDED_LOOKBACK_TICKS
             && state.get("on_ground").and_then(Value::as_bool) == Some(true))
             .then_some(*tick)
     });
-    let Some(grounded_tick) = grounded_tick else { return false };
+    let Some(grounded_tick) = grounded_tick.filter(|tick| *tick < evidence_tick) else { return false };
     let samples = history
         .iter()
         .filter(|(tick, _)| {
@@ -2107,6 +2108,29 @@ mod tests {
             (999, movement_state(false, 240.0, 70.0)),
         ]);
         assert!(player_airborne_before_impact(&scan, 42, 1_000, 0));
+    }
+
+    #[test]
+    fn landing_in_impact_guard_cancels_earlier_airborne_evidence() {
+        let mut scan = StateScan::default();
+        let airborne = vec![
+            (975, movement_state(true, 128.0, 0.0)),
+            (983, movement_state(false, 145.0, 190.0)),
+            (989, movement_state(false, 150.0, -90.0)),
+            (993, movement_state(false, 138.0, -160.0)),
+        ];
+        for guard in [AIRSHOT_STANDARD_IMPACT_GUARD_TICKS, AIRSHOT_LOOSE_CANNON_IMPACT_GUARD_TICKS] {
+            for landing_tick in [1_000 - guard, 999, 1_000] {
+                let mut history = airborne.clone();
+                history.push((landing_tick, movement_state(true, 128.0, 0.0)));
+                scan.player_history.insert(42, history);
+                assert_eq!(
+                    player_airborne_before_impact(&scan, 42, 1_000, guard),
+                    landing_tick == 1_000,
+                    "landing at {landing_tick} with a {guard}-tick guard",
+                );
+            }
+        }
     }
 
     #[test]
