@@ -97,6 +97,7 @@ struct Round {
 #[derive(Clone, Debug, Default)]
 struct Death {
     event_tick: i64,
+    inflictor_ent_index: i64,
     demo_tick: i64,
     packet_sequence: i64,
     event_index: i64,
@@ -570,6 +571,7 @@ fn normalized_deaths(events: &[EventRecord], rounds: &[Round], context: &DemoCon
         if weapon_slot.is_empty() { weapon_slot = item.map(|item| item.slot.clone()).unwrap_or_default(); }
         deaths.push(Death {
             event_tick: tick,
+            inflictor_ent_index: event.int(&["inflictor_ent_index"]).max(0),
             demo_tick: if event.demo_tick > 0 { event.demo_tick } else { event.tick },
             packet_sequence: event.packet_sequence,
             event_index: event.event_index_in_packet,
@@ -968,7 +970,16 @@ fn matching_projectile(death: &Death, scan: &StateScan) -> Option<Value> {
             .filter(|(tick, _)| *tick <= death.event_tick + 5)
             .peekable();
         let launch_tick = usable.peek().map_or(*state_tick, |(tick, _)| *tick);
-        let impact_tick = end.map_or(death.event_tick, |removal| removal.tick);
+        // The lethal event can identify impact before the removal is recorded.
+        let impact_tick = if death.inflictor_ent_index > 0
+            && *entity == death.inflictor_ent_index
+            && track[start].0 < death.event_tick
+            && end.is_none_or(|removal| removal.tick >= death.event_tick)
+        {
+            death.event_tick
+        } else {
+            end.map_or(death.event_tick, |removal| removal.tick)
+        };
         let mut path_distance = 0.0;
         let mut previous: Option<[f64; 3]> = None;
         let mut vertical_range = (f64::MAX, f64::MIN);
@@ -2043,6 +2054,56 @@ mod tests {
         death.state.victim = position_state(60.0, 0.0, 128.0);
         death.state.projectile = matching_projectile(&death, &scan);
         assert!(kill_tags(&death).contains("direct_airshot"));
+    }
+
+    #[test]
+    fn lethal_projectile_event_sets_impact_tick_for_the_matching_live_track() {
+        let rounds = build_rounds(&[
+            EventRecord { tick: 1, event_type: "teamplay_round_start".into(), ..EventRecord::default() },
+            EventRecord { tick: 2, event_type: "teamplay_round_active".into(), ..EventRecord::default() },
+        ], 2_000);
+        for (inflictor, launch, removal, expected_impact, long_flight) in [
+            (Some(390), 974, 1_200, 1_000, false),
+            (Some(390), 950, 1_200, 1_000, true),
+            (Some(391), 974, 1_200, 1_200, true),
+            (None, 974, 1_200, 1_200, true),
+            (Some(390), 974, 998, 998, false),
+        ] {
+            let mut event = EventRecord {
+                event_type: "player_death".into(),
+                server_tick: Some(1_000),
+                demo_tick: 900,
+                event: Map::from_iter([
+                    ("attacker".into(), json!(3)),
+                    ("user_id".into(), json!(5)),
+                    ("weapon".into(), json!("crusaders_crossbow")),
+                ]),
+                ..EventRecord::default()
+            };
+            if let Some(entity) = inflictor {
+                event.event.insert("inflictor_ent_index".into(), json!(entity));
+            }
+            let mut death = normalized_deaths(&[event], &rounds, &DemoContext::default(), &HashMap::new()).remove(0);
+            death.state.attacker.insert("weapon_handles".into(), json!([123]));
+            death.state.victim = position_state(100.0, 0.0, 128.0);
+            death.state.victim_airborne_before_projectile_impact = true;
+
+            let arrow = |x: f64| Map::from_iter([
+                ("launcher_handle".into(), json!(123)),
+                ("projectile_type".into(), json!("healingarrow")),
+                ("position".into(), json!([x, 0.0, 128.0])),
+            ]);
+            let mut scan = StateScan::default();
+            scan.projectile_tracks.insert(390, vec![(launch, arrow(0.0)), (997, arrow(100.0))]);
+            scan.projectile_removals.insert(390, vec![ProjectileRemoval { tick: removal, sample_count: 2 }]);
+
+            let projectile = matching_projectile(&death, &scan).unwrap();
+            assert_eq!(projectile["impact_tick"], json!(expected_impact), "inflictor {inflictor:?}, launch {launch}, removal {removal}");
+            death.state.projectile = Some(projectile);
+            let tags = kill_tags(&death);
+            assert!(tags.contains("confirmed_airshot"));
+            assert_eq!(tags.contains("long_flight_airshot"), long_flight);
+        }
     }
 
     #[test]
