@@ -155,5 +155,26 @@ In both cases the complete CFG and custom trees matched their original
 manifests, and the compared registry values, including `DXLevel_V1`,
 matched their original names, types and data. The installed TF2 directory
 was outside the fixture. This run covered normal batch shutdown. A force
-kill of the Toolkit and settings stored outside those locations remain
-outside the live test.
+kill of the Toolkit was covered in the follow-up below. Settings stored
+outside those locations remain outside these tests.
+
+### Live Windows forced-close recovery
+
+November 18, 2026. The same isolated game, recording profile, and
+`88026cb` restoration code were used with public demo
+[1530633](https://demos.tf/1530633). Before launch, the harness saved
+the SHA-256 manifests of both profile trees and the Windows TF2 Settings
+registry value names, types, and data.
+
+The test forcibly stopped only the Toolkit process after the recording
+profile became ready. Its TF2 process remained alive. A restart while
+TF2 was running deferred recovery. The active journal hash and both original
+backup manifests matched their pre-termination copies.
+
+After the isolated TF2 process exited, a restart restored both original trees
+and cleared the active profile journal. The complete CFG/custom manifests and
+all compared TF2 Settings registry values matched the baseline. A second
+restart performed no profile recovery and left those files and registry
+values identical. The separate output recovery scan retained the interrupted
+recording session because it contained no complete output or recoverable
+capture artifacts. It did not index a clip.
