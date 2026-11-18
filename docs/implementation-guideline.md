@@ -338,7 +338,7 @@ completion count.
 | V08 recording FPS | Tested Windows batch MP4 at 60 and 120 FPS; both matched the configured rate | [Playback measurements](recording-live-validation.md#recording-fps-v08) include frame counts, stream durations, timing limits and outstanding cases. |
 | V09 / D01 Director keyframe synchronization | Scoped parser and refresh repair verified in live Windows Safe Restart and backward seek | [Director validation](director-keyframe-validation.md) records the partial-table defect, runtime screenshots, model checks and remaining cases. |
 | V05 airshot false positives | Pre-impact landing regression fixed | A grounded sample before impact cancels the earlier jump, including inside the two-tick standard and six-tick Loose Cannon guards. The synthetic regression exercises the start and end of each guard and preserves an airshot when the first grounded sample is in the impact packet. All 219 Windows Rust workspace tests passed. [Public SourceTV demo 1530633](https://demos.tf/1530633) retained all 67 candidates and 26 confirmed airshot kills with identical tags and scores. At demo ticks 7498–7499 the victim landed before a scattergun death at tick 7500, and the exported airborne evidence changed from `true` to `false`. The rejected projectile-airshot case is covered by the synthetic regression. Further labeled demo cases remain open. |
-| V05 projectile evidence | Reused entity indices and late removal timing fixed | [Projectile entity reuse validation](#v05-projectile-entity-reuse) covers the public SourceTV case and the packet-order regression. [Projectile impact timing](#v05-projectile-impact-timing) covers death events that identify the matched projectile. |
+| V05 projectile evidence | Reused entity indices, late removal timing, and a rocket splash classification fixed | [Projectile entity reuse validation](#v05-projectile-entity-reuse) covers the packet-order regression. [Projectile impact timing](#v05-projectile-impact-timing) and [rocket impact classification](#v05-rocket-impact-classification) cover the SourceTV contact evidence. |
 | Other features | No new completion claim | Follow the dependency plan and prepare scoped proposals where a B/U/D gate applies. |
 
 Latest local verification for A03: 77 actual-source headless module tests,
@@ -401,5 +401,29 @@ All 221 Windows Rust workspace tests passed.
 Reanalysis retained the same 67 candidates, 26 confirmed airshot kills, and
 proximity labels. The crossbow clip lost its five-point long-flight bonus and
 the other 66 scores were identical. The rocket airshot at demo tick 106535 kept
-its 0.840 s flight and long-flight bonus. Independently labeled direct-hit and
-splash cases remain open.
+its 0.840 s flight and long-flight bonus.
+
+### V05 rocket impact classification
+
+The SourceTV death events and temporary explosion entities provide independent
+contact evidence for three replay ticks. The rocket at demo tick 36362 names the
+victim's entity as the contact. The explosions at 20499 and 103371 record world
+contact. At 103371 one rocket killed two players. The old proximity heuristic
+called the nearer player a direct hit because the last rocket sample was 34.19
+units away. Both players died from splash. [SourceTV demo 1530633](https://demos.tf/1530633)
+
+The exporter records optional impact observations in `rocket_explosions.ndjson`.
+The analyzer uses them when the death names the matched rocket and one explosion
+in the death packet agrees with the weapon, item and trajectory position. It
+records `impact_contact_entity` when using that evidence and keeps the proximity
+estimate for earlier exports or ambiguous observations. The scoring rule and
+the proximity threshold are the same. [Valve rocket collision source](https://github.com/ValveSoftware/source-sdk-2013/blob/master/src/game/shared/tf/tf_weaponbase_rocket.cpp)
+
+Re-export preserved the original game events, state samples, and packet index
+byte for byte. Reanalysis retained the same 67 candidates and 26 airshot kills.
+Five projectile labels changed under recorded contact evidence, and one airshot
+candidate lost the existing six-point direct-hit bonus. A synthetic regression
+covers direct contact, world contact, ambiguous observations, and legacy
+fallback. All 222 Windows Rust workspace tests passed. TF2 reached the target
+ticks in offline playback, but capture produced no reviewable frames. The
+labels above come from the recorded contact packets.

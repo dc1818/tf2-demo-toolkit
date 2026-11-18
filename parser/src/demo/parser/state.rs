@@ -47,6 +47,8 @@ pub struct ParserState {
     handle_entities: bool,
     parse_all: bool,
     pub protocol_version: u32,
+    /// Opt-in best-effort temporary entity decoding for export evidence.
+    pub optional_temp_entities: bool,
 }
 
 #[derive(Clone)]
@@ -93,6 +95,7 @@ impl ParserState {
             handle_entities: analyser_handles(MessageType::PacketEntities) || parse_all,
             parse_all,
             protocol_version,
+            optional_temp_entities: false,
         }
     }
 

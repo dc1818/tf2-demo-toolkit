@@ -98,6 +98,7 @@ struct Round {
 struct Death {
     event_tick: i64,
     inflictor_ent_index: i64,
+    victim_ent_index: i64,
     demo_tick: i64,
     packet_sequence: i64,
     event_index: i64,
@@ -154,6 +155,16 @@ struct StateScan {
     projectile_tracks: HashMap<i64, Vec<(i64, Map<String, Value>)>>,
     projectile_removals: HashMap<i64, Vec<ProjectileRemoval>>,
     player_history: HashMap<i64, Vec<(i64, Map<String, Value>)>>,
+    rocket_explosions: HashMap<i64, Vec<RocketExplosion>>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+struct RocketExplosion {
+    packet_sequence: i64,
+    weapon_id: i64,
+    weapon_def_index: i64,
+    contact_entity: i64,
+    position: [f64; 3],
 }
 
 #[derive(Clone, Debug)]
@@ -257,7 +268,13 @@ fn analyze_export_internal(
     profile.stage_seconds.insert("early_death_gating".into(), started.elapsed().as_secs_f64());
 
     let started = Instant::now();
-    let scan = scan_state_stream(&export.join("state_samples.ndjson"), &deaths, &rounds, cancelled, governor)?;
+    let mut scan = scan_state_stream(&export.join("state_samples.ndjson"), &deaths, &rounds, cancelled, governor)?;
+    let explosions_path = export.join("rocket_explosions.ndjson");
+    if explosions_path.exists() {
+        for explosion in read_ndjson::<RocketExplosion>(&explosions_path, cancelled, governor)? {
+            scan.rocket_explosions.entry(explosion.packet_sequence).or_default().push(explosion);
+        }
+    }
     check_runtime(cancelled, governor)?;
     attach_state(&mut deaths, &scan, cancelled, governor)?;
     attach_event_evidence(&events, &mut deaths, &scan, cancelled, governor)?;
@@ -572,6 +589,7 @@ fn normalized_deaths(events: &[EventRecord], rounds: &[Round], context: &DemoCon
         deaths.push(Death {
             event_tick: tick,
             inflictor_ent_index: event.int(&["inflictor_ent_index"]).max(0),
+            victim_ent_index: event.int(&["victim_ent_index"]),
             demo_tick: if event.demo_tick > 0 { event.demo_tick } else { event.tick },
             packet_sequence: event.packet_sequence,
             event_index: event.event_index_in_packet,
@@ -992,15 +1010,35 @@ fn matching_projectile(death: &Death, scan: &StateScan) -> Option<Value> {
             }
         }
         let in_flight = projectile_type != "pipe" || path_distance >= 2.0 || vertical_range.1 - vertical_range.0 >= 6.0;
-        let evidence = json!({
+        let mut evidence = json!({
             "entity_id":entity, "projectile_type":projectile_type, "launcher_handle":state.get("launcher_handle"),
             "distance_to_victim":(distance*100.0).round()/100.0, "impact_proximity":if distance <= 64.0 {"direct"} else {"splash"},
             "launch_tick":launch_tick, "impact_tick":impact_tick, "flight_seconds":((impact_tick-launch_tick).max(0) as f64/TICKS_PER_SECOND*1000.0).round()/1000.0,
             "tracked_path_distance":(path_distance*100.0).round()/100.0, "airshot_eligible":in_flight,
         });
+        if projectile_type.contains("rocket") && *entity == death.inflictor_ent_index {
+            if let Some(contact) = rocket_contact(death, scan, position) {
+                evidence["impact_contact_entity"] = json!(contact);
+                evidence["impact_proximity"] = json!(if contact == death.victim_ent_index { "direct" } else { "splash" });
+            }
+        }
         if best.as_ref().is_none_or(|(prior, _)| distance < *prior) { best = Some((distance, evidence)); }
     }
     best.map(|(_, value)| value)
+}
+
+fn rocket_contact(death: &Death, scan: &StateScan, position: [f64; 3]) -> Option<i64> {
+    // Entity 0 is world geometry. 2047 is an invalid explosion handle.
+    if death.weapon_id <= 0 || death.weapon_def_index <= 0 || !(1..2047).contains(&death.victim_ent_index) {
+        return None;
+    }
+    let mut compatible = scan.rocket_explosions.get(&death.packet_sequence)?.iter().filter(|explosion| {
+        explosion.weapon_id == death.weapon_id
+            && explosion.weapon_def_index == death.weapon_def_index
+            && explosion.position.iter().zip(position).map(|(a, b)| (a - b).powi(2)).sum::<f64>() <= 64.0_f64.powi(2)
+    });
+    let contact = compatible.next()?.contact_entity;
+    (compatible.next().is_none() && (0..2047).contains(&contact)).then_some(contact)
 }
 
 /// Classify reskin log names without changing the original weapon in exports.
@@ -1989,6 +2027,29 @@ fn text_value(value: Option<&Value>) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rocket_collision_overrides_proximity_only_for_unique_valid_evidence() {
+        let mut death = Death { event_tick: 100, packet_sequence: 5, inflictor_ent_index: 365, victim_ent_index: 2,
+            weapon: "rocketlauncher".into(), weapon_id: 22, weapon_def_index: 18, ..Death::default() };
+        death.state.victim = position_state(0.0, 0.0, 0.0);
+        death.state.attacker = Map::from_iter([("weapon_handles".into(), json!([123]))]);
+        let mut scan = StateScan::default();
+        scan.projectile_tracks.insert(365, vec![(100, Map::from_iter([
+            ("position".into(), json!([10, 0, 0])), ("projectile_type".into(), json!("rocket")),
+            ("launcher_handle".into(), json!(123)),
+        ]))]);
+        let explosion = RocketExplosion { packet_sequence: 5, weapon_id: 22, weapon_def_index: 18, contact_entity: 0, position: [10.0, 0.0, 0.0] };
+        assert_eq!(matching_projectile(&death, &scan).unwrap()["impact_proximity"], "direct");
+        scan.rocket_explosions.insert(5, vec![explosion.clone()]);
+        assert_eq!(matching_projectile(&death, &scan).unwrap()["impact_proximity"], "splash");
+        scan.rocket_explosions.get_mut(&5).unwrap()[0].contact_entity = 2;
+        assert_eq!(matching_projectile(&death, &scan).unwrap()["impact_proximity"], "direct");
+        scan.rocket_explosions.get_mut(&5).unwrap().extend([explosion.clone()]);
+        assert_eq!(matching_projectile(&death, &scan).unwrap()["impact_proximity"], "direct");
+        scan.rocket_explosions.insert(5, vec![RocketExplosion { contact_entity: 2047, ..explosion }]);
+        assert_eq!(matching_projectile(&death, &scan).unwrap()["impact_proximity"], "direct");
+    }
 
     fn movement_state(on_ground: bool, z: f64, velocity_z: f64) -> Map<String, Value> {
         Map::from_iter([

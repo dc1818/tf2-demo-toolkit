@@ -13,6 +13,7 @@ use tf_demo_parser::demo::packet::Packet;
 use tf_demo_parser::demo::data::game_state::{GameState, Player, PlayerClassData, PlayerCondition, Projectile};
 use tf_demo_parser::demo::parser::gamestateanalyser::GameStateAnalyser;
 use tf_demo_parser::demo::parser::{DemoHandler, RawPacketStream};
+use tf_demo_parser::demo::sendprop::{SendPropIdentifier, SendPropValue};
 use tf_demo_parser::Demo;
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -227,8 +228,9 @@ fn write_game_events(
         Packet::Signon(message_packet) | Packet::Message(message_packet) => &message_packet.messages,
         _ => return Ok(()),
     };
-
-    for (event_index_in_packet, message) in messages.iter().enumerate() {
+    // Optional evidence must not change established game-event indices.
+    let original_messages = messages.iter().filter(|message| !matches!(message, Message::TempEntities(_)));
+    for (event_index_in_packet, message) in original_messages.enumerate() {
         if let Message::GameEvent(game_event) = message {
             serde_json::to_writer(
                 &mut *out,
@@ -246,6 +248,60 @@ fn write_game_events(
             out.write_all(b"\n")?;
         }
     }
+    Ok(())
+}
+
+fn write_rocket_explosions(packet: &Packet<'_>, state: &tf_demo_parser::ParserState, sequence: u64, out: &mut BufWriter<File>) -> Result<(), MainError> {
+    let messages = match packet {
+        Packet::Signon(p) | Packet::Message(p) => &p.messages,
+        _ => return Ok(()),
+    };
+    let explosions = messages.iter().filter_map(|message| match message {
+        Message::TempEntities(temp) => Some(&temp.events),
+        _ => None,
+    });
+    if explosions.clone().any(Vec::is_empty) {
+        return Ok(());
+    }
+    // Read only unambiguous packets. Multiple records can share delta state
+    // or belong to different rockets from the same tick.
+    let mut contacts = explosions.flatten().filter(|event| {
+        state.server_classes.get(usize::from(event.class_id))
+            .is_some_and(|class| class.id == event.class_id && class.data_table.as_str() == "DT_TETFExplosion")
+    });
+    let Some(contact) = contacts.next() else { return Ok(()) };
+    if contacts.next().is_some() || contact.fire_delay != 0.0 {
+        return Ok(());
+    }
+    let prop = |name| {
+        let id = SendPropIdentifier::new("DT_TETFExplosion", name);
+        contact.props.iter().find(|prop| prop.identifier == id).map(|prop| &prop.value)
+    };
+    let integer = |name| match prop(name) {
+        Some(SendPropValue::Integer(value)) => Some(*value),
+        _ => None,
+    };
+    let coordinate = |name| match prop(name) {
+        Some(SendPropValue::Float(value)) if value.is_finite() => Some(*value),
+        _ => None,
+    };
+    let (Some(x), Some(y), Some(z), Some(weapon_id), Some(weapon_def_index)) = (
+        coordinate("m_vecOrigin[0]"), coordinate("m_vecOrigin[1]"), coordinate("m_vecOrigin[2]"),
+        integer("m_iWeaponID"), integer("m_nDefID"),
+    ) else { return Ok(()) };
+    let contact_entity = match prop("entindex") {
+        None => 0, // The first explosion record uses a zero delta baseline.
+        Some(SendPropValue::Integer(value)) => *value,
+        _ => return Ok(()),
+    };
+    serde_json::to_writer(&mut *out, &json!({
+        "packet_sequence": sequence,
+        "weapon_id": weapon_id,
+        "weapon_def_index": weapon_def_index,
+        "contact_entity": contact_entity,
+        "position": [x, y, z],
+    }))?;
+    out.write_all(b"\n")?;
     Ok(())
 }
 
@@ -460,12 +516,14 @@ fn main() -> Result<(), MainError> {
     // roster so header.nick can still be resolved to a user ID.
     let mut handler = DemoHandler::with_analyser(GameStateAnalyser::new());
     handler.handle_header(&header);
+    handler.state_handler.optional_temp_entities = true;
 
     let mut packet_stream = RawPacketStream::new(stream);
     let mut packets_out = BufWriter::new(File::create(output_dir.join("packets.ndjson"))?);
     let mut index_out = BufWriter::new(File::create(output_dir.join("packet_index.ndjson"))?);
     let mut events_out = BufWriter::new(File::create(output_dir.join("events.ndjson"))?);
     let mut states_out = BufWriter::new(File::create(output_dir.join("state_samples.ndjson"))?);
+    let mut explosions_out = BufWriter::new(File::create(output_dir.join("rocket_explosions.ndjson"))?);
     let mut state_delta_writer = StateDeltaWriter::default();
     let mut packet_count: u64 = 0;
     let mut usercmd_packet_count: u64 = 0;
@@ -480,6 +538,7 @@ fn main() -> Result<(), MainError> {
         let Some(packet) = packet_stream.next(&handler.state_handler)? else {
             break;
         };
+        write_rocket_explosions(&packet, &handler.state_handler, packet_count, &mut explosions_out)?;
 
         let end_bit = packet_stream.pos();
         let tick = packet.tick();
@@ -539,6 +598,7 @@ fn main() -> Result<(), MainError> {
     index_out.flush()?;
     events_out.flush()?;
     states_out.flush()?;
+    explosions_out.flush()?;
     let match_state = handler.into_output();
     let players: BTreeMap<u16, _> = match_state
         .players
@@ -577,6 +637,7 @@ fn main() -> Result<(), MainError> {
             "packet_index": "packet_index.ndjson",
             "events": "events.ndjson",
             "state_samples": "state_samples.ndjson",
+            "rocket_explosions": "rocket_explosions.ndjson",
             "players": "players.json",
             "bookmarks": "bookmarks.json",
             "frag_candidates": "frag_candidates.ndjson",

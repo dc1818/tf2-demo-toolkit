@@ -80,7 +80,16 @@ impl<'a> Parse<'a> for MessagePacket<'a> {
                 span!(Level::DEBUG, "reading message", message_type = ?message_type, tick = ?tick)
                     .entered();
 
-            if state.should_parse_message(message_type) && message_type != MessageType::Empty {
+            if state.optional_temp_entities && message_type == MessageType::TempEntities {
+                // Frame the message on the authoritative stream first. A malformed
+                // optional payload must not consume any following messages.
+                let mut payload = packet_data.clone();
+                Message::skip_type(message_type, &mut packet_data, state)?;
+                // An empty record marks incomplete evidence for this packet.
+                messages.push(Message::from_type(message_type, &mut payload, state).unwrap_or_else(|_| {
+                    Message::TempEntities(crate::demo::message::TempEntitiesMessage { events: Vec::new() })
+                }));
+            } else if state.should_parse_message(message_type) && message_type != MessageType::Empty {
                 #[cfg(feature = "trace")]
                 event!(Level::TRACE, "parsing message");
                 messages.push(Message::from_type(message_type, &mut packet_data, state)?);
