@@ -3724,6 +3724,13 @@ fn log_recording_finalize(session: &Path, message: impl AsRef<str>) {
 }
 
 fn clip_window(candidate: &Candidate, settings: &AppSettings) -> (i64, i64) {
+    if settings.lead_seconds == 0 && settings.outro_seconds == 0
+        && candidate.point_of_kill_ticks.len() == 1
+    {
+        // Batch capture starts one tick after the playback window begins.
+        let kill_tick = candidate.point_of_kill_ticks[0].max(0);
+        return (kill_tick.saturating_sub(2).max(0), kill_tick.saturating_add(2));
+    }
     let first = candidate
         .point_of_kill_ticks
         .first()
@@ -7767,6 +7774,27 @@ mod recording_tests {
                 "expected invalid manual launch options: {invalid}"
             );
         }
+    }
+
+    #[test]
+    fn zero_padding_keeps_the_single_kill_between_batch_start_and_stop() {
+        let kill_tick = 20_499;
+        let settings = AppSettings { lead_seconds: 0, outro_seconds: 0, ..AppSettings::default() };
+        let candidate = Candidate {
+            candidate_id: "zero-padding".into(),
+            clip_start_tick: 20_409,
+            clip_end_tick: 20_544,
+            point_of_kill_ticks: vec![kill_tick],
+            ..Candidate::default()
+        };
+        let (start, end) = clip_window(&candidate, &settings);
+        let batch_start = start + 1;
+        assert!(batch_start < kill_tick && kill_tick < end, "batch actions {batch_start}..{end}, kill {kill_tick}");
+        let vdm = vdm_text(&[(1, candidate.clone())], "fixture", None, &settings).unwrap();
+        assert!(vdm.contains(&format!("name \"Start clip\"\n        starttick \"{batch_start}\"")));
+        assert!(vdm.contains(&format!("name \"Stop clip\"\n        starttick \"{end}\"")));
+        let padded = AppSettings { lead_seconds: 1, outro_seconds: 1, ..AppSettings::default() };
+        assert_eq!(clip_window(&candidate, &padded), (kill_tick - 67, kill_tick + 67));
     }
 
     #[test]

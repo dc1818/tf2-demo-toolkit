@@ -49,3 +49,28 @@ parameter, and the final FFmpeg mux, which copies the video stream. The tested
 batch MP4 path honored the configured frame rate. Production code is unchanged.
 Manual capture, 240/480 FPS, other presets and formats, and longer recordings
 remain open for V08.
+
+## Zero-padding single-kill capture
+
+The three replay clips used for the V05 check were configured with both pads
+at zero and one kill tick. Batch scheduling uses the kill tick over the source
+clip bounds. At demo tick 20499, the generated start and stop commands both
+landed at tick 20500. The recording reached both commands and produced zero
+video frames. The same failure occurred in a foreground run and when seeking
+was disabled for the early control.
+
+The fix gives this specific setting two demo ticks on each side of the kill,
+so the batch recorder starts one tick before it. A regression checks that the
+generated VDM starts and stops on opposite sides of the kill and that ordinary
+padding still gives the same bounds. All 223 Windows workspace tests passed.
+
+| SourceTV demo 1530633 case | Decoded frames at 120 FPS | Video duration |
+| --- | ---: | ---: |
+| Early control, ticks 6000–6200 | 359 | 2.991667 s |
+| Later focused clip, ticks 20409–20544 | 241 | 2.008333 s |
+| Single kill at 20499 with zero padding after the fix | 5 | 0.041667 s |
+
+The repaired clip was published and indexed by the normal batch flow. FFprobe
+decoded its H.264 video, and a frame review showed the rocket impact. The short
+clip had no measurable audio duration. File hashes and display registry values
+matched the original isolated profile after the runs. [SourceTV demo](https://demos.tf/1530633)
