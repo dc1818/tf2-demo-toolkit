@@ -338,6 +338,7 @@ completion count.
 | V08 recording FPS | Tested Windows batch MP4 at 60 and 120 FPS; both matched the configured rate | [Playback measurements](recording-live-validation.md#recording-fps-v08) include frame counts, stream durations, timing limits and outstanding cases. |
 | V09 / D01 Director keyframe synchronization | Scoped parser and refresh repair verified in live Windows Safe Restart and backward seek | [Director validation](director-keyframe-validation.md) records the partial-table defect, runtime screenshots, model checks and remaining cases. |
 | V05 airshot false positives | Pre-impact landing regression fixed | A grounded sample before impact cancels the earlier jump, including inside the two-tick standard and six-tick Loose Cannon guards. The synthetic regression exercises the start and end of each guard and preserves an airshot when the first grounded sample is in the impact packet. All 219 Windows Rust workspace tests passed. [Public SourceTV demo 1530633](https://demos.tf/1530633) retained all 67 candidates and 26 confirmed airshot kills with identical tags and scores. At demo ticks 7498–7499 the victim landed before a scattergun death at tick 7500, and the exported airborne evidence changed from `true` to `false`. The rejected projectile-airshot case is covered by the synthetic regression. Further labeled demo cases remain open. |
+| V05 projectile evidence | Reused projectile entity indices fixed | [Projectile entity reuse validation](#v05-projectile-entity-reuse) covers the public SourceTV case and the packet-order regression. |
 | Other features | No new completion claim | Follow the dependency plan and prepare scoped proposals where a B/U/D gate applies. |
 
 Latest local verification for A03: 77 actual-source headless module tests,
@@ -359,3 +360,30 @@ validation](profile-restore-validation.md) for each checkpoint's evidence.
 Keep this register current at every feature checkpoint and record release/CI
 results in the per-feature validation document. Do not infer approvals from
 elapsed time or turn an offline prototype into a completion claim.
+
+### V05 projectile entity reuse
+
+At demo tick 4408, the death event names rocket entity 345. The matched rocket
+first appears at server tick 29454 and is removed at 29467, the death tick. The
+old analyzer used server ticks 25096 and 25128 for launch and impact, from an
+earlier rocket in slot 345 with a different launcher. It also added travel
+across the slot reuse. [SourceTV demo 1530633](https://demos.tf/1530633)
+
+The analyzer now measures flight within the removal boundaries surrounding the
+matched sample, using packet order to distinguish reuse at the same server tick.
+The synthetic regression failed on baseline and passed after the fix. All 220
+Windows Rust workspace tests passed.
+
+Reanalysis retained the same 67 candidates and 26 confirmed airshot kills. At
+tick 4408 the tracked flight changed from 0.480 s to 0.195 s. The near rocket
+kill at tick 36362 and the farther kill at tick 20499 kept their `direct` and
+`splash` proximity labels, respectively. At tick 103371 one rocket killed two
+players. The exported distances of 34.19 and 126.77 units yielded the same two
+labels in both runs. These checks validate proximity labels from demo telemetry.
+Correcting the flight evidence changed 12 candidate scores under the existing
+rule. Eleven lost five long-flight points and one gained five.
+
+The export still uses an observed removal as the impact tick. For the crossbow
+kill at demo tick 80813, the matched arrow was removed 200 server ticks after
+the kill. The exact impact time and independently labeled direct-hit and splash
+cases remain open.

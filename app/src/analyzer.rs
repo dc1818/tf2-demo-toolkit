@@ -151,8 +151,14 @@ struct StateScan {
     all_at_death: HashMap<i64, HashMap<i64, Map<String, Value>>>,
     roster_samples: Vec<(i64, HashMap<String, HashMap<String, usize>>)>,
     projectile_tracks: HashMap<i64, Vec<(i64, Map<String, Value>)>>,
-    projectile_removals: HashMap<i64, Vec<i64>>,
+    projectile_removals: HashMap<i64, Vec<ProjectileRemoval>>,
     player_history: HashMap<i64, Vec<(i64, Map<String, Value>)>>,
+}
+
+#[derive(Clone, Debug)]
+struct ProjectileRemoval {
+    tick: i64,
+    sample_count: usize,
 }
 
 #[derive(Clone, Debug)]
@@ -688,7 +694,8 @@ fn scan_state_stream(
             if let Some(removed) = record.get("removed_projectiles").and_then(Value::as_array) {
                 for entity in removed.iter().filter_map(Value::as_i64) {
                     current_projectiles.remove(&entity);
-                    result.projectile_removals.entry(entity).or_default().push(tick);
+                    let sample_count = result.projectile_tracks.get(&entity).map_or(0, Vec::len);
+                    result.projectile_removals.entry(entity).or_default().push(ProjectileRemoval { tick, sample_count });
                 }
             }
             while pending_rosters.peek().is_some_and(|target| *target <= tick) {
@@ -942,7 +949,7 @@ fn matching_projectile(death: &Death, scan: &StateScan) -> Option<Value> {
     let weapon = death.weapon.to_ascii_lowercase();
     let mut best: Option<(f64, Value)> = None;
     for (entity, track) in &scan.projectile_tracks {
-        let Some((state_tick, state)) = track.iter().min_by_key(|(tick, _)| (tick - death.event_tick).abs()) else { continue };
+        let Some((sample_index, (state_tick, state))) = track.iter().enumerate().min_by_key(|(_, (tick, _))| (tick - death.event_tick).abs()) else { continue };
         if (state_tick - death.event_tick).abs() > 6 { continue; }
         if !handles.contains(&int_value(state.get("launcher_handle")).unwrap_or_default()) { continue; }
         let projectile_type = state.get("projectile_type").and_then(Value::as_str).unwrap_or_default().to_ascii_lowercase();
@@ -950,13 +957,22 @@ fn matching_projectile(death: &Death, scan: &StateScan) -> Option<Value> {
         let position = vector3(state.get("position"))?;
         let distance = ((position[0]-victim[0]).powi(2)+(position[1]-victim[1]).powi(2)+(position[2]-victim[2]).powi(2)).sqrt();
         if distance > 220.0 { continue; }
-        let usable = track.iter().filter(|(tick, _)| *tick <= death.event_tick + 5).collect::<Vec<_>>();
-        let launch_tick = usable.first().map(|(tick, _)| *tick).unwrap_or(*state_tick);
-        let impact_tick = scan.projectile_removals.get(entity).and_then(|ticks| ticks.iter().copied().filter(|tick| *tick >= launch_tick).min()).unwrap_or(death.event_tick);
+        // A slot can be removed and reused in separate packets at the same tick.
+        let removals = scan.projectile_removals.get(entity).map(Vec::as_slice).unwrap_or_default();
+        let split = removals.partition_point(|removal| removal.sample_count <= sample_index);
+        let (prior_removals, later_removals) = removals.split_at(split);
+        let start = prior_removals.last().map_or(0, |removal| removal.sample_count);
+        let end = later_removals.first();
+        let mut usable = track[start..end.map_or(track.len(), |removal| removal.sample_count)]
+            .iter()
+            .filter(|(tick, _)| *tick <= death.event_tick + 5)
+            .peekable();
+        let launch_tick = usable.peek().map_or(*state_tick, |(tick, _)| *tick);
+        let impact_tick = end.map_or(death.event_tick, |removal| removal.tick);
         let mut path_distance = 0.0;
         let mut previous: Option<[f64; 3]> = None;
         let mut vertical_range = (f64::MAX, f64::MIN);
-        for (_, sample) in &usable {
+        for (_, sample) in usable {
             if let Some(current) = vector3(sample.get("position")) {
                 vertical_range.0 = vertical_range.0.min(current[2]);
                 vertical_range.1 = vertical_range.1.max(current[2]);
@@ -1988,6 +2004,48 @@ mod tests {
     }
 
     #[test]
+    fn reused_projectile_index_keeps_flight_evidence_with_the_matched_rocket() {
+        let root = bookmark_test_directory("projectile-index-reuse");
+        fs::create_dir_all(&root).unwrap();
+        let path = root.join("state_samples.ndjson");
+        let rocket = |x: f64| json!({
+            "entity_id": 345,
+            "launcher_handle": 123,
+            "projectile_type": "rocket",
+            "position": [x, 0.0, 128.0],
+        });
+        let packets = [
+            json!({"server_tick": 900, "projectiles": [rocket(500.0)]}),
+            json!({"server_tick": 990, "removed_projectiles": [345]}),
+            json!({"server_tick": 990, "projectiles": [rocket(0.0)]}),
+            json!({"server_tick": 999, "projectiles": [rocket(50.0)]}),
+            json!({"server_tick": 1_000, "removed_projectiles": [345]}),
+        ];
+        let ndjson = packets.iter().map(Value::to_string).collect::<Vec<_>>().join("\n");
+        fs::write(&path, ndjson).unwrap();
+        let scan = scan_state_stream(&path, &[], &[], None, None).unwrap();
+        fs::remove_dir_all(&root).unwrap();
+
+        let mut death = Death { event_tick: 1_000, weapon: "rocketlauncher".into(), ..Death::default() };
+        death.state.attacker.insert("weapon_handles".into(), json!([123]));
+        death.state.victim = position_state(140.0, 0.0, 128.0);
+        death.state.victim_airborne_before_projectile_impact = true;
+        let splash = matching_projectile(&death, &scan).unwrap();
+        assert_eq!(splash["launch_tick"], json!(990));
+        assert_eq!(splash["impact_tick"], json!(1_000));
+        assert_eq!(splash["tracked_path_distance"], json!(50.0));
+        assert_eq!(splash["impact_proximity"], json!("splash"));
+        death.state.projectile = Some(splash);
+        let tags = kill_tags(&death);
+        assert!(tags.contains("confirmed_airshot"));
+        assert!(!tags.contains("long_flight_airshot"));
+
+        death.state.victim = position_state(60.0, 0.0, 128.0);
+        death.state.projectile = matching_projectile(&death, &scan);
+        assert!(kill_tags(&death).contains("direct_airshot"));
+    }
+
+    #[test]
     fn original_rocket_uses_stock_matching_tags_and_scores() {
         // Reproduce the export's quake_rl / weapon 22 / item 513 combination.
         let mut original = Death {
@@ -2018,7 +2076,7 @@ mod tests {
                 ("position".into(), json!([100.0, 0.0, 128.0])),
             ])),
         ]);
-        scan.projectile_removals.insert(598, vec![1_000]);
+        scan.projectile_removals.insert(598, vec![ProjectileRemoval { tick: 1_000, sample_count: 2 }]);
         let projectile = matching_projectile(&original, &scan).expect("Original must match its rocket");
         assert_eq!(projectile["airshot_eligible"], json!(true));
         assert!(!projectile_matches_weapon("pipe", "quake_rl"));
