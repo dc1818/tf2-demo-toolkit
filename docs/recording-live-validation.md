@@ -1,4 +1,4 @@
-# Windows batch MP4 validation
+# Windows MP4 recording validation
 
 Tested November 14, 2026 against `84e1df760a5c749b77fddc34f00bf0c79dcb18e1`.
 Windows x64 TF2, HLAE 2.189.4, FFmpeg and FFprobe build `53c21c2`.
@@ -47,8 +47,8 @@ need independent measurement. Ralph reviewed the first two measurements and
 traced the setting through the batch CFG, the HLAE encoder's frame-rate
 parameter, and the final FFmpeg mux, which copies the video stream. The tested
 batch MP4 path honored the configured frame rate. Production code is unchanged.
-Manual capture, 240/480 FPS, other presets and formats, and longer recordings
-remain open for V08.
+240/480 FPS, other presets and formats, and longer recordings remain open for
+V08.
 
 ## Zero-padding single-kill capture
 
@@ -74,3 +74,22 @@ The repaired clip was published and indexed by the normal batch flow. FFprobe
 decoded its H.264 video, and a frame review showed the rocket impact. The short
 clip had no measurable audio duration. File hashes and display registry values
 matched the original isolated profile after the runs. [SourceTV demo](https://demos.tf/1530633)
+
+## Manual HLAE capture at 120 FPS
+
+Tested the manual HLAE path on Windows x64 with HLAE 2.189.4 and Toolkit
+`19d31b0`. The isolated harness loaded the same SourceTV demo near tick 20409,
+resumed from the manual ready point, and invoked the start and stop commands
+used by the manual hotkeys. Closing TF2 triggered the normal MP4 finalizer and
+profile restoration. The session reported no finalization or restore problem.
+[SourceTV demo](https://demos.tf/1530633)
+
+FFprobe decoded 233 H.264 frames at 1280×720 and exactly 120 FPS. The video ran
+for 1.941667 s and AAC for 1.903991 s. Both streams started at zero. FFmpeg
+decoded the file end to end, and a captured frame showed the expected rocket
+impact. The isolated TF2 configuration and custom file hashes and display
+registry values matched their original snapshots after exit.
+
+This run exercised the manual capture commands and native finalization through
+the harness. Desktop hotkey input and independent sound-to-action alignment
+remain open. No production code changes were needed for this check.
