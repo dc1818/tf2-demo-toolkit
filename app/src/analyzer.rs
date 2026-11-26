@@ -2,8 +2,11 @@
 mod arrow_saves;
 #[path = "analyzer/uber_saves.rs"]
 mod uber_saves;
+#[path = "analyzer/weapon_registry.rs"]
+mod weapon_registry;
 
 use crate::{
+    item_schema::{load as parse_item_schema, ItemInfo},
     models::{Candidate, DemoContext, TickTagGroup},
     scheduler::RuntimeGovernor,
 };
@@ -19,6 +22,7 @@ use std::{
     sync::atomic::{AtomicBool, Ordering},
     time::Instant,
 };
+use weapon_registry::{canonical_projectile_weapon, projectile_tags};
 
 const TICKS_PER_SECOND: f64 = 66.666_666_7;
 const SEQUENCE_GAP: i64 = 267;
@@ -187,12 +191,6 @@ struct ObjectiveEvent {
     actor_user_id: i64,
     kind: String,
     data: Value,
-}
-
-#[derive(Clone, Debug)]
-struct ItemInfo {
-    slot: String,
-    log_name: String,
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
@@ -582,10 +580,17 @@ fn normalized_deaths(events: &[EventRecord], rounds: &[Round], context: &DemoCon
         last_death_by_victim.insert(victim, tick);
         let weapon_def_index = event.int(&["weapon_def_index", "weapon_defindex", "defindex"]);
         let item = items.get(&weapon_def_index);
-        let mut weapon = event.text(&["weapon", "weapon_logclassname"]).to_ascii_lowercase();
-        if weapon.is_empty() { weapon = item.map(|item| item.log_name.clone()).unwrap_or_default(); }
+        let weapon = ["weapon", "weapon_logclassname", "weapon_log_class_name"]
+            .iter()
+            .find_map(|name| text_value(event.event.get(*name)).filter(|value| !value.trim().is_empty()))
+            .map(|value| value.to_ascii_lowercase())
+            .or_else(|| item.map(|item| item.log_name.clone()))
+            .unwrap_or_default();
         let mut weapon_slot = event.text(&["weapon_slot"]).to_lowercase();
-        if weapon_slot.is_empty() { weapon_slot = item.map(|item| item.slot.clone()).unwrap_or_default(); }
+        // Environmental deaths can still carry an inventory definition index.
+        if weapon_slot.is_empty() && weapon != "world" {
+            weapon_slot = item.map(|item| item.slot.clone()).unwrap_or_default();
+        }
         deaths.push(Death {
             event_tick: tick,
             inflictor_ent_index: event.int(&["inflictor_ent_index"]).max(0),
@@ -1041,12 +1046,6 @@ fn rocket_contact(death: &Death, scan: &StateScan, position: [f64; 3]) -> Option
     (compatible.next().is_none() && (0..2047).contains(&contact)).then_some(contact)
 }
 
-/// Classify reskin log names without changing the original weapon in exports.
-/// The Original reports `quake_rl`, but uses the stock rocket-launcher rules.
-fn canonical_projectile_weapon(weapon: &str) -> &str {
-    if weapon.eq_ignore_ascii_case("quake_rl") { "rocketlauncher" } else { weapon }
-}
-
 fn projectile_matches_weapon(projectile: &str, weapon: &str) -> bool {
     let weapon = canonical_projectile_weapon(weapon);
     (projectile.contains("rocket") && ["rocket", "directhit", "blackbox", "liberty", "airstrike"].iter().any(|name| weapon.contains(name)))
@@ -1261,44 +1260,6 @@ fn normalized_objectives(events: &[EventRecord], rounds: &[Round]) -> Vec<Object
     objectives
 }
 
-fn parse_item_schema(path: &Path) -> Result<HashMap<i64, ItemInfo>> {
-    let text = fs::read_to_string(path).with_context(|| format!("could not read item schema {}", path.display()))?;
-    let mut result = HashMap::new();
-    let mut current: Option<i64> = None;
-    let mut depth = 0i32;
-    let mut slot = String::new();
-    let mut log_name = String::new();
-    for raw in text.lines() {
-        let line = raw.trim();
-        if current.is_none() {
-            if let Some(value) = quoted_values(line).first().and_then(|value| value.parse::<i64>().ok()) {
-                current = Some(value); slot.clear(); log_name.clear(); depth = 0;
-            }
-        }
-        if current.is_some() {
-            depth += line.matches('{').count() as i32;
-            let values = quoted_values(line);
-            if values.len() >= 2 {
-                match values[0].as_str() {
-                    "item_slot" => slot = values[1].to_ascii_lowercase(),
-                    "item_logname" | "name" if log_name.is_empty() => log_name = values[1].trim_start_matches('#').to_ascii_lowercase(),
-                    _ => {}
-                }
-            }
-            depth -= line.matches('}').count() as i32;
-            if depth <= 0 && line.contains('}') {
-                let index = current.take().unwrap();
-                result.insert(index, ItemInfo { slot: slot.clone(), log_name: log_name.clone() });
-            }
-        }
-    }
-    Ok(result)
-}
-
-fn quoted_values(line: &str) -> Vec<String> {
-    line.split('"').enumerate().filter_map(|(index, value)| (index % 2 == 1).then(|| value.to_owned())).collect()
-}
-
 fn build_candidates(
     deaths: &mut [Death], rounds: &[Round], context: &DemoContext, source_demo: &str, map_name: &str,
     buildings: &[BuildingEvent], objectives: &[ObjectiveEvent], cancelled: Option<&AtomicBool>,
@@ -1443,11 +1404,7 @@ fn tick_tag_groups(group: &[Death]) -> Vec<TickTagGroup> {
 fn kill_tags(kill: &Death) -> BTreeSet<String> {
     let mut tags = BTreeSet::new();
     let weapon = canonical_projectile_weapon(&kill.weapon).to_ascii_lowercase();
-    if matches!(weapon.as_str(), "rocketlauncher" | "directhit" | "blackbox" | "liberty_launcher" | "airstrike" | "grenadelauncher" | "loch_n_load" | "iron_bomber" | "stickybomb_launcher" | "quickiebomb_launcher" | "flaregun" | "detonator" | "scorch_shot" | "compound_bow" | "crusaders_crossbow" | "syringegun_medic" | "rescue_ranger" | "righteous_bison" | "loose_cannon" | "loose_cannon_impact" | "loose_cannon_explosion") {
-        tags.insert("projectile_kill".into());
-    }
-    if matches!(weapon.as_str(), "grenadelauncher" | "loch_n_load" | "iron_bomber") { tags.insert("pipe".into()); }
-    if matches!(weapon.as_str(), "rocketlauncher" | "directhit" | "blackbox" | "liberty_launcher" | "airstrike") { tags.insert("rocket".into()); }
+    tags.extend(projectile_tags(&weapon).iter().map(|&tag| tag.to_owned()));
     if matches!(weapon.as_str(), "compound_bow" | "huntsman") { tags.insert("huntsman".into()); }
     if matches!(weapon.as_str(), "crusaders_crossbow" | "crossbow") { tags.insert("crossbow".into()); }
     if let Some(tag) = match weapon.as_str() {
@@ -1538,11 +1495,7 @@ fn score_group(group: &[Death], round: &Round, buildings: &[BuildingEvent], obje
     let mut demoman_kills = 0usize;
     for kill in group {
         let weapon = canonical_projectile_weapon(&kill.weapon).to_lowercase();
-        if matches!(weapon.as_str(), "rocketlauncher" | "directhit" | "blackbox" | "liberty_launcher" | "airstrike" | "grenadelauncher" | "loch_n_load" | "iron_bomber" | "stickybomb_launcher" | "quickiebomb_launcher" | "flaregun" | "detonator" | "scorch_shot" | "compound_bow" | "crusaders_crossbow" | "syringegun_medic" | "rescue_ranger" | "righteous_bison" | "loose_cannon" | "loose_cannon_impact" | "loose_cannon_explosion") {
-            tags.insert("projectile_kill".into());
-        }
-        if matches!(weapon.as_str(), "grenadelauncher" | "loch_n_load" | "iron_bomber") { tags.insert("pipe".into()); }
-        if matches!(weapon.as_str(), "rocketlauncher" | "directhit" | "blackbox" | "liberty_launcher" | "airstrike") { tags.insert("rocket".into()); }
+        tags.extend(projectile_tags(&weapon).iter().map(|&tag| tag.to_owned()));
         if matches!(weapon.as_str(), "compound_bow" | "huntsman") { tags.insert("huntsman".into()); }
         if matches!(weapon.as_str(), "crusaders_crossbow" | "crossbow") { tags.insert("crossbow".into()); }
         if let Some(tag) = match weapon.as_str() {
@@ -2027,6 +1980,48 @@ fn text_value(value: Option<&Value>) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn weapon_attribution_uses_nonempty_event_fields_before_item_metadata() {
+        let rounds = build_rounds(&[
+            EventRecord { tick: 1, event_type: "teamplay_round_start".into(), ..EventRecord::default() },
+            EventRecord { tick: 2, event_type: "teamplay_round_active".into(), ..EventRecord::default() },
+        ], 2_000);
+        let items = HashMap::from([(
+            20, ItemInfo { slot: "melee".into(), log_name: "schema_weapon".into() },
+        )]);
+        let no_items = HashMap::new();
+        for (fields, expected_without_schema, expected_with_schema, event_slot, schema_slot) in [
+            (json!({
+                "weapon": "Fixture_Unknown", "weapon_logclassname": "legacy", "weapon_log_class_name": "native",
+                "weapon_slot": "Primary",
+            }), "fixture_unknown", "fixture_unknown", "primary", "primary"),
+            (json!({"weapon": "", "weapon_logclassname": "Legacy", "weapon_log_class_name": "native"}), "legacy", "legacy", "", "melee"),
+            (json!({"weapon": " ", "weapon_logclassname": "", "weapon_log_class_name": "Stickybomb_Launcher"}), "stickybomb_launcher", "stickybomb_launcher", "", "melee"),
+            (json!({"weapon_log_class_name": "Stickybomb_Launcher"}), "stickybomb_launcher", "stickybomb_launcher", "", "melee"),
+            (json!({"weapon_slot": "Secondary"}), "", "schema_weapon", "secondary", "secondary"),
+            (json!({}), "", "schema_weapon", "", "melee"),
+            (json!({"weapon": "world"}), "world", "world", "", ""),
+        ] {
+            let mut fields = fields.as_object().unwrap().clone();
+            fields.extend(Map::from_iter([
+                ("attacker".into(), json!(2)), ("user_id".into(), json!(3)),
+                ("weapon_def_index".into(), json!(20)), ("custom_kill".into(), json!(25)),
+            ]));
+            let event = EventRecord { tick: 1_000, event_type: "player_death".into(), event: fields, ..EventRecord::default() };
+            for (metadata, weapon, slot) in [
+                (&no_items, expected_without_schema, event_slot),
+                (&items, expected_with_schema, schema_slot),
+            ] {
+                let deaths = normalized_deaths(std::slice::from_ref(&event), &rounds, &DemoContext::default(), metadata);
+                let death = &deaths[0];
+                assert_eq!(death.weapon, weapon, "{:?}", event.event);
+                assert_eq!(death.weapon_slot, slot, "{:?}", event.event);
+                assert_eq!(death.weapon_def_index, 20);
+                assert_eq!(death.custom_kill, 25);
+            }
+        }
+    }
 
     #[test]
     fn rocket_collision_overrides_proximity_only_for_unique_valid_evidence() {

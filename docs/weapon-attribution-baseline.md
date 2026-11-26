@@ -2,8 +2,8 @@
 
 November 26, 2026. Phase 2 baseline `3c30439` on
 `work/ralph-recovery-pilot`. Ralph reviewed the exporter, analyzer, item
-schema fallback, presentation, and scoring paths. Approval for the registry
-implementation is pending.
+schema fallback, presentation, and scoring paths. The measurements below
+capture behavior before implementation.
 
 ## Baseline method
 
@@ -147,3 +147,35 @@ a separate measured proposal.
 - Preserve the candidate and recording schemas. A source revert rolls back
   the refactor. The first slice requires no migration or reparse of stored
   exports.
+
+## Approved v1 implementation
+
+The owner approved the registry and the two attribution fixes documented
+above. The registry shares the three exact-name tags and The Original's
+classification alias across the existing callers. Remote-sticky events keep
+their raw projectile token and definition index.
+
+The analyzer uses the first nonblank value from `weapon`,
+`weapon_logclassname`, and `weapon_log_class_name`, in that order. If none
+is available, it uses the matching item's `item_logname` or `name`. The
+schema selection and analyzer now use the same structural parser, which
+reads direct fields of numeric definitions under `items_game/items`.
+An event's explicit slot still takes precedence over the schema slot.
+For an explicitly attributed `world` death, the analyzer skips the schema
+slot. The SourceTV fixture contains a `world` death with a melee item
+definition. Using that slot had incorrectly awarded 15 melee points and
+created a frag candidate.
+
+The regression cases cover both event field spellings, conflicting and
+blank fields, preserved raw weapon text and custom-kill evidence, and a
+schema with nested fields and a map reusing an item definition number. In
+the installed schema, a death with definition 20 and no weapon text now
+resolves to `tf_weapon_pipebomblauncher`. Without the optional schema,
+that death keeps an empty weapon value. All 236 Rust workspace tests passed.
+
+The three native demo exports retained all 136 candidates in both schema
+modes, with the same identities, order, clip bounds, tags, and scores.
+Without schema, every candidate record matched the baseline. With schema,
+the only differences were 42 corrected kill-level `weapon_slot` values
+across 37 candidates (19 in demo 1530633 and 18 in `comp`). All 11
+`gully` candidates matched in full.
