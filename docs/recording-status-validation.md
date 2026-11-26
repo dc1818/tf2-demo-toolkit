@@ -96,11 +96,9 @@ from the previously successful A03/A04 run.
 
 ## Remaining work / honest status
 
-V02/V03/V04 receive specific implemented fixes with automated regression evidence;
-they are not declared fully closed. The original user's exact demo/output folders
-and a live Windows TF2/HLAE session have not been replayed. The native modal dialog
-and filesystem changes occurring after its snapshot still need end-to-end review.
-Changes after the snapshot are not a promise of continuous filesystem monitoring.
+The live fixture below covers part of the V02/V03/V04 acceptance matrix. The
+owner's original demo and output folders, native modal interaction, replacement
+via Yes, and filesystem changes after the prompt snapshot still need live review.
 
 Tokenless legacy filenames can still be ambiguous across demos: preserving their
 existing import behavior is intentional here. A migration/attribution proposal
@@ -115,3 +113,29 @@ V05–V09 also remain open; none is claimed fixed by these changes.
 
 Rollback is a source revert on the work branch. No stored schema or output layout
 changes require data rollback. Existing user clips remain in their original paths.
+
+## Live Windows mixed queue and export reload
+
+November 26, 2026. Pilot code `3c8d94d`. Ralph reviewed the acceptance fixture
+before the run. An offscreen Windows harness invoked the normal export-load,
+Record Selected, and recording-completion callbacks. It supplied the folder
+choice and dialog responses at the picker and prompt boundaries. Windows TF2
+and HLAE performed the actual batch recording in an isolated installation.
+[SourceTV demo used for the fixture](https://demos.tf/1530633)
+
+- Loading the fixture marked the existing indexed MP4 as recorded and left
+  the new clip and a same-ID, same-tick candidate with a different demo
+  fingerprint unrecorded. The negative fixture changed a padding byte in the
+  demo header to give the otherwise identical replay a different fingerprint.
+- Cancel reported one existing selection and preserved both selected rows
+  without launching. No on that mixed selection recorded just the new clip.
+  The REC column updated on completion without restarting. A second No with
+  both rows now recorded preserved the selections and exited before preflight.
+- After moving the indexed MP4 to a supported Videos folder under an alternate
+  output root and loading the export with an identical renamed demo copy,
+  asynchronous reconciliation restored the REC flag. Reopening the index
+  confirmed the relocated path, and the different-fingerprint row stayed
+  unrecorded. Both final MP4s matched their index SHA-256 and decoded with audio.
+- TF2 configuration and custom file hashes and the display registry snapshot
+  matched after exit. The first fixture attempt put the renamed video outside
+  Videos. A clean rerun at the supported location passed all checks.
