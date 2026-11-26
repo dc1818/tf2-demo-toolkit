@@ -64,7 +64,39 @@ text file and directory. The other verifies that an unidentifiable legacy
 entry leaves a different capture's frame alone. Both use synthetic files.
 Both passed after the repair on Windows with Rust 1.88.0. The locked workspace
 run passed 201 tests and reproduced the same ten Windows sandbox failures
-listed above. Live TF2/HLAE image capture remains unverified.
+listed above.
+
+### Live Windows image capture and restart recovery
+
+November 26, 2026. Pilot source `1fd8fb7`. Ralph reviewed the recovery
+path. The fixture ran production capture and restart recovery against a public
+SourceTV demo in an isolated TF2 installation. [SourceTV demo 1530633](https://demos.tf/1530633)
+
+- A normal JPG batch completed with 180 contiguous and decodable 1280×720
+  frames at the 60 FPS capture setting. The Toolkit indexed the sequence.
+  This JPEG run emitted no WAV, so the interruption fixture used TGA.
+- The TGA batch ran three clips. The fixture held the Toolkit monitor before
+  finalization, let TF2 finish the first clip, and stopped the isolated
+  processes after the second clip wrote frames and before its stop marker.
+  The third clip had never started. Production profile and session recovery
+  ran on two subsequent launches.
+- Restart recovery put the complete sequence in its expected `Frames` and
+  `Audio` directories. Its 180 contiguous TGA frames decoded at 1280×720,
+  and its 2.995-second stereo PCM WAV decoded at 44.1 kHz. The recovered
+  frame and WAV hashes matched the original artifacts, and the manifest and
+  index agreed on the output path and fingerprint.
+- The similarly prefixed directory, empty TGA, and text file were left in
+  place, as was a frame from a different capture prefix. The unstarted clip
+  remained `RecoveryPending` with no media output or index entry. The first
+  recovery restored the isolated TF2 cfg/custom file hashes and display
+  registry snapshot. The second recovery preserved the media hashes and
+  index bytes without adding rows.
+- The interrupted clip had only 13 frames and an approximately 0.21-second
+  WAV that FFmpeg rejected as corrupt on strict decoding. Recovery moved
+  those artifacts, set the manifest to `Completed`, and indexed the clip as
+  Recorded. That status persisted on the second launch. The recovery path
+  accepts nonempty matching frames before establishing that the clip
+  finished, so V07 completeness remains open.
 
 ## Encoded batch transfer (V07-P3)
 
