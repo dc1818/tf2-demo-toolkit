@@ -1,3 +1,6 @@
+#[path = "export_all/sticky_evidence.rs"]
+mod sticky_evidence;
+
 use bitbuffer::BitRead;
 use main_error::MainError;
 use serde::Serialize;
@@ -12,6 +15,7 @@ use tf_demo_parser::demo::message::Message;
 use tf_demo_parser::demo::packet::Packet;
 use tf_demo_parser::demo::data::game_state::{GameState, Player, PlayerClassData, PlayerCondition, Projectile};
 use tf_demo_parser::demo::parser::gamestateanalyser::GameStateAnalyser;
+use tf_demo_parser::demo::parser::handler::BorrowMessageHandler;
 use tf_demo_parser::demo::parser::{DemoHandler, RawPacketStream};
 use tf_demo_parser::demo::sendprop::{SendPropIdentifier, SendPropValue};
 use tf_demo_parser::Demo;
@@ -464,7 +468,7 @@ fn consider_mode_signal(signals: &mut Vec<String>, source: &str, command: &str) 
 
 fn usage(program: &str) {
     eprintln!(
-        "Usage:\n  {program} <input.dem> <output_directory>\n\n\
+        "Usage:\n  {program} <input.dem> <output_directory> [--sticky-evidence]\n\n\
          Example:\n  {program} \"C:\\Demos\\match.dem\" \"C:\\Demos\\match_export\""
     );
 }
@@ -481,10 +485,14 @@ fn main() -> Result<(), MainError> {
         usage(&program);
         std::process::exit(2);
     };
-    if args.next().is_some() {
-        usage(&program);
-        std::process::exit(2);
-    }
+    let sticky_evidence = match (args.next().as_deref(), args.next()) {
+        (None, None) => false,
+        (Some("--sticky-evidence"), None) => true,
+        _ => {
+            usage(&program);
+            std::process::exit(2);
+        }
+    };
 
     let input_path = PathBuf::from(input_arg);
     let output_dir = PathBuf::from(output_arg);
@@ -524,6 +532,15 @@ fn main() -> Result<(), MainError> {
     let mut events_out = BufWriter::new(File::create(output_dir.join("events.ndjson"))?);
     let mut states_out = BufWriter::new(File::create(output_dir.join("state_samples.ndjson"))?);
     let mut explosions_out = BufWriter::new(File::create(output_dir.join("rocket_explosions.ndjson"))?);
+    let evidence_partial = output_dir.join("sticky_evidence.ndjson.partial");
+    let mut evidence = if sticky_evidence {
+        Some((
+            sticky_evidence::StickyEvidence::default(),
+            BufWriter::new(File::create(&evidence_partial)?),
+        ))
+    } else {
+        None
+    };
     let mut state_delta_writer = StateDeltaWriter::default();
     let mut packet_count: u64 = 0;
     let mut usercmd_packet_count: u64 = 0;
@@ -582,7 +599,23 @@ fn main() -> Result<(), MainError> {
 
         // Apply this packet to parser state so later delta-compressed packets,
         // baselines, event definitions, and string-table updates decode correctly.
-        handler.handle_packet(packet)?;
+        if let Some((evidence, output)) = &mut evidence {
+            evidence.start_packet();
+            let mut result = Ok(());
+            let position = sticky_evidence::PacketPosition {
+                packet_sequence: packet_count,
+                demo_tick: u32::from(tick),
+                server_tick: packet_server_tick,
+            };
+            handler.handle_packet_with_observer(packet, |index, message, parser, analyser| {
+                if result.is_ok() {
+                    result = evidence.observe(position, index, message, parser, analyser.borrow_output(parser), output);
+                }
+            })?;
+            result?;
+        } else {
+            handler.handle_packet(packet)?;
+        }
         state_delta_writer.write(
             handler.borrow_output(),
             u32::from(tick),
@@ -599,6 +632,11 @@ fn main() -> Result<(), MainError> {
     events_out.flush()?;
     states_out.flush()?;
     explosions_out.flush()?;
+    if let Some((_, mut output)) = evidence {
+        output.flush()?;
+        drop(output);
+        fs::rename(&evidence_partial, output_dir.join(sticky_evidence::FILE))?;
+    }
     let match_state = handler.into_output();
     let players: BTreeMap<u16, _> = match_state
         .players
@@ -621,7 +659,7 @@ fn main() -> Result<(), MainError> {
             "bookmarks": bookmarks,
         }),
     )?;
-    let manifest = json!({
+    let mut manifest = json!({
         "format": "tf-demo-parser-decoded-packet-stream",
         "format_version": 1,
         "source_demo": input_path.to_string_lossy(),
@@ -653,6 +691,10 @@ fn main() -> Result<(), MainError> {
             "keep the original .dem file as the bit-exact source archive"
         ]
     });
+    if sticky_evidence {
+        manifest["files"]["sticky_evidence"] = json!(sticky_evidence::FILE);
+        manifest["sticky_evidence_format_version"] = json!(sticky_evidence::FORMAT_VERSION);
+    }
 
     let manifest_file = File::create(output_dir.join("manifest.json"))?;
     serde_json::to_writer_pretty(BufWriter::new(manifest_file), &manifest)?;

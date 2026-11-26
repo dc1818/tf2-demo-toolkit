@@ -115,6 +115,16 @@ impl<'a, T: MessageHandler> DemoHandler<'a, T> {
     }
 
     pub fn handle_packet(&mut self, packet: Packet<'a>) -> Result<()> {
+        self.handle_packet_with_observer(packet, |_, _, _, _| {})
+    }
+
+    /// Observe decoded messages after analysis, before their parser state is applied.
+    /// The message index includes temporary entities and string-table messages.
+    pub fn handle_packet_with_observer(
+        &mut self,
+        packet: Packet<'a>,
+        mut observe: impl FnMut(usize, &Message<'a>, &ParserState, &T),
+    ) -> Result<()> {
         match packet {
             Packet::DataTables(packet) => {
                 self.handle_data_table(packet.tables, packet.server_classes)?;
@@ -127,22 +137,28 @@ impl<'a, T: MessageHandler> DemoHandler<'a, T> {
             Packet::Message(packet) | Packet::Signon(packet) => {
                 self.analyser
                     .handle_packet_meta(packet.tick, &packet.meta, &self.state_handler);
-                for message in packet.messages {
+                for (index, message) in packet.messages.into_iter().enumerate() {
                     match message {
-                        Message::NetTick(message) => {
-                            self.server_tick = message.tick;
-                            self.handle_message(Message::NetTick(message), packet.tick)
+                        Message::CreateStringTable(_) => {
+                            observe(index, &message, &self.state_handler, &self.analyser);
+                            if let Message::CreateStringTable(message) = message {
+                                self.handle_string_table(message.table);
+                            }
                         }
-                        Message::CreateStringTable(message) => {
-                            self.handle_string_table(message.table)
+                        Message::UpdateStringTable(_) => {
+                            observe(index, &message, &self.state_handler, &self.analyser);
+                            if let Message::UpdateStringTable(message) = message {
+                                self.handle_table_update(message.table_id, message.entries);
+                            }
                         }
-                        Message::UpdateStringTable(message) => {
-                            self.handle_table_update(message.table_id, message.entries)
+                        message => {
+                            if let Message::NetTick(net_tick) = &message {
+                                self.server_tick = net_tick.tick;
+                            }
+                            self.handle_message_with_observer(message, packet.tick, |msg, state, analyser| {
+                                observe(index, msg, state, analyser);
+                            });
                         }
-                        Message::PacketEntities(msg) => {
-                            self.handle_message(Message::PacketEntities(msg), packet.tick)
-                        }
-                        message => self.handle_message(message, packet.tick),
                     }
                 }
             }
@@ -193,11 +209,21 @@ impl<'a, T: MessageHandler> DemoHandler<'a, T> {
     }
 
     pub fn handle_message(&mut self, message: Message<'a>, tick: DemoTick) {
+        self.handle_message_with_observer(message, tick, |_, _, _| {});
+    }
+
+    fn handle_message_with_observer(
+        &mut self,
+        message: Message<'a>,
+        tick: DemoTick,
+        observe: impl FnOnce(&Message<'a>, &ParserState, &T),
+    ) {
         let message_type = message.get_message_type();
         if T::does_handle(message_type) {
             self.analyser
                 .handle_message(&message, tick, &self.state_handler);
         }
+        observe(&message, &self.state_handler, &self.analyser);
         self.state_handler.handle_message(message, tick);
     }
 
