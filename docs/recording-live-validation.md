@@ -47,8 +47,25 @@ need independent measurement. Ralph reviewed the first two measurements and
 traced the setting through the batch CFG, the HLAE encoder's frame-rate
 parameter, and the final FFmpeg mux, which copies the video stream. The tested
 batch MP4 path honored the configured frame rate. Production code is unchanged.
-Batch capture at 240/480 FPS, other presets and formats, and longer recordings
-remain open for V08.
+Other presets and formats, and longer recordings, remain open for V08.
+
+### Batch capture at 240 and 480 FPS
+
+On November 26, 2026, the Windows harness queued the same segment of SourceTV
+demo 1530633 at both frame rates, using ticks 20409–20544, 1280×720 standard MP4,
+and HLAE 2.189.4. Each run used its own isolated recording index and output root.
+[Demo](https://demos.tf/1530633)
+
+| Configured FPS | Measured FPS | Decoded video frames | Video duration | Audio duration |
+| ---: | ---: | ---: | ---: | ---: |
+| 240 | 240 | 481 | 2.004167 s | 1.972993 s |
+| 480 | 480 | 962 | 2.004167 s | 1.972993 s |
+
+The H.264 video and AAC audio started at timestamp zero and decoded end to end
+in both files. Each recording index contained one entry whose output path and
+SHA-256 matched the final MP4. The isolated TF2 configuration and custom file
+hashes and display registry values matched their original snapshots after each
+exit.
 
 ## Zero-padding single-kill capture
 
