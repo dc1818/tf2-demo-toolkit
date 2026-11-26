@@ -96,9 +96,10 @@ from the previously successful A03/A04 run.
 
 ## Remaining work / honest status
 
-The live fixture below covers part of the V02/V03/V04 acceptance matrix. The
-owner's original demo and output folders, native modal interaction, replacement
-via Yes, and filesystem changes after the prompt snapshot still need live review.
+The live fixtures below cover part of the V02/V03/V04 acceptance matrix. The
+owner's original demo and output folders, replacement via Yes in the Previously
+Recorded Candidates dialog, and filesystem changes after the prompt snapshot
+still need live review.
 
 Tokenless legacy filenames can still be ambiguous across demos: preserving their
 existing import behavior is intentional here. A migration/attribution proposal
@@ -139,3 +140,24 @@ and HLAE performed the actual batch recording in an isolated installation.
 - TF2 configuration and custom file hashes and the display registry snapshot
   matched after exit. The first fixture attempt put the renamed video outside
   Videos. A clean rerun at the supported location passed all checks.
+
+## Native Windows dialog clicks
+
+November 26, 2026. Pilot checkpoint `6db5d73`. The Ralph-reviewed fixture used
+a visible Toolkit window and the production recording callbacks and dialogs.
+The fixture supplied the export folder and initial selection. The first launch
+omitted the recording-ready flag in the harness. The clean rerun initialized
+it as the normal app does and used mouse clicks through the native UI.
+
+- **Record Selected → Cancel** showed one previously recorded candidate.
+  Both rows stayed selected, the index and existing MP4 were unchanged, and
+  no preflight or recording session started.
+- **Record Selected → No** opened the HLAE preflight for one clip at 1280×720
+  and 120 FPS. Clicking **Yes** in preflight ran TF2 and HLAE to completion.
+  The app reported one completed clip and zero failures. The new row changed
+  to Recorded while the unrelated third row stayed unrecorded. Both selected
+  rows stayed selected.
+- The existing MP4 kept its original SHA-256. Both MP4s matched their index
+  entries, and FFmpeg decoded both audio and video streams. The isolated TF2
+  configuration and custom file hashes and the display registry values matched
+  their pre-run snapshots after TF2 and the Toolkit exited.
