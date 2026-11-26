@@ -1,0 +1,704 @@
+{
+  "baseline_revision": "3c30439271cc231a9804f16d42b4437b69b7bdc9",
+  "fixtures": {
+    "1530633": {
+      "candidate_counts": [
+        67,
+        67
+      ],
+      "candidate_field_diffs": {},
+      "candidate_sha256": [
+        "792be460e195fdb61dd176bb172905328145c9bcdd12a1362c617d02ab301fd8",
+        "792be460e195fdb61dd176bb172905328145c9bcdd12a1362c617d02ab301fd8"
+      ],
+      "capture": "stv",
+      "changed_candidates": 0,
+      "deaths": 199,
+      "events_sha256": "1c93d4e852aa9e98a4cb6e6592fac07e0d65ad06698f7efe258623d07a69baf5",
+      "membership_matches": true,
+      "named_sticky_candidate_kills": 0,
+      "order_matches": true,
+      "original_candidate_kills": 21,
+      "raw_death_field_counts": {
+        "weapon": 208,
+        "weapon_log_class_name": 208
+      },
+      "scope": "all_players",
+      "selected_weapons": {
+        "quake_rl": 34,
+        "tf_projectile_pipe_remote": 20
+      },
+      "state_samples_sha256": "b89acc154c234579d960c1d12fa5f4817ddb1f137d0094637b3a07294b34d9b1",
+      "sticky_entity_candidate_kills": 6,
+      "sticky_entity_defindices": [
+        [
+          19,
+          "cp_steel",
+          ""
+        ],
+        [
+          207,
+          "cp_cargo",
+          ""
+        ],
+        [
+          1151,
+          "the iron bomber",
+          ""
+        ]
+      ],
+      "trace_field_diffs": {
+        "custom_kill": 0,
+        "defindex": 0,
+        "pre_enrichment_group_score": 0,
+        "pre_enrichment_tags": 0,
+        "slot": 0,
+        "weapon": 0
+      },
+      "trace_sha256": [
+        "834a194ee3f47e36dd989240c4e4c81e450f4102f84a17f02e5a2830c3e5a380",
+        "909a787571953d0c73b47541cc754f907e69916987c69d4691e6456edbf5075f"
+      ]
+    },
+    "comp": {
+      "candidate_counts": [
+        58,
+        58
+      ],
+      "candidate_field_diffs": {},
+      "candidate_sha256": [
+        "ca5f4f14c6e152bb984d58ee42198696647b6fd547c302460390ad43c4331786",
+        "ca5f4f14c6e152bb984d58ee42198696647b6fd547c302460390ad43c4331786"
+      ],
+      "capture": "stv",
+      "changed_candidates": 0,
+      "deaths": 243,
+      "events_sha256": "79af3491aa5b3e080bd62741b6bc7a764c8f89edc9a85602d8bbca89b5efda1a",
+      "membership_matches": true,
+      "named_sticky_candidate_kills": 0,
+      "order_matches": true,
+      "original_candidate_kills": 0,
+      "raw_death_field_counts": {
+        "weapon": 263,
+        "weapon_log_class_name": 263
+      },
+      "scope": "all_players",
+      "selected_weapons": {
+        "deflect_promode": 1,
+        "deflect_rocket": 1,
+        "tf_projectile_pipe_remote": 16
+      },
+      "state_samples_sha256": "3225a08c171f67a485a1e3b42078bf8dff05708c957802e5e0ba75e1fce7dfa9",
+      "sticky_entity_candidate_kills": 2,
+      "sticky_entity_defindices": [
+        [
+          20,
+          "cp_egypt_final",
+          ""
+        ],
+        [
+          207,
+          "cp_cargo",
+          ""
+        ],
+        [
+          1151,
+          "the iron bomber",
+          ""
+        ]
+      ],
+      "trace_field_diffs": {
+        "custom_kill": 0,
+        "defindex": 0,
+        "pre_enrichment_group_score": 0,
+        "pre_enrichment_tags": 0,
+        "slot": 0,
+        "weapon": 0
+      },
+      "trace_sha256": [
+        "85c765b8cecfcbe14a88d12e06aaa4c7529692380e67d908336f61c6e0a1540e",
+        "a0dfa35233184ac0d24688bbcf1565fe06754976da544a99f59c47c128a6b75f"
+      ]
+    },
+    "gully": {
+      "candidate_counts": [
+        11,
+        11
+      ],
+      "candidate_field_diffs": {},
+      "candidate_sha256": [
+        "bb3eb119b7e0ba7e5a87115e25595f94e34841f00c78f6a7a545ae384f521acf",
+        "bb3eb119b7e0ba7e5a87115e25595f94e34841f00c78f6a7a545ae384f521acf"
+      ],
+      "capture": "pov",
+      "changed_candidates": 0,
+      "deaths": 32,
+      "events_sha256": "4c400551b4e357a4581c8fcc411ec72be01ace3fb98858c8563ff38563031f91",
+      "membership_matches": true,
+      "named_sticky_candidate_kills": 0,
+      "order_matches": true,
+      "original_candidate_kills": 0,
+      "raw_death_field_counts": {
+        "weapon": 219,
+        "weapon_log_class_name": 219
+      },
+      "scope": "pov_player_only",
+      "selected_weapons": {},
+      "state_samples_sha256": "e71cec76cd45317c64f2d8869cfb167ba67b9f9b6dddadd807c753b937786404",
+      "sticky_entity_candidate_kills": 0,
+      "sticky_entity_defindices": [],
+      "trace_field_diffs": {
+        "custom_kill": 0,
+        "defindex": 0,
+        "pre_enrichment_group_score": 0,
+        "pre_enrichment_tags": 0,
+        "slot": 0,
+        "weapon": 0
+      },
+      "trace_sha256": [
+        "a714b945ec2792d67287dc6bf15d3e5f374aff66ac3e063581826933badbeac5",
+        "7dd6479d4e4e417996bde3f00ab23218ceca53023d809b7bdfe308ce018b7310"
+      ]
+    },
+    "synthetic": {
+      "candidate_counts": [
+        0,
+        0
+      ],
+      "candidate_field_diffs": {},
+      "candidate_sha256": [
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      ],
+      "capture": "stv",
+      "cases": [
+        {
+          "custom_kill": 0,
+          "event": {
+            "attacker": 2,
+            "user_id": 3,
+            "weapon": "stickybomb_launcher",
+            "weapon_def_index": 20,
+            "weapon_id": 35
+          },
+          "item_name": "cp_egypt_final",
+          "item_slot": "",
+          "label": "canonical-sticky",
+          "matches_sticky_entity_as_projectile": false,
+          "score_reasons": [
+            "candidate_base"
+          ],
+          "tick": 1000,
+          "with-schema": {
+            "score": 10.0,
+            "slot": "",
+            "tags": [
+              "projectile_kill"
+            ],
+            "weapon": "stickybomb_launcher"
+          },
+          "without-schema": {
+            "score": 10.0,
+            "slot": "",
+            "tags": [
+              "projectile_kill"
+            ],
+            "weapon": "stickybomb_launcher"
+          }
+        },
+        {
+          "custom_kill": 0,
+          "event": {
+            "attacker": 4,
+            "user_id": 5,
+            "weapon": "tf_projectile_pipe_remote",
+            "weapon_def_index": 20,
+            "weapon_id": 35
+          },
+          "item_name": "cp_egypt_final",
+          "item_slot": "",
+          "label": "stock-sticky-entity",
+          "matches_sticky_entity_as_projectile": false,
+          "score_reasons": [
+            "candidate_base"
+          ],
+          "tick": 2000,
+          "with-schema": {
+            "score": 10.0,
+            "slot": "",
+            "tags": [],
+            "weapon": "tf_projectile_pipe_remote"
+          },
+          "without-schema": {
+            "score": 10.0,
+            "slot": "",
+            "tags": [],
+            "weapon": "tf_projectile_pipe_remote"
+          }
+        },
+        {
+          "custom_kill": 0,
+          "event": {
+            "attacker": 6,
+            "user_id": 7,
+            "weapon": "tf_projectile_pipe_remote",
+            "weapon_def_index": 207,
+            "weapon_id": 35
+          },
+          "item_name": "cp_cargo",
+          "item_slot": "",
+          "label": "sticky-reskin-entity",
+          "matches_sticky_entity_as_projectile": false,
+          "score_reasons": [
+            "candidate_base"
+          ],
+          "tick": 3000,
+          "with-schema": {
+            "score": 10.0,
+            "slot": "",
+            "tags": [],
+            "weapon": "tf_projectile_pipe_remote"
+          },
+          "without-schema": {
+            "score": 10.0,
+            "slot": "",
+            "tags": [],
+            "weapon": "tf_projectile_pipe_remote"
+          }
+        },
+        {
+          "custom_kill": 0,
+          "event": {
+            "attacker": 8,
+            "user_id": 9,
+            "weapon": "quickiebomb_launcher",
+            "weapon_def_index": 1150,
+            "weapon_id": 35
+          },
+          "item_name": "the quickiebomb launcher",
+          "item_slot": "secondary",
+          "label": "quickiebomb-token",
+          "matches_sticky_entity_as_projectile": false,
+          "score_reasons": [
+            "candidate_base"
+          ],
+          "tick": 4000,
+          "with-schema": {
+            "score": 10.0,
+            "slot": "secondary",
+            "tags": [
+              "projectile_kill"
+            ],
+            "weapon": "quickiebomb_launcher"
+          },
+          "without-schema": {
+            "score": 10.0,
+            "slot": "",
+            "tags": [
+              "projectile_kill"
+            ],
+            "weapon": "quickiebomb_launcher"
+          }
+        },
+        {
+          "custom_kill": 0,
+          "event": {
+            "attacker": 10,
+            "user_id": 11,
+            "weapon": "grenadelauncher",
+            "weapon_def_index": 19,
+            "weapon_id": 24
+          },
+          "item_name": "cp_steel",
+          "item_slot": "",
+          "label": "pipe-control",
+          "matches_sticky_entity_as_projectile": true,
+          "score_reasons": [
+            "candidate_base",
+            "projectile_sequence"
+          ],
+          "tick": 5000,
+          "with-schema": {
+            "score": 18.0,
+            "slot": "",
+            "tags": [
+              "pipe",
+              "projectile_kill"
+            ],
+            "weapon": "grenadelauncher"
+          },
+          "without-schema": {
+            "score": 18.0,
+            "slot": "",
+            "tags": [
+              "pipe",
+              "projectile_kill"
+            ],
+            "weapon": "grenadelauncher"
+          }
+        },
+        {
+          "custom_kill": 25,
+          "event": {
+            "attacker": 12,
+            "custom_kill": 25,
+            "user_id": 13,
+            "weapon": "tf_projectile_pipe_remote",
+            "weapon_def_index": 1151,
+            "weapon_id": 35
+          },
+          "item_name": "the iron bomber",
+          "item_slot": "",
+          "label": "sticky-conflicting-item",
+          "matches_sticky_entity_as_projectile": false,
+          "score_reasons": [
+            "candidate_base"
+          ],
+          "tick": 6000,
+          "with-schema": {
+            "score": 10.0,
+            "slot": "",
+            "tags": [],
+            "weapon": "tf_projectile_pipe_remote"
+          },
+          "without-schema": {
+            "score": 10.0,
+            "slot": "",
+            "tags": [],
+            "weapon": "tf_projectile_pipe_remote"
+          }
+        },
+        {
+          "custom_kill": 0,
+          "event": {
+            "attacker": 14,
+            "user_id": 15,
+            "weapon": "quake_rl",
+            "weapon_def_index": 513,
+            "weapon_id": 22
+          },
+          "item_name": "throwable damage",
+          "item_slot": "",
+          "label": "original",
+          "matches_sticky_entity_as_projectile": false,
+          "score_reasons": [
+            "candidate_base",
+            "projectile_sequence"
+          ],
+          "tick": 7000,
+          "with-schema": {
+            "score": 18.0,
+            "slot": "",
+            "tags": [
+              "projectile_kill",
+              "rocket"
+            ],
+            "weapon": "quake_rl"
+          },
+          "without-schema": {
+            "score": 18.0,
+            "slot": "",
+            "tags": [
+              "projectile_kill",
+              "rocket"
+            ],
+            "weapon": "quake_rl"
+          }
+        },
+        {
+          "custom_kill": 0,
+          "event": {
+            "attacker": 16,
+            "user_id": 17,
+            "weapon": "rocketlauncher",
+            "weapon_def_index": 18,
+            "weapon_id": 22
+          },
+          "item_name": "pl_badwater",
+          "item_slot": "",
+          "label": "stock-rocket",
+          "matches_sticky_entity_as_projectile": false,
+          "score_reasons": [
+            "candidate_base",
+            "projectile_sequence"
+          ],
+          "tick": 8000,
+          "with-schema": {
+            "score": 18.0,
+            "slot": "",
+            "tags": [
+              "projectile_kill",
+              "rocket"
+            ],
+            "weapon": "rocketlauncher"
+          },
+          "without-schema": {
+            "score": 18.0,
+            "slot": "",
+            "tags": [
+              "projectile_kill",
+              "rocket"
+            ],
+            "weapon": "rocketlauncher"
+          }
+        },
+        {
+          "custom_kill": 0,
+          "event": {
+            "attacker": 18,
+            "user_id": 19,
+            "weapon": "rocketlauncher",
+            "weapon_def_index": 205,
+            "weapon_id": 22
+          },
+          "item_name": "pl_aquarius",
+          "item_slot": "",
+          "label": "stock-rocket-reskin",
+          "matches_sticky_entity_as_projectile": false,
+          "score_reasons": [
+            "candidate_base",
+            "projectile_sequence"
+          ],
+          "tick": 9000,
+          "with-schema": {
+            "score": 18.0,
+            "slot": "",
+            "tags": [
+              "projectile_kill",
+              "rocket"
+            ],
+            "weapon": "rocketlauncher"
+          },
+          "without-schema": {
+            "score": 18.0,
+            "slot": "",
+            "tags": [
+              "projectile_kill",
+              "rocket"
+            ],
+            "weapon": "rocketlauncher"
+          }
+        },
+        {
+          "custom_kill": 0,
+          "event": {
+            "attacker": 20,
+            "user_id": 21,
+            "weapon_def_index": 20,
+            "weapon_id": 35,
+            "weapon_log_class_name": "stickybomb_launcher"
+          },
+          "item_name": "cp_egypt_final",
+          "item_slot": "",
+          "label": "native-classname-only",
+          "matches_sticky_entity_as_projectile": false,
+          "score_reasons": [
+            "candidate_base"
+          ],
+          "tick": 10000,
+          "with-schema": {
+            "score": 10.0,
+            "slot": "",
+            "tags": [],
+            "weapon": "cp_egypt_final"
+          },
+          "without-schema": {
+            "score": 10.0,
+            "slot": "",
+            "tags": [],
+            "weapon": ""
+          }
+        },
+        {
+          "custom_kill": 0,
+          "event": {
+            "attacker": 22,
+            "user_id": 23,
+            "weapon_def_index": 20,
+            "weapon_id": 35,
+            "weapon_logclassname": "stickybomb_launcher"
+          },
+          "item_name": "cp_egypt_final",
+          "item_slot": "",
+          "label": "legacy-classname-only",
+          "matches_sticky_entity_as_projectile": false,
+          "score_reasons": [
+            "candidate_base"
+          ],
+          "tick": 11000,
+          "with-schema": {
+            "score": 10.0,
+            "slot": "",
+            "tags": [
+              "projectile_kill"
+            ],
+            "weapon": "stickybomb_launcher"
+          },
+          "without-schema": {
+            "score": 10.0,
+            "slot": "",
+            "tags": [
+              "projectile_kill"
+            ],
+            "weapon": "stickybomb_launcher"
+          }
+        },
+        {
+          "custom_kill": 0,
+          "event": {
+            "attacker": 24,
+            "user_id": 25,
+            "weapon": "",
+            "weapon_def_index": 20,
+            "weapon_id": 35,
+            "weapon_logclassname": "stickybomb_launcher"
+          },
+          "item_name": "cp_egypt_final",
+          "item_slot": "",
+          "label": "explicit-empty-first",
+          "matches_sticky_entity_as_projectile": false,
+          "score_reasons": [
+            "candidate_base"
+          ],
+          "tick": 12000,
+          "with-schema": {
+            "score": 10.0,
+            "slot": "",
+            "tags": [],
+            "weapon": "cp_egypt_final"
+          },
+          "without-schema": {
+            "score": 10.0,
+            "slot": "",
+            "tags": [],
+            "weapon": ""
+          }
+        },
+        {
+          "custom_kill": 0,
+          "event": {
+            "attacker": 26,
+            "user_id": 27,
+            "weapon": "fixture_unmapped",
+            "weapon_def_index": 20,
+            "weapon_id": 35
+          },
+          "item_name": "cp_egypt_final",
+          "item_slot": "",
+          "label": "unknown-token-with-known-item",
+          "matches_sticky_entity_as_projectile": false,
+          "score_reasons": [
+            "candidate_base"
+          ],
+          "tick": 13000,
+          "with-schema": {
+            "score": 10.0,
+            "slot": "",
+            "tags": [],
+            "weapon": "fixture_unmapped"
+          },
+          "without-schema": {
+            "score": 10.0,
+            "slot": "",
+            "tags": [],
+            "weapon": "fixture_unmapped"
+          }
+        },
+        {
+          "custom_kill": 0,
+          "event": {
+            "attacker": 28,
+            "user_id": 29,
+            "weapon_def_index": 987654321,
+            "weapon_id": 0
+          },
+          "item_name": null,
+          "item_slot": null,
+          "label": "no-attribution-unknown-item",
+          "matches_sticky_entity_as_projectile": false,
+          "score_reasons": [
+            "candidate_base"
+          ],
+          "tick": 14000,
+          "with-schema": {
+            "score": 10.0,
+            "slot": "",
+            "tags": [],
+            "weapon": ""
+          },
+          "without-schema": {
+            "score": 10.0,
+            "slot": "",
+            "tags": [],
+            "weapon": ""
+          }
+        },
+        {
+          "custom_kill": 17,
+          "event": {
+            "attacker": 30,
+            "custom_kill": 17,
+            "user_id": 31,
+            "weapon": "loose_cannon_impact",
+            "weapon_def_index": 996,
+            "weapon_id": 24
+          },
+          "item_name": "the loose cannon",
+          "item_slot": "",
+          "label": "secondary-effect-controls",
+          "matches_sticky_entity_as_projectile": false,
+          "score_reasons": [
+            "candidate_base",
+            "projectile_sequence"
+          ],
+          "tick": 15000,
+          "with-schema": {
+            "score": 18.0,
+            "slot": "",
+            "tags": [
+              "projectile_kill"
+            ],
+            "weapon": "loose_cannon_impact"
+          },
+          "without-schema": {
+            "score": 18.0,
+            "slot": "",
+            "tags": [
+              "projectile_kill"
+            ],
+            "weapon": "loose_cannon_impact"
+          }
+        }
+      ],
+      "changed_candidates": 0,
+      "deaths": 15,
+      "events_sha256": "79603d7ed52848dbfe489568f3233d4d24bb736bf8e25e0d2e6c206a249f9001",
+      "membership_matches": true,
+      "order_matches": true,
+      "scope": "all_players",
+      "state_samples_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "trace_field_diffs": {
+        "custom_kill": 0,
+        "defindex": 0,
+        "pre_enrichment_group_score": 0,
+        "pre_enrichment_tags": 0,
+        "slot": 1,
+        "weapon": 2
+      },
+      "trace_sha256": [
+        "53a45f3d01ed27eac17f49e942f55ad37e941fb20b62ab88654c23ef130aa296",
+        "7106ac0b58fcf83b95ec3a3405c917eb925235b2c366c8dcd0a755e045b1ba01"
+      ]
+    }
+  },
+  "inputs": {
+    "1530633.dem": "c89cee62a892f884a870a979e747483857b7b12c66cd85e18211d1f710329b20",
+    "comp.dem": "6217d1571cbf92280cca798a1d0edd62ddc557d10b0c1806a34e9f51c6c3034d",
+    "gully.dem": "064e35d8f63b6ad2cc1ec1e1b0aeb9dd273ff303e8d79e2a078d10319d6b9d60",
+    "items_game.txt": "285f5d0915cf13f4ae18b7c4d9c9e221f58f278a2bdf303785081f151c409147"
+  },
+  "mode_order": [
+    "without-schema",
+    "with-schema"
+  ]
+}
