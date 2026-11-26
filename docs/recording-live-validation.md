@@ -41,13 +41,12 @@ FFprobe decoded the same short demo interval at both FPS settings.
 | 120 | 120.000 | 359 | 2.991667 | 2.949002 | 42.665 ms |
 | 120 (repeat) | 120.000 | 358 | 2.983333 | 2.949002 | 34.331 ms |
 
-Both streams started at timestamp zero in all three files. These measurements
-establish stream timing. Sound-to-action alignment and long-clip drift still
-need independent measurement. Ralph reviewed the first two measurements and
+Both streams started at timestamp zero in all three files. These short runs
+establish stream timing. Ralph reviewed the first two measurements and
 traced the setting through the batch CFG, the HLAE encoder's frame-rate
 parameter, and the final FFmpeg mux, which copies the video stream. The tested
 batch MP4 path honored the configured frame rate. Production code is unchanged.
-Other presets and formats, and longer recordings, remain open for V08.
+Other presets and formats remain open for V08.
 
 ### Batch capture at 240 and 480 FPS
 
@@ -66,6 +65,24 @@ in both files. Each recording index contained one entry whose output path and
 SHA-256 matched the final MP4. The isolated TF2 configuration and custom file
 hashes and display registry values matched their original snapshots after each
 exit.
+
+### 60-second batch capture at 480 FPS
+
+The Windows harness recorded ticks 20295–24296 of SourceTV demo 1530633 at
+1280×720 using standard MP4 and HLAE 2.189.4. FFmpeg decoded all 28,794 H.264
+frames and the AAC stream end to end. Every video presentation timestamp was
+1/480 s after the previous one. Video ran for 59.987500 s and audio for
+59.953991 s, with both streams starting at zero. [Demo](https://demos.tf/1530633)
+
+The spot check used the brightness rise for two visible rocket flashes and
+the strongest nearby audio transient within 25 ms on either side. At the
+first flash, around 1.142 s, the audio peak followed by approximately 14 ms.
+At the second flash, around 58.850 s, it followed by approximately 5 ms.
+These are two event measurements for this clip.
+
+The recording index contained one entry with the final MP4's path and
+SHA-256. The isolated TF2 configuration and custom file hashes and display
+registry values matched their original snapshots after exit.
 
 ## Zero-padding single-kill capture
 
