@@ -98,9 +98,10 @@ from the previously successful A03/A04 run.
 
 The live fixtures below cover the native Cancel, mixed No, and Yes paths in
 the V02/V03/V04 acceptance matrix. The owner's original demos and recording
-library still need end-to-end playback and recording review. Filesystem
-changes after the prompt snapshot and interruptions after capture starts
-remain open.
+library still need end-to-end playback and recording review. The
+[reconciliation follow-up](recording-index-reconciliation-task.md#implementation-verification)
+covers filesystem changes while the recording prompt is open. Interruptions
+after capture starts remain open.
 
 Tokenless legacy filenames can still be ambiguous across demos: preserving their
 existing import behavior is intentional here. A migration/attribution proposal

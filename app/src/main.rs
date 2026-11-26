@@ -22,7 +22,7 @@ use crate::{
         estimate_recording_space, latest_recording_session, launch_hlae_batch,
         launch_manual_hlae_candidate, preview_candidate,
         recover_interrupted_profile, recover_recording_sessions, shutdown_active_recording,
-        RecordingIndex, RecordingProgress, RecordingProgressSink,
+        RecordingIndex, RecordingProgress, RecordingProgressSink, RecordingReconciliation,
     },
     scheduler::PerformanceProfile,
 };
@@ -893,6 +893,7 @@ fn sync_candidate_filter_controls(ui: &AppWindow, state: &State) {
 struct State {
     demos: Vec<PathBuf>,
     export_root: Option<PathBuf>,
+    recording_reconciliation_revision: u64,
     candidates: Vec<Candidate>,
     recorded: Vec<bool>,
     visible: Vec<usize>,
@@ -1194,6 +1195,7 @@ fn main() -> Result<()> {
     let state = Arc::new(Mutex::new(State {
         demos: Vec::new(),
         export_root: None,
+        recording_reconciliation_revision: 0,
         candidates: Vec::new(),
         recorded: Vec::new(),
         visible: Vec::new(),
@@ -1883,6 +1885,7 @@ fn bind_batch_callbacks(ui: &AppWindow, state: &Arc<Mutex<State>>) {
                         let recorded = candidates.iter().map(|candidate| state.recording_index.is_recorded_indexed(candidate)).collect::<Vec<_>>();
                         let filters = CandidateUiFilters::default();
                         state.export_root = Some(root.clone());
+                        state.recording_reconciliation_revision += 1;
                         state.selected = selected;
                         state.recorded = recorded;
                         state.visible.clear();
@@ -1971,6 +1974,7 @@ fn bind_batch_callbacks(ui: &AppWindow, state: &Arc<Mutex<State>>) {
                         {
                             let mut state = state_for_thread.lock();
                             state.export_root = Some(root.clone());
+                            state.recording_reconciliation_revision += 1;
                             state.selected = selected;
                             state.recorded = recorded;
                             state.visible.clear();
@@ -2441,6 +2445,24 @@ fn bind_candidate_callbacks(ui: &AppWindow, state: &Arc<Mutex<State>>) {
                 .set_description(format!("{recorded_count} selected candidate(s) already have a matching recording.\n\nYes: record them again and replace the old output after each replacement finishes successfully\nNo: skip the previously recorded candidates and record only new selections\nCancel: do not start\n\nThe loaded candidates and their selections remain available after every batch."))
                 .set_buttons(rfd::MessageButtons::YesNoCancel)
                 .show();
+            let (selection_changed, table_changed) = {
+                let mut state = state_for_record.lock();
+                state.recording_index = RecordingIndex::load();
+                let current = state
+                    .recording_index
+                    .selection_snapshot(&state.candidates, &state.selected);
+                let selection_changed = !selection.same_selected_recordings(&current);
+                let table_changed = state.recorded != current.recorded;
+                state.recorded = current.recorded;
+                (selection_changed, table_changed)
+            };
+            if table_changed {
+                refresh_candidates(&ui, &state_for_record, &ui.get_filter_text(), ui.get_minimum_score());
+            }
+            if selection_changed {
+                ui.set_status_text("Recording cancelled".into());
+                return;
+            }
             match choice {
                 rfd::MessageDialogResult::Yes => {
                     replace_existing = true;
@@ -2857,42 +2879,64 @@ fn load_candidates(path: &Path) -> Result<Vec<Candidate>> {
         .collect()
 }
 
+struct RecordingReconciliationContext {
+    export_root: PathBuf,
+    output_root: PathBuf,
+    revision: u64,
+}
+
+impl RecordingReconciliationContext {
+    fn commit(&self, state: &mut State, discoveries: RecordingReconciliation) -> Option<usize> {
+        if state.export_root.as_ref() != Some(&self.export_root)
+            || state.settings.recording_output_directory != self.output_root
+            || state.recording_reconciliation_revision != self.revision
+        {
+            return None;
+        }
+        Some(state.recording_index.commit_reconciliation(discoveries))
+    }
+}
+
 fn reconcile_recorded_outputs(
     weak: Weak<AppWindow>,
     state: Arc<Mutex<State>>,
     export_root: PathBuf,
 ) -> bool {
-    let (candidates, output_root) = {
+    let (candidates, index, context) = {
         let state = state.lock();
+        if state.export_root.as_ref() != Some(&export_root) {
+            return false;
+        }
         (
             state.candidates.clone(),
-            state.settings.recording_output_directory.clone(),
+            state.recording_index.clone(),
+            RecordingReconciliationContext {
+                export_root,
+                output_root: state.settings.recording_output_directory.clone(),
+                revision: state.recording_reconciliation_revision,
+            },
         )
     };
-    if candidates.is_empty() || !output_root.is_dir() {
+    if candidates.is_empty() || !context.output_root.is_dir() {
         return false;
     }
     thread::spawn(move || {
-        let mut reconciled_index = { state.lock().recording_index.clone() };
-        let added = reconciled_index.reconcile_output_root(&candidates, &output_root);
+        let discoveries = index.scan_output_root(&candidates, &context.output_root);
         let _ = slint::invoke_from_event_loop(move || {
             let Some(ui) = weak.upgrade() else { return };
-            {
+            let added = {
                 let mut current = state.lock();
-                if current.export_root.as_ref() != Some(&export_root)
-                    || current.settings.recording_output_directory != output_root {
+                let Some(added) = context.commit(&mut current, discoveries) else {
                     return;
-                }
-                current
-                    .recording_index
-                    .merge_missing_entries(&reconciled_index);
+                };
                 let index = current.recording_index.clone();
                 current.recorded = current
                     .candidates
                     .iter()
                     .map(|candidate| index.is_recorded_indexed(candidate))
                     .collect();
-            }
+                added
+            };
             let filter = ui.get_filter_text().to_string();
             let minimum_score = ui.get_minimum_score();
             refresh_candidates(&ui, &state, &filter, minimum_score);
@@ -3056,7 +3100,11 @@ fn persist_recording_settings(ui: &AppWindow, state: &Arc<Mutex<State>>, report_
         state.settings.output_directory = PathBuf::from(ui.get_export_directory().to_string());
         state.settings.group_parse_exports = ui.get_group_parse_exports();
         state.settings.item_schema = PathBuf::from(ui.get_item_schema().to_string());
+        let previous_recording_directory = state.settings.recording_output_directory.clone();
         sync_settings_from_ui(ui, &mut state.settings);
+        if state.settings.recording_output_directory != previous_recording_directory {
+            state.recording_reconciliation_revision += 1;
+        }
         (state.settings.save(), state.settings.clone())
     };
 
@@ -3277,6 +3325,80 @@ fn open_path(path: &Path) -> Result<()> {
 mod detail_tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn obsolete_reconciliation_context_cannot_write_discovered_recordings() {
+        let root = std::env::temp_dir().join(format!(
+            "obsolete-recording-context-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let export = root.join("export");
+        let media = root.join("media");
+        let videos = media.join("Videos/Other");
+        fs::create_dir_all(&videos).unwrap();
+        fs::write(videos.join("001_fixture_t100-200.mp4"), b"clip fixture").unwrap();
+        let demo = root.join("demo.dem");
+        fs::write(&demo, b"demo fixture").unwrap();
+        let candidate = Candidate {
+            source_demo: demo.to_string_lossy().into_owned(),
+            candidate_id: "fixture".into(),
+            clip_start_tick: 100,
+            clip_end_tick: 200,
+            ..Candidate::default()
+        };
+        let index_path = root.join("index.ndjson");
+        let mut state = State {
+            demos: Vec::new(),
+            export_root: Some(export.clone()),
+            recording_reconciliation_revision: 1,
+            candidates: vec![candidate],
+            recorded: vec![false],
+            visible: vec![0],
+            selected: vec![false],
+            candidate_filters: CandidateUiFilters::default(),
+            settings: AppSettings {
+                recording_output_directory: media.clone(),
+                ..AppSettings::default()
+            },
+            controller: None,
+            recording_index: RecordingIndex::load_from_path(&index_path, 100_000, 100),
+            last_recording_session: None,
+            recording_active: false,
+            recovery_active: false,
+        };
+        let context = RecordingReconciliationContext {
+            export_root: export.clone(),
+            output_root: media.clone(),
+            revision: 1,
+        };
+        let changes = state.recording_index.scan_output_root(&state.candidates, &media);
+        state.export_root = Some(root.join("another export"));
+        assert_eq!(context.commit(&mut state, changes), None);
+        state.export_root = Some(export);
+
+        let changes = state.recording_index.scan_output_root(&state.candidates, &media);
+        state.settings.recording_output_directory = root.join("another media folder");
+        assert_eq!(context.commit(&mut state, changes), None);
+        state.settings.recording_output_directory = media.clone();
+
+        let changes = state.recording_index.scan_output_root(&state.candidates, &media);
+        state.recording_reconciliation_revision += 1;
+        assert_eq!(context.commit(&mut state, changes), None);
+        assert!(!index_path.exists());
+
+        let changes = state.recording_index.scan_output_root(&state.candidates, &media);
+        let context = RecordingReconciliationContext {
+            revision: state.recording_reconciliation_revision,
+            ..context
+        };
+        assert_eq!(context.commit(&mut state, changes), Some(1));
+        assert!(index_path.is_file());
+        fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn demo_picker_prefers_remembered_directory_then_existing_default() {

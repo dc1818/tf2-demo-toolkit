@@ -33,6 +33,7 @@ use zip::ZipArchive;
 #[derive(Clone, Copy, PartialEq)]
 enum ConfigPhase { Original, Applying, Recording, Restoring, Restored, Attention }
 static CONFIG_PHASE: Mutex<ConfigPhase> = Mutex::new(ConfigPhase::Original);
+static RECORDING_INDEX_WRITER: Mutex<()> = Mutex::new(());
 
 pub fn session_status(system: &mut sysinfo::System) -> (String, String, bool) {
     system.refresh_processes_specifics(sysinfo::ProcessesToUpdate::All, true,
@@ -1057,7 +1058,7 @@ struct RecordingProfileSession {
     temporary_paths: Vec<PathBuf>,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(default)]
 pub struct RecordingEntry {
     pub recording_key: String,
@@ -1075,6 +1076,57 @@ pub struct RecordingEntry {
 pub struct RecordingIndex {
     path: PathBuf,
     entries: HashMap<String, RecordingEntry>,
+}
+
+pub struct RecordingReconciliation(Vec<RecordingDiscovery>);
+
+struct RecordingDiscovery {
+    entry: RecordingEntry,
+    expected: Option<RecordingEntry>,
+    aliases: Vec<(String, Option<RecordingEntry>)>,
+    token: String,
+    output: Arc<RecordingOutputStamp>,
+    found_by_name: bool,
+}
+
+struct RecordingOutputStamp(Vec<(PathBuf, OutputFileStamp)>);
+
+#[derive(PartialEq, Eq)]
+struct OutputFileStamp {
+    is_directory: bool,
+    len: u64,
+    modified: SystemTime,
+    created: Option<SystemTime>,
+}
+
+impl OutputFileStamp {
+    fn read(path: &Path) -> io::Result<Self> {
+        let metadata = fs::metadata(path)?;
+        Ok(Self {
+            is_directory: metadata.is_dir(),
+            len: metadata.len(),
+            modified: metadata.modified()?,
+            created: metadata.created().ok(),
+        })
+    }
+}
+
+impl RecordingOutputStamp {
+    fn read(path: &Path) -> Result<Arc<Self>> {
+        let mut files = Vec::new();
+        for entry in WalkDir::new(path).max_depth(3) {
+            let path = entry?.into_path();
+            let stamp = OutputFileStamp::read(&path)?;
+            files.push((path, stamp));
+        }
+        Ok(Arc::new(Self(files)))
+    }
+
+    fn is_current(&self) -> bool {
+        self.0
+            .iter()
+            .all(|(path, stamp)| OutputFileStamp::read(path).is_ok_and(|current| current == *stamp))
+    }
 }
 
 /// One immutable view for the table, prompt count, and Yes/No batch selection.
@@ -1114,6 +1166,10 @@ impl RecordingSelection {
             .map(|(candidate, _)| candidate.clone())
             .collect()
     }
+
+    pub fn same_selected_recordings(&self, other: &Self) -> bool {
+        self.selected == other.selected
+    }
 }
 
 impl RecordingIndex {
@@ -1133,22 +1189,32 @@ impl RecordingIndex {
         )
     }
 
-    fn load_from_path(path: &Path, max_bytes: u64, max_entries: usize) -> Self {
+    pub(super) fn load_from_path(path: &Path, max_bytes: u64, max_entries: usize) -> Self {
+        Self::read_from_path(path, max_bytes, max_entries).0
+    }
+
+    fn read_from_path(path: &Path, max_bytes: u64, max_entries: usize) -> (Self, bool) {
         // A retained or corrupted index must never allocate without a bound or
-        // delay startup indefinitely. A truncated final line is simply ignored.
-        let entries = File::open(path)
-            .ok()
-            .map(|file| BufReader::new(file.take(max_bytes.saturating_add(1))))
-            .into_iter()
-            .flat_map(|reader| reader.lines().map_while(|line| line.ok()))
-            .take(max_entries)
-            .filter_map(|line| serde_json::from_str::<RecordingEntry>(&line).ok())
-            .map(|entry| (entry.recording_key.clone(), entry))
-            .collect();
-        Self {
+        // delay startup indefinitely. A partial read is unsafe for conditional writes.
+        let mut index = Self {
             path: path.to_path_buf(),
-            entries,
+            entries: HashMap::new(),
+        };
+        let file = match File::open(path) {
+            Ok(file) => file,
+            Err(error) => return (index, error.kind() == io::ErrorKind::NotFound),
+        };
+        let within_byte_limit = file.metadata().is_ok_and(|metadata| metadata.len() <= max_bytes);
+        let mut lines = BufReader::new(file.take(max_bytes.saturating_add(1))).lines();
+        for line in lines.by_ref().take(max_entries) {
+            let Ok(line) = line else {
+                return (index, false);
+            };
+            if let Ok(entry) = serde_json::from_str::<RecordingEntry>(&line) {
+                index.entries.insert(entry.recording_key.clone(), entry);
+            }
         }
+        (index, within_byte_limit && lines.next().is_none())
     }
 
     /// Fast UI-facing status lookup.  It deliberately does not walk the output directory:
@@ -1192,24 +1258,37 @@ impl RecordingIndex {
         outputs.into_iter().collect()
     }
 
-    /// Scan a recording directory once and add the outputs whose generated clip base names
-    /// match candidates.  This preserves detection of pre-existing outputs without doing an
-    /// expensive directory walk for every row in the candidate table.
-    pub fn reconcile_output_root(&mut self, candidates: &[Candidate], root: &Path) -> usize {
+    /// Scan once and stage associations from this snapshot without writing the index.
+    pub fn scan_output_root(&self, candidates: &[Candidate], root: &Path) -> RecordingReconciliation {
         if !root.is_dir() {
-            return 0;
+            return RecordingReconciliation(Vec::new());
         }
         let outputs = final_recording_outputs(root);
-        let mut added = 0;
-        for candidate in candidates {
-            if self.is_recorded_indexed(candidate) {
+        let mut discoveries = HashMap::new();
+        let identities: Vec<_> = candidates.iter().map(recording_keys).collect();
+        let mut legacy_by_portable = HashMap::<&str, HashSet<&str>>::new();
+        let mut portable_by_legacy = HashMap::<&str, HashSet<&str>>::new();
+        for [portable, legacy] in &identities {
+            if let (Some(portable), Some(legacy)) = (portable.as_deref(), legacy.as_deref()) {
+                legacy_by_portable.entry(portable).or_default().insert(legacy);
+                portable_by_legacy.entry(legacy).or_default().insert(portable);
+            }
+        }
+
+        for (candidate, [key, legacy]) in candidates.iter().zip(&identities) {
+            let Some(key) = key.as_deref() else {
+                continue;
+            };
+            let token = recording_key_token(key);
+            let aliases = legacy.iter().map(|key| (key.clone(), self.entries.get(key).cloned()));
+            if discoveries.contains_key(key)
+                || std::iter::once(key)
+                    .chain(legacy.as_deref())
+                    .filter_map(|key| self.entries.get(key))
+                    .any(|entry| indexed_output_matches(entry, Some(token)))
+            {
                 continue;
             }
-            let key = match recording_key(candidate) {
-                Ok(key) => key,
-                Err(_) => continue,
-            };
-            let token = recording_key_token(&key);
             let candidate_id = sanitize(&candidate.candidate_id).to_lowercase();
             let old_ticks = format!("t{}-{}", candidate.clip_start_tick, candidate.clip_end_tick);
             if let Some(output) = outputs.iter().find(|path| {
@@ -1220,54 +1299,144 @@ impl RecordingIndex {
                     name.contains(&candidate_id) && name.contains(&old_ticks)
                 })
             }) {
-                if self.register(candidate, output.clone()).is_ok() {
-                    added += 1;
+                if let (Ok(observed), Ok(entry)) = (
+                    RecordingOutputStamp::read(output),
+                    Self::candidate_entry(candidate, output.clone(), None),
+                ) {
+                    if entry.recording_key != key {
+                        continue;
+                    }
+                    discoveries.insert(
+                        key.to_owned(),
+                        RecordingDiscovery {
+                            entry,
+                            expected: self.entries.get(key).cloned(),
+                            aliases: aliases.collect(),
+                            token: token.to_owned(),
+                            output: observed,
+                            found_by_name: true,
+                        },
+                    );
                 }
             }
         }
 
-        let mut missing_fingerprints: HashMap<String, Vec<String>> = HashMap::new();
-        for (key, entry) in &self.entries {
-            if !entry.output_fingerprint.is_empty() && !output_still_exists(&entry.output_path) {
-                missing_fingerprints
-                    .entry(entry.output_fingerprint.clone())
-                    .or_default()
-                    .push(key.clone());
-            }
-        }
-        let mut relocated = Vec::new();
-        if !missing_fingerprints.is_empty() {
+        let mut missing: Vec<_> = self
+            .entries
+            .values()
+            .filter(|entry| {
+                !discoveries.contains_key(&entry.recording_key)
+                    && !entry.output_fingerprint.is_empty()
+                    && !output_still_exists(&entry.output_path)
+            })
+            .collect();
+        if !missing.is_empty() {
+            let mut matching_outputs: HashMap<&str, Vec<(&PathBuf, Arc<RecordingOutputStamp>)>> = missing.iter()
+                .map(|entry| (entry.output_fingerprint.as_str(), Vec::new()))
+                .collect();
             for output in &outputs {
+                let Ok(observed) = RecordingOutputStamp::read(output) else {
+                    continue;
+                };
                 if let Ok(fingerprint) = output_fingerprint(output) {
-                    if let Some(keys) = missing_fingerprints.remove(&fingerprint) {
-                        relocated.extend(keys.into_iter().map(|key| (key, output.clone())));
+                    if let Some(matches) = matching_outputs.get_mut(fingerprint.as_str()) {
+                        matches.push((output, observed));
                     }
                 }
             }
-        }
-        for (key, path) in relocated {
-            if let Some(mut entry) = self.entries.get(&key).cloned() {
-                entry.output_path = path;
-                let _ = self.store_entry(entry);
+            // When both keys need reconciliation, try their portable association first.
+            missing.sort_by_key(|entry| portable_by_legacy.contains_key(entry.recording_key.as_str()));
+            for previous in missing {
+                let key = previous.recording_key.as_str();
+                let (portable, aliases) = if let Some(portable) = portable_by_legacy.get(key) {
+                    let mut keys = portable.iter().copied();
+                    let (Some(portable_key), None) = (keys.next(), keys.next()) else {
+                        continue;
+                    };
+                    (portable_key, Some(portable))
+                } else {
+                    (key, legacy_by_portable.get(key))
+                };
+                let token = recording_key_token(portable);
+                let aliases: Vec<_> = aliases.into_iter().flatten()
+                    .map(|key| ((*key).to_owned(), self.entries.get(*key).cloned()))
+                    .collect();
+                if aliases.iter().any(|(key, entry)| {
+                    discoveries.contains_key(key)
+                        || entry.as_ref().is_some_and(|entry| indexed_output_matches(entry, Some(token)))
+                }) {
+                    continue;
+                }
+                let mut eligible = matching_outputs[previous.output_fingerprint.as_str()]
+                    .iter()
+                    .filter(|(path, _)| {
+                        recording_token_matches(&recording_output_name(path), token).unwrap_or(true)
+                    });
+                if let (Some((path, observed)), None) = (eligible.next(), eligible.next()) {
+                    let mut entry = previous.clone();
+                    entry.output_path = (*path).clone();
+                    discoveries.insert(
+                        key.to_owned(),
+                        RecordingDiscovery {
+                            entry,
+                            expected: Some(previous.clone()),
+                            aliases,
+                            token: token.to_owned(),
+                            output: observed.clone(),
+                            found_by_name: false,
+                        },
+                    );
+                }
             }
         }
+        RecordingReconciliation(discoveries.into_values().collect())
+    }
+
+    /// The caller holds the current export/output context through this commit.
+    pub fn commit_reconciliation(&mut self, reconciliation: RecordingReconciliation) -> usize {
+        if reconciliation.0.is_empty() {
+            return 0;
+        }
+        let _writer = RECORDING_INDEX_WRITER.lock();
+        let (mut latest, complete) =
+            Self::read_from_path(&self.path, MAX_RECORDING_INDEX_BYTES, MAX_RECORDING_INDEX_ENTRIES);
+        if !complete {
+            return 0;
+        }
+
+        let mut added = 0;
+        for discovery in reconciliation.0 {
+            let key = &discovery.entry.recording_key;
+            let current = latest.entries.get(key);
+            let token = Some(discovery.token.as_str());
+            if current != discovery.expected.as_ref()
+                || current.is_some_and(|entry| indexed_output_matches(entry, token))
+                || discovery.aliases.iter().any(|(key, expected)| {
+                    let current = latest.entries.get(key);
+                    current != expected.as_ref()
+                        || current.is_some_and(|entry| indexed_output_matches(entry, token))
+                })
+                || !discovery.output.is_current()
+                || !indexed_output_matches(&discovery.entry, token)
+            {
+                continue;
+            }
+            if latest.append_entry(discovery.entry).is_ok() && discovery.found_by_name {
+                added += 1;
+            }
+        }
+        *self = latest;
         added
     }
 
-    pub fn merge_missing_entries(&mut self, other: &RecordingIndex) {
-        for (key, entry) in &other.entries {
-            let token = Some(recording_key_token(key));
-            let current_exists = self
-                .entries
-                .get(key)
-                .is_some_and(|current| indexed_output_matches(current, token));
-            if !current_exists && indexed_output_matches(entry, token) {
-                self.entries.insert(key.clone(), entry.clone());
-            }
-        }
+    #[cfg(test)]
+    fn reconcile_output_root(&mut self, candidates: &[Candidate], root: &Path) -> usize {
+        let reconciliation = self.scan_output_root(candidates, root);
+        self.commit_reconciliation(reconciliation)
     }
 
-    pub fn register(&mut self, candidate: &Candidate, output: PathBuf) -> Result<()> {
+    #[cfg(test)]
+    fn register(&mut self, candidate: &Candidate, output: PathBuf) -> Result<()> {
         self.register_with_fingerprint(candidate, output, None)
     }
 
@@ -1277,8 +1446,16 @@ impl RecordingIndex {
         output: PathBuf,
         fingerprint: Option<String>,
     ) -> Result<()> {
+        self.store_entry(Self::candidate_entry(candidate, output, fingerprint)?)
+    }
+
+    fn candidate_entry(
+        candidate: &Candidate,
+        output: PathBuf,
+        fingerprint: Option<String>,
+    ) -> Result<RecordingEntry> {
         let key = recording_key(candidate)?;
-        let entry = RecordingEntry {
+        Ok(RecordingEntry {
             recording_key: key,
             candidate_id: candidate.candidate_id.clone(),
             demo_signature: portable_demo_signature(Path::new(&candidate.source_demo))?,
@@ -1288,8 +1465,7 @@ impl RecordingIndex {
                 .unwrap_or_else(|| output_fingerprint(&output).unwrap_or_default()),
             output_path: output,
             completed_utc: Utc::now().to_rfc3339(),
-        };
-        self.store_entry(entry)
+        })
     }
 
     fn register_recovered(
@@ -1315,22 +1491,32 @@ impl RecordingIndex {
     }
 
     fn store_entry(&mut self, entry: RecordingEntry) -> Result<()> {
-        self.append(entry.clone())?;
-        let key = entry.recording_key.clone();
-        self.entries.insert(key, entry);
-        Ok(())
+        let _writer = RECORDING_INDEX_WRITER.lock();
+        self.append_entry(entry)
     }
 
-    fn append(&self, entry: RecordingEntry) -> Result<()> {
+    // Both normal writes and conditional reconciliation commits hold the writer lock.
+    fn append_entry(&mut self, entry: RecordingEntry) -> Result<()> {
+        let mut line = serde_json::to_vec(&entry)?;
+        line.push(b'\n');
         if let Some(parent) = self.path.parent() {
             fs::create_dir_all(parent)?;
         }
         let mut output = OpenOptions::new()
             .create(true)
+            .read(true)
             .append(true)
             .open(&self.path)?;
-        serde_json::to_writer(&mut output, &entry)?;
-        output.write_all(b"\n")?;
+        if output.metadata()?.len() > 0 {
+            output.seek(SeekFrom::End(-1))?;
+            let mut last = [0];
+            output.read_exact(&mut last)?;
+            if last[0] != b'\n' {
+                line.insert(0, b'\n');
+            }
+        }
+        output.write_all(&line)?;
+        self.entries.insert(entry.recording_key.clone(), entry);
         Ok(())
     }
 }
@@ -7127,9 +7313,7 @@ mod recording_tests {
             "b__same-candidate__t100-200__k{}.mp4", recording_key_token(&b_key)
         ));
         assert_eq!(index.reconcile_output_root(&[b.clone()], &root), 1);
-        let mut stale_ui_index = reloaded;
-        stale_ui_index.merge_missing_entries(&index);
-        assert!(stale_ui_index.is_recorded_indexed(&b));
+        assert!(reliability_index(&root).is_recorded_indexed(&b));
         fs::remove_dir_all(root).unwrap();
     }
 
@@ -7207,6 +7391,178 @@ mod recording_tests {
         }).unwrap();
         assert!(reliability_index(&root).is_recorded_indexed(&candidate));
         assert_eq!(index.existing_outputs(&candidate), vec![output]);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn reconciliation_skips_foreign_tokens_and_ambiguous_fingerprint_matches() {
+        let root = recovery_test_root("reconciliation-fingerprint-identity");
+        let candidate = reliability_candidate(&root, "a.dem", b"demo A");
+        let foreign_candidate = reliability_candidate(&root, "b.dem", b"demo B");
+        let foreign_key = recording_key(&foreign_candidate).unwrap();
+        let original = reliability_video(&root, "original.mp4");
+        let mut index = reliability_index(&root);
+        index.register(&candidate, original.clone()).unwrap();
+        let fingerprint = file_fingerprint(&original).unwrap();
+        fs::rename(&original, root.join("preserved.mp4")).unwrap();
+
+        let foreign = reliability_video(&root, &format!(
+            "b__same-candidate__t100-200__k{}.mp4", recording_key_token(&foreign_key)
+        ));
+        assert_eq!(file_fingerprint(&foreign).unwrap(), fingerprint);
+        let before = fs::read(&index.path).unwrap();
+        let candidates = std::slice::from_ref(&candidate);
+        assert_eq!(index.reconcile_output_root(candidates, &root), 0);
+        assert_eq!(fs::read(&index.path).unwrap(), before);
+        assert!(!reliability_index(&root).is_recorded_indexed(&candidate));
+
+        let renamed = reliability_video(&root, "renamed.mp4");
+        let duplicate = reliability_video(&root, "another-copy.mp4");
+        assert_eq!(index.reconcile_output_root(candidates, &root), 0);
+        assert_eq!(fs::read(&index.path).unwrap(), before);
+        assert!(!reliability_index(&root).is_recorded_indexed(&candidate));
+
+        fs::rename(&duplicate, root.join("another-copy.mp4")).unwrap();
+        index.reconcile_output_root(candidates, &root);
+        let mut reloaded = reliability_index(&root);
+        assert_eq!(reloaded.existing_outputs(&candidate), [renamed.clone()]);
+        let after = fs::read(&index.path).unwrap();
+        assert!(after.starts_with(&before));
+        assert_ne!(after, before);
+        assert_eq!(reloaded.reconcile_output_root(candidates, &root), 0);
+        assert_eq!(fs::read(&index.path).unwrap(), after);
+        assert_eq!(file_fingerprint(&renamed).unwrap(), fingerprint);
+        assert_eq!(file_fingerprint(&foreign).unwrap(), fingerprint);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn reconciliation_cannot_supersede_newer_entry_with_either_discovery_method() {
+        for by_name in [false, true] {
+            let root = recovery_test_root("reconciliation-stale-index");
+            let candidate = reliability_candidate(&root, "a.dem", b"demo A");
+            let key = recording_key(&candidate).unwrap();
+            let old = reliability_video(&root, "original.mp4");
+            let mut index = reliability_index(&root);
+            index.register(&candidate, old.clone()).unwrap();
+            let alternate = root.join("prior-output");
+            let name = if by_name {
+                format!("a__same-candidate__t100-200__k{}.mp4", recording_key_token(&key))
+            } else {
+                "renamed-original.mp4".into()
+            };
+            let relocated = reliability_video(&alternate, &name);
+            fs::rename(&old, root.join("preserved.mp4")).unwrap();
+            let discoveries = index.scan_output_root(std::slice::from_ref(&candidate), &alternate);
+            assert_eq!(discoveries.0.len(), 1);
+            assert_eq!(discoveries.0[0].entry.output_path, relocated);
+            assert_eq!(discoveries.0[0].found_by_name, by_name);
+
+            let newer = reliability_video(&root.join("current-output"), "completed-newer.mp4");
+            fs::write(&newer, b"newer completed recording").unwrap();
+            let mut writer = reliability_index(&root);
+            writer.register(&candidate, newer.clone()).unwrap();
+            let after_newer = fs::read(&index.path).unwrap();
+            assert_eq!(index.commit_reconciliation(discoveries), 0);
+            assert_eq!(index.existing_outputs(&candidate), [newer.clone()]);
+            assert_eq!(reliability_index(&root).existing_outputs(&candidate), [newer]);
+            assert_eq!(fs::read(&index.path).unwrap(), after_newer);
+            assert!(relocated.is_file());
+            fs::remove_dir_all(root).unwrap();
+        }
+    }
+
+    #[test]
+    fn reconciliation_cannot_relink_a_legacy_key_after_portable_recording() {
+        let root = recovery_test_root("reconciliation-legacy-stale");
+        let candidate = reliability_candidate(&root, "a.dem", b"demo A");
+        let legacy_key = legacy_recording_key(&candidate).unwrap();
+        let old = reliability_video(&root, "original.mp4");
+        let mut index = reliability_index(&root);
+        index.store_entry(RecordingEntry {
+            recording_key: legacy_key.clone(),
+            output_path: old.clone(),
+            output_fingerprint: file_fingerprint(&old).unwrap(),
+            ..RecordingEntry::default()
+        }).unwrap();
+        let alternate = root.join("old-output");
+        reliability_video(&alternate, "renamed-original.mp4");
+        fs::rename(&old, root.join("preserved.mp4")).unwrap();
+        let discoveries = index.scan_output_root(std::slice::from_ref(&candidate), &alternate);
+        assert_eq!(discoveries.0.len(), 1);
+        assert_eq!(discoveries.0[0].entry.recording_key, legacy_key);
+
+        let newer = reliability_video(&root, "newer-portable.mp4");
+        let mut writer = reliability_index(&root);
+        writer.register(&candidate, newer.clone()).unwrap();
+        let after_newer = fs::read(&index.path).unwrap();
+        assert_eq!(index.commit_reconciliation(discoveries), 0);
+        let reloaded = reliability_index(&root);
+        assert_eq!(reloaded.entries[&legacy_key].output_path, old);
+        assert_eq!(reloaded.existing_outputs(&candidate), [newer]);
+        assert_eq!(fs::read(&index.path).unwrap(), after_newer);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn reconciliation_rejects_a_discovered_file_changed_before_commit() {
+        let root = recovery_test_root("reconciliation-changed-media");
+        let candidate = reliability_candidate(&root, "a.dem", b"demo A");
+        let old = reliability_video(&root, "original.mp4");
+        let mut index = reliability_index(&root);
+        index.register(&candidate, old.clone()).unwrap();
+        fs::rename(&old, root.join("preserved.mp4")).unwrap();
+        let relocated = reliability_video(&root, "renamed-original.mp4");
+        let discoveries = index.scan_output_root(std::slice::from_ref(&candidate), &root);
+        assert_eq!(discoveries.0.len(), 1);
+
+        let different = b"changed after the scan";
+        fs::write(&relocated, different).unwrap();
+        let baseline = fs::read(&index.path).unwrap();
+        assert_eq!(index.commit_reconciliation(discoveries), 0);
+        assert_eq!(fs::read(&index.path).unwrap(), baseline);
+        assert!(!reliability_index(&root).is_recorded_indexed(&candidate));
+        assert_eq!(fs::read(relocated).unwrap(), different);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn recording_selection_detects_different_rows_with_the_same_recorded_count() {
+        let root = recovery_test_root("recording-prompt-changed-set");
+        let candidates = [
+            reliability_candidate(&root, "a.dem", b"demo A"),
+            reliability_candidate(&root, "b.dem", b"demo B"),
+        ];
+        let a = reliability_video(&root, "a.mp4");
+        let b = reliability_video(&root, "b.mp4");
+        let mut index = reliability_index(&root);
+        index.register(&candidates[0], a.clone()).unwrap();
+        index.register(&candidates[1], b.clone()).unwrap();
+        fs::rename(&b, root.join("temporarily-missing-b.mp4")).unwrap();
+        let before = index.selection_snapshot(&candidates, &[true, true]);
+        assert!(before.same_selected_recordings(&index.selection_snapshot(&candidates, &[true, true])));
+
+        fs::rename(&a, root.join("temporarily-missing-a.mp4")).unwrap();
+        fs::rename(root.join("temporarily-missing-b.mp4"), &b).unwrap();
+        let after = index.selection_snapshot(&candidates, &[true, true]);
+        assert_eq!(before.recorded, [true, false]);
+        assert_eq!(after.recorded, [false, true]);
+        assert_eq!(before.recorded_count(), after.recorded_count());
+        assert!(!before.same_selected_recordings(&after));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn reconciliation_appends_after_a_truncated_index_row() {
+        let root = recovery_test_root("reconciliation-truncated-row");
+        let candidate = reliability_candidate(&root, "demo.dem", b"demo");
+        reliability_video(&root, "001_same-candidate_t100-200.mp4");
+        let mut index = reliability_index(&root);
+        let prefix = b"{\"incomplete\":";
+        fs::write(&index.path, prefix).unwrap();
+        assert_eq!(index.reconcile_output_root(&[candidate.clone()], &root), 1);
+        assert!(reliability_index(&root).is_recorded_indexed(&candidate));
+        assert!(fs::read(&index.path).unwrap().starts_with(prefix));
         fs::remove_dir_all(root).unwrap();
     }
 

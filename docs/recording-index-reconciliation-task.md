@@ -79,7 +79,10 @@ selection. Ralph reviewed the fixture design and the proposed commit boundary.
 
 ## V04 reconciliation proposal v1
 
-**Approval pending.** The scope covers V02/V03/V04 and the reproduced failures.
+**Approved and implemented.** The owner approved v1 in chat on November 26,
+2026, including cancellation and a table refresh when recording status changes
+while the prompt is open. The scope covers V02/V03/V04 and the reproduced
+failures.
 
 1. Reject a recognized foreign recording token before fingerprint relocation.
    When several eligible outputs share a fingerprint, leave the association
@@ -109,3 +112,29 @@ file change after the prompt refreshes the Recorded column without starting
 a batch. Repeat the prompt case with the same count but different Recorded
 rows. The legacy, same-name, reconnect, failed-write, and successful relocation
 cases must continue to pass.
+
+## Implementation verification
+
+- The production scan stages name and fingerprint matches. The index commit
+  checks the export revision and output folder, reloads the latest entries
+  under the writer lock, and rejects superseded keys. Normal capture and
+  recovery appends use the same in-process lock. For candidates in the loaded
+  export, the comparison covers their portable and legacy keys.
+- Fingerprint relocation requires one eligible match. Before appending, the
+  commit rechecks the discovered file or sequence against the filesystem
+  metadata observed before hashing. A changed artifact leaves the existing
+  association unresolved. The commit uses the same append-only index format,
+  including when it appends after a truncated final row.
+- All 230 Rust workspace tests passed on Windows with Rust 1.88.0. Coverage
+  includes a foreign token, ambiguous matching, renamed media, stale name and
+  fingerprint discoveries, a legacy/portable write race, file changes between
+  scan and commit, and obsolete export or output-folder context.
+- Five Windows callback fixtures supplied the dialog responses offscreen.
+  Losing one of two recordings and swapping which of two rows was recorded
+  both refreshed the visible table, kept both rows selected, and cancelled
+  before preflight. Stable Yes and No reached preflight, where the fixture
+  stopped the batch. Stable Cancel exited before preflight. All five checks
+  retained the fixture index and media hashes.
+- The Python tools suite passed 17 of 18 tests. The remaining legacy-state
+  test hit Windows temporary-file cleanup error WinError 32 on both the
+  baseline and the implementation checkout.
