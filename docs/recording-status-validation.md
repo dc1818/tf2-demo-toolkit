@@ -96,10 +96,11 @@ from the previously successful A03/A04 run.
 
 ## Remaining work / honest status
 
-The live fixtures below cover part of the V02/V03/V04 acceptance matrix. The
-owner's original demo and output folders, replacement via Yes in the Previously
-Recorded Candidates dialog, and filesystem changes after the prompt snapshot
-still need live review.
+The live fixtures below cover the native Cancel, mixed No, and Yes paths in
+the V02/V03/V04 acceptance matrix. The owner's original demos and recording
+library still need end-to-end playback and recording review. Filesystem
+changes after the prompt snapshot and interruptions after capture starts
+remain open.
 
 Tokenless legacy filenames can still be ambiguous across demos: preserving their
 existing import behavior is intentional here. A migration/attribution proposal
@@ -161,3 +162,30 @@ it as the normal app does and used mouse clicks through the native UI.
   entries, and FFmpeg decoded both audio and video streams. The isolated TF2
   configuration and custom file hashes and the display registry values matched
   their pre-run snapshots after TF2 and the Toolkit exited.
+
+## Live Windows replacement and early interruption
+
+November 26, 2026. Pilot checkpoint `1f34152`. Ralph reviewed the acceptance
+card before the run. Both runs began with disposable copies of two indexed
+MP4s under `Videos/Other` and a manual recording under
+`Videos/Manual HLAE/Other`. The visible Toolkit listed both batch candidates as
+Recorded. Only the replacement target was selected. Mouse clicks confirmed
+**Yes** in the Previously Recorded Candidates dialog and then in HLAE
+preflight for one 1280×720, 120 FPS MP4.
+
+- **Successful replacement.** The fixture read the index from disk immediately
+  before cleanup. The latest entry for the target key already pointed to the
+  new MP4 while the previous file still matched its original SHA-256. The
+  worker then removed the superseded copy. The replacement used a collision
+  suffix in the same category folder. The earlier index row remained in the
+  append-only history, and reopening the index resolved the key to the new row.
+- **Early interruption.** The fixture stopped the isolated TF2 process after
+  launch and before capture artifacts appeared. The worker confirmed TF2's
+  exit and reported zero completed clips and one interrupted clip, with no
+  finalized output. The original MP4 paths and SHA-256 hashes and the entire
+  index matched the pre-run snapshots.
+- **Folder and settings checks.** Both cases preserved the folder tree and the
+  paths and hashes of the unselected batch and manual recordings. All three
+  final MP4s per run decoded with video and audio. Both batch rows stayed
+  Recorded and the target stayed selected. TF2 cfg/custom file hashes and the
+  display registry snapshot matched after each run.
