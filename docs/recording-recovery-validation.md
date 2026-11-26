@@ -94,9 +94,10 @@ SourceTV demo in an isolated TF2 installation. [SourceTV demo 1530633](https://d
 - The interrupted clip had only 13 frames and an approximately 0.21-second
   WAV that FFmpeg rejected as corrupt on strict decoding. Recovery moved
   those artifacts, set the manifest to `Completed`, and indexed the clip as
-  Recorded. That status persisted on the second launch. The recovery path
-  accepts nonempty matching frames before establishing that the clip
-  finished, so V07 completeness remains open.
+  Recorded. That status persisted on the second launch. This baseline
+  accepted nonempty matching frames before establishing that the clip had
+  finished. The [v1 follow-up](image-sequence-completion-proposal.md#implementation-checks)
+  records verification of the automatic JPG and TGA fix.
 
 ## Encoded batch transfer (V07-P3)
 

@@ -1,6 +1,8 @@
 # V07 image-sequence completion proposal v1
 
-**Approval pending.** This proposal covers automatic JPG and TGA batches.
+**Approved in chat on November 26, 2026.** The owner also approved keeping
+unindexed legacy image sessions pending when completion evidence is absent.
+This proposal covers automatic JPG and TGA batches.
 Ralph reviewed the capture, restart recovery, and replacement paths at pilot
 checkpoint `6553f2f`. The proposed validation uses the existing disposable
 Windows fixtures.
@@ -76,3 +78,31 @@ metadata and a source revert for rollback.
   and its index row. Exercise a failed transfer and a later retry. Export
   reconciliation must skip the unfinished destination, and a completed
   retry must add only the intended record.
+
+## Implementation checks
+
+- A new image batch stores evidence for each capture prefix in a session-owned
+  console log. The monitor and startup recovery use an atomic receipt that
+  describes the verified artifacts and their SHA-256 hashes. On restart, a
+  retained log can supply evidence when TF2 finished a clip before the
+  Toolkit wrote the receipt.
+- Ralph reviewed the implementation and identified a retry failure caused by
+  temporary cross-volume copy files inside the publishable directory. Those
+  files now stay in a separate staging folder on the destination volume.
+  Their retries use deterministic, session-specific paths.
+- All 234 Windows Rust workspace tests passed with Rust 1.88.0. The tests
+  cover combined console markers, unrelated and repeated markers, partial log
+  lines, transfer retry, and retention of a prior index row after incomplete
+  and legacy recovery.
+- The live Windows JPG run published 180 decodable 1280×720 frames with no
+  WAV. In the interrupted TGA run, the Toolkit monitor was held before its
+  receipt write. Startup rebuilt the receipt from the session log, published
+  the complete 180-frame sequence and its decodable 2.995-second WAV, and
+  preserved the nine partial frames and audio byte for byte. The unstarted
+  and partial candidates stayed out of the index. A second restart preserved
+  media hashes and index bytes. The isolated TF2 cfg/custom file hashes and
+  display registry snapshot matched the pre-run state.
+- Normal TGA capture also published all 180 frames and its playable WAV.
+  Closing TF2 mid-capture while the Toolkit stayed open published only the
+  completed clip, retained the partial media, and restored TF2 settings.
+  FFmpeg decoded the complete output in all four native cases.

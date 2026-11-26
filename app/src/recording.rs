@@ -2,6 +2,7 @@ use crate::{
     models::{AppSettings, Candidate},
     preflight::{disk_space_for, format_bytes, require_disk_space},
 };
+mod image_sequence;
 use anyhow::{bail, Context, Result};
 use chrono::Utc;
 use parking_lot::Mutex;
@@ -418,6 +419,7 @@ struct StoredRecordingManifest {
     output_format: String,
     ffmpeg_executable: PathBuf,
     game_directory: PathBuf,
+    image_completion_version: Option<u32>,
     encoding: Option<StoredMp4Encoding>,
     avi_encoding: Option<StoredAviEncoding>,
     dnxhr_encoding: Option<StoredDnxhrEncoding>,
@@ -2227,7 +2229,11 @@ pub fn prepare_hlae_batch(candidates: &[Candidate], settings: &AppSettings) -> R
         "tf2_demo_toolkit_batch_{}",
         Utc::now().format("%Y%m%d_%H%M%S_%3f")
     ));
-    fs::create_dir_all(&session)?;
+    if settings.recording_format.contains("Image") {
+        fs::create_dir(&session)?;
+    } else {
+        fs::create_dir_all(&session)?;
+    }
     fs::write(session.join("offline_safety.cfg"), offline_cfg().as_bytes())?;
     fs::write(
         session.join("tf2_demo_toolkit_recording_profile.cfg"),
@@ -2293,6 +2299,13 @@ pub fn launch_hlae_batch(
         .file_name()
         .and_then(|name| name.to_str())
         .unwrap_or("rust_session");
+    let image_log = settings.recording_format.contains("Image")
+        .then(|| image_sequence::log_name(&session))
+        .transpose()?;
+    let recording_log = game.join(image_log.as_deref().unwrap_or("tf2_demo_toolkit_recording.log"));
+    if image_log.is_some() {
+        anyhow::ensure!(!recording_log.exists(), "image recording log already exists");
+    }
     let staged_root = game
         .join("demos/tf2_demo_toolkit_batch")
         .join(session_name);
@@ -2394,7 +2407,7 @@ pub fn launch_hlae_batch(
             fs::write(cfg_root.join(format!("{base}_start.cfg")), start_cfg)?;
             fs::write(
                 cfg_root.join(format!("{base}_stop.cfg")),
-                recording_stop_cfg(settings, &prepared.config_base),
+                recording_stop_cfg(settings, prepared),
             )?;
         }
     }
@@ -2426,8 +2439,9 @@ pub fn launch_hlae_batch(
             settings.dx_level.split_whitespace().next().unwrap_or("98")
         )
     };
+    let log_argument = image_log.as_ref().map_or_else(String::new, |log| format!("+con_logfile {log} "));
     let game_arguments = format!(
-        "-steam -insecure +sv_lan 1 -novid -window -noborder -console -no_texture_stream -afxGame tf -w {width} -h {height} {dx_argument}+tf_delete_temp_files 0 +exec tf2_demo_toolkit_offline.cfg +exec tf2_demo_toolkit_recording_profile.cfg +playdemo {}",
+        "-steam -insecure +sv_lan 1 -novid -window -noborder -console -no_texture_stream -afxGame tf -w {width} -h {height} {dx_argument}+tf_delete_temp_files 0 +exec tf2_demo_toolkit_offline.cfg +exec tf2_demo_toolkit_recording_profile.cfg {log_argument}+playdemo {}",
         staged_relatives[0]
     );
     let encoding_log = match effective_mp4_encoding(settings)? {
@@ -2485,8 +2499,9 @@ pub fn launch_hlae_batch(
             profile.backup_directory.display()
         ),
     );
-    let recording_log = game.join("tf2_demo_toolkit_recording.log");
-    let _ = fs::remove_file(&recording_log);
+    if image_log.is_none() {
+        let _ = fs::remove_file(&recording_log);
+    }
     let launch_log = session.join("hlae_launch.log");
     let launch_log_file = File::create(&launch_log)?;
     let mut launch = Command::new(&settings.hlae_executable);
@@ -2548,6 +2563,7 @@ pub fn launch_hlae_batch(
         let (completed, failed) = finalize_recording_session(
             &mut child,
             &profile.tf_process_name,
+            &recording_log,
             &finalizer_game,
             &finalizer_session,
             &prepared_clips,
@@ -2558,11 +2574,10 @@ pub fn launch_hlae_batch(
         if let Some(sink) = &progress {
             sink(RecordingProgress::Status("Archiving recording logs".into()));
         }
-        let tf2_console_log = finalizer_game.join("tf2_demo_toolkit_recording.log");
-        if tf2_console_log.is_file() {
-            match fs::copy(&tf2_console_log, finalizer_session.join("tf2_console.log")) {
+        if recording_log.is_file() {
+            match fs::copy(&recording_log, finalizer_session.join("tf2_console.log")) {
                 Ok(_) => {
-                    let _ = fs::remove_file(&tf2_console_log);
+                    let _ = fs::remove_file(&recording_log);
                 }
                 Err(error) => log_recording_diagnostic(
                     &diagnostic_log,
@@ -4287,7 +4302,12 @@ fn vdm_text(
         add_vdm_action(&mut lines, &mut action, "PlayCommands", "Start clip", start + 1, None, &format!("{focus}exec tf2_demo_toolkit_batch/{session_name}/{base}_start"));
         add_vdm_action(&mut lines, &mut action, "PlayCommands", "Stop clip", end, None, &format!("exec tf2_demo_toolkit_batch/{session_name}/{base}_stop"));
         previous_finalize_tick = end + RECORDING_FLUSH_TICKS;
-        add_vdm_action(&mut lines, &mut action, "PlayCommands", "Finalize clip", previous_finalize_tick, None, &format!("echo TF2FRAG_RECORD_FINALIZED {base}"));
+        let finalize = if settings.recording_format.contains("Image") {
+            format!("echo TF2FRAG_IMAGE_FINALIZED_{}", image_sequence::capture_base(session_name, *order))
+        } else {
+            format!("echo TF2FRAG_RECORD_FINALIZED {base}")
+        };
+        add_vdm_action(&mut lines, &mut action, "PlayCommands", "Finalize clip", previous_finalize_tick, None, &finalize);
     }
     if let Some(demo) = next_demo {
         add_vdm_action(
@@ -4385,7 +4405,7 @@ fn prepare_recording_clips(
             "{:03}_{}_t{}-{}",
             order, candidate_name, candidate.clip_start_tick, candidate.clip_end_tick
         );
-        let capture_base = format!("tf2frag_{session_name}_{order:03}");
+        let capture_base = image_sequence::capture_base(session_name, order);
         let (working_path, final_output_path, frames_path, audio_path) = if encoded {
             // HLAE writes into a short private folder. The descriptive output
             // name is applied only when the completed file is moved out.
@@ -4493,6 +4513,7 @@ fn write_recording_manifest(
     let manifest = json!({
         "format": "tf2-hlae-recording-queue",
         "version": 9,
+        "image_completion_version": settings.recording_format.contains("Image").then_some(image_sequence::VERSION),
         "batch_status": batch_status,
         "batch_error": error,
         "offline_only": true,
@@ -4585,6 +4606,7 @@ fn write_json_atomic(path: &Path, value: &serde_json::Value) -> Result<()> {
 fn finalize_recording_session(
     child: &mut std::process::Child,
     tf_process_name: &str,
+    recording_log: &Path,
     game: &Path,
     session: &Path,
     clips: &[PreparedClip],
@@ -4593,7 +4615,6 @@ fn finalize_recording_session(
     diagnostic_log: &Path,
 ) -> (usize, usize) {
     update_recording_manifest(session, None, "Running", None, None, None);
-    let recording_log = game.join("tf2_demo_toolkit_recording.log");
     let start_deadline = Instant::now() + Duration::from_secs(120);
     let mut tf2_started = false;
     let mut query_warning_logged = false;
@@ -4633,7 +4654,7 @@ fn finalize_recording_session(
     } else {
         loop {
             process_recording_markers(
-                &recording_log,
+                recording_log,
                 &mut processed_lines,
                 clips,
                 game,
@@ -4702,7 +4723,7 @@ fn finalize_recording_session(
         }
     }
     process_recording_markers(
-        &recording_log,
+        recording_log,
         &mut processed_lines,
         clips,
         game,
@@ -4729,7 +4750,12 @@ fn finalize_recording_session(
     wait_for_hlae_shutdown(child, diagnostic_log);
     for clip in clips {
         if !completed.contains(&clip.config_base) && !failed.contains(&clip.config_base) {
-            if capture_artifacts_exist(clip, game, settings) {
+            if settings.recording_format.contains("Image") {
+                mark_unfinished_clip(
+                    clip, session, diagnostic_log, "RecoveryPending",
+                    "no confirmed image completion; source media retained for salvage", &mut failed,
+                );
+            } else if capture_artifacts_exist(clip, game, settings) {
                 if let Some(sink) = progress {
                     sink(RecordingProgress::Status(format!(
                         "Consolidating recorded candidate {} / {}: {}",
@@ -4787,6 +4813,32 @@ fn process_recording_markers(
     failed: &mut HashSet<String>,
     marker_state: &mut RecordingMarkerState,
 ) {
+    if settings.recording_format.contains("Image") {
+        let Ok(evidence) = image_sequence::CompletionLog::read(log_path) else {
+            return;
+        };
+        marker_state.batch_finished |= evidence.batch_finished;
+        marker_state.finalized_markers = marker_state.finalized_markers.max(evidence.finished.len());
+        for clip in clips {
+            if evidence.started.contains(&clip.capture_base)
+                && marker_state.started_clips.insert(clip.config_base.clone())
+            {
+                if let Some(sink) = progress {
+                    sink(RecordingProgress::ClipStarted {
+                        candidate_id: clip.candidate.candidate_id.clone(),
+                        current: marker_state.started_clips.len(),
+                        total: clips.len(),
+                    });
+                }
+            }
+            if evidence.finished.contains(&clip.capture_base) {
+                finalize_one_clip(
+                    clip, game, session, settings, progress, diagnostic_log, completed, failed,
+                );
+            }
+        }
+        return;
+    }
     let Ok(text) = fs::read_to_string(log_path) else {
         return;
     };
@@ -4965,7 +5017,9 @@ fn finalize_one_clip(
         None,
     );
     let result = if settings.recording_format.contains("Image") {
-        finalize_image_sequence(clip, game)
+        // The image monitor only calls this branch with session-scoped finish evidence.
+        image_sequence::publish(clip, game, session, settings, true)
+            .map(|_| clip.final_output_path.clone())
     } else {
         finalize_encoded_video(clip, settings, diagnostic_log)
     };
@@ -5498,9 +5552,9 @@ fn remove_empty_tree(root: &Path) {
 fn recording_start_cfg(clip: &PreparedClip, settings: &AppSettings) -> String {
     let fps = settings.capture_fps;
     if settings.recording_format.starts_with("TGA") {
-        format!("echo TF2FRAG_RECORD_START {}; {}; host_framerate {fps}; startmovie {} raw; hideconsole\n", clip.config_base, clean_capture_screen_commands(), clip.capture_base)
+        format!("echo TF2FRAG_IMAGE_START_{}; {}; host_framerate {fps}; startmovie {} raw; hideconsole\n", clip.capture_base, clean_capture_screen_commands(), clip.capture_base)
     } else if settings.recording_format.starts_with("JPG") {
-        format!("echo TF2FRAG_RECORD_START {}; {}; jpeg_quality {}; host_framerate {fps}; startmovie {} jpeg; hideconsole\n", clip.config_base, clean_capture_screen_commands(), settings.jpg_quality, clip.capture_base)
+        format!("echo TF2FRAG_IMAGE_START_{}; {}; jpeg_quality {}; host_framerate {fps}; startmovie {} jpeg; hideconsole\n", clip.capture_base, clean_capture_screen_commands(), settings.jpg_quality, clip.capture_base)
     } else {
         let output = clip
             .working_path
@@ -5572,13 +5626,12 @@ fn manual_recording_stop_cfg(settings: &AppSettings) -> String {
     format!("echo TF2FRAG_MANUAL_RECORD_END; {stop}; host_framerate 0\n")
 }
 
-fn recording_stop_cfg(settings: &AppSettings, config_base: &str) -> String {
-    let stop = if settings.recording_format.contains("Image") {
-        "endmovie"
+fn recording_stop_cfg(settings: &AppSettings, clip: &PreparedClip) -> String {
+    if settings.recording_format.contains("Image") {
+        format!("echo TF2FRAG_IMAGE_END_{}; endmovie; host_framerate 0\n", clip.capture_base)
     } else {
-        "mirv_streams record end"
-    };
-    format!("echo TF2FRAG_RECORD_END {config_base}; {stop}; host_framerate 0\n")
+        format!("echo TF2FRAG_RECORD_END {}; mirv_streams record end; host_framerate 0\n", clip.config_base)
+    }
 }
 
 fn offline_cfg() -> &'static str {
@@ -6028,7 +6081,7 @@ fn demo_signature(path: &Path) -> Result<String> {
 fn file_fingerprint(path: &Path) -> Result<String> {
     let mut file = File::open(path)?;
     let mut hash = Sha256::new();
-    let mut buffer = [0u8; 1024 * 1024];
+    let mut buffer = vec![0u8; 1024 * 1024];
     loop {
         let read = file.read(&mut buffer)?;
         if read == 0 {
@@ -6455,6 +6508,9 @@ fn recover_one_recording_session_with_index(
         MAX_RECORDING_INDEX_ENTRIES,
     );
     let mut all_complete = true;
+    let image_evidence = (manifest.image_completion_version == Some(image_sequence::VERSION)
+        && image_sequence::is_batch(session))
+        .then(|| image_sequence::retained_log(session, &game));
 
     for stored in &manifest.clips {
         let clip = prepared_clip_from_manifest(stored);
@@ -6469,20 +6525,33 @@ fn recover_one_recording_session_with_index(
             });
         let image_sequence =
             recovery_settings.recording_format.contains("Image") || clip.working_path.is_none();
-        let recoverable_artifacts = if image_sequence {
-            game.is_dir() && capture_artifacts_exist(&clip, &game, &recovery_settings)
-        } else {
-            capture_artifacts_exist(&clip, &game, &recovery_settings)
-        };
+        let automatic_image = image_sequence && image_sequence::is_batch(session);
+        if automatic_image && image_evidence.is_none() && existing_output.as_ref().is_some_and(|output| {
+            index.entries.get(&clip.recording_key).is_some_and(|entry| &entry.output_path == output)
+        }) {
+            // Preserve an already indexed legacy publication and its retained session.
+            all_complete = false;
+            continue;
+        }
 
-        let (output, finalized_now) = if recoverable_artifacts {
-            let result = if image_sequence {
-                finalize_image_sequence(&clip, &game)
+        let (output, finalized_now) = if automatic_image || capture_artifacts_exist(&clip, &game, &recovery_settings) {
+            let result = if automatic_image {
+                if let Some(evidence) = &image_evidence {
+                    image_sequence::publish(
+                        &clip, &game, session, &recovery_settings,
+                        evidence.finished.contains(&clip.capture_base),
+                    ).map(|published| (Some(clip.final_output_path.clone()), published))
+                } else {
+                    Err(anyhow::anyhow!("no session-specific image completion evidence; source media retained for salvage"))
+                }
+            } else if image_sequence {
+                finalize_image_sequence(&clip, &game).map(|output| (Some(output), true))
             } else {
                 finalize_encoded_video(&clip, &recovery_settings, &diagnostic_log)
+                    .map(|output| (Some(output), true))
             };
             match result {
-                Ok(output) => (Some(output), true),
+                Ok(output) => output,
                 Err(error) => {
                     all_complete = false;
                     log_recording_diagnostic(
@@ -7685,7 +7754,8 @@ mod recording_tests {
         let game = root.join("tf");
         fs::create_dir_all(&session).unwrap();
         fs::create_dir_all(&game).unwrap();
-        let source_frame = game.join("capture0000.tga");
+        let capture_base = image_sequence::capture_base("tf2_demo_toolkit_batch_pending", 1);
+        let source_frame = game.join(format!("{capture_base}0000.tga"));
         fs::write(&source_frame, b"source frame fixture").unwrap();
         let fallback = root.join("fallback.tga");
         fs::write(&fallback, b"fallback fixture").unwrap();
@@ -7711,11 +7781,13 @@ mod recording_tests {
             &json!({
                 "output_format": "TGA Image Sequence",
                 "game_directory": game,
+                "image_completion_version": image_sequence::VERSION,
                 "clips": [{
+                    "order": 1,
                     "candidate_id": "recovery-fixture",
                     "recording_key": recording_key,
                     "recording_identifier": "fixture-identifier",
-                    "native_capture_base": "capture",
+                    "native_capture_base": capture_base,
                     "expected_output_path": fallback,
                     "replace_existing": replace_existing,
                     "status": "Capturing"
@@ -7723,9 +7795,13 @@ mod recording_tests {
             }),
         )
         .unwrap();
+        fs::write(
+            session.join("tf2_console.log"),
+            format!("TF2FRAG_IMAGE_START_{capture_base}\nTF2FRAG_IMAGE_END_{capture_base}\nStopped recording movie...\nTF2FRAG_IMAGE_FINALIZED_{capture_base}\n"),
+        ).unwrap();
 
         let settings = AppSettings::default();
-        let expected_error = "image sequence has no Frames directory";
+        let expected_error = "invalid image sequence destination";
         for _ in 0..2 {
             let mut report = RecordingRecoveryReport::default();
             recover_one_recording_session_with_index(
