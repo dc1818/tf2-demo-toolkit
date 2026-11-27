@@ -8,6 +8,7 @@ mod sticky_traps;
 mod weapon_registry;
 
 use crate::{
+    events_txt::{self, DemoImport},
     item_schema::{load as parse_item_schema, ItemInfo},
     models::{Candidate, DemoContext, TickTagGroup},
     scheduler::RuntimeGovernor,
@@ -16,6 +17,7 @@ use anyhow::{Context, Result};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
+use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     fs::{self, File},
@@ -218,21 +220,23 @@ pub fn analyze_export(export: &Path, item_schema: Option<&Path>) -> Result<Vec<C
         .num_threads(workers)
         .thread_name(|index| format!("tf2-analysis-{index}"))
         .build()?;
-    pool.install(|| analyze_export_internal(export, item_schema, workers, None, None))
+    pool.install(|| analyze_export_internal(export, item_schema, None, workers, None, None))
 }
 
 pub fn analyze_export_in_current_pool(
     export: &Path,
     item_schema: Option<&Path>,
+    selected: (&Path, &DemoImport),
     cancelled: &AtomicBool,
     governor: &RuntimeGovernor,
 ) -> Result<Vec<Candidate>> {
-    analyze_export_internal(export, item_schema, rayon::current_num_threads().max(1), Some(cancelled), Some(governor))
+    analyze_export_internal(export, item_schema, Some(selected), rayon::current_num_threads().max(1), Some(cancelled), Some(governor))
 }
 
 fn analyze_export_internal(
     export: &Path,
     item_schema: Option<&Path>,
+    selected: Option<(&Path, &DemoImport)>,
     candidate_workers: usize,
     cancelled: Option<&AtomicBool>,
     governor: Option<&RuntimeGovernor>,
@@ -298,7 +302,19 @@ fn analyze_export_internal(
     )?;
     profile.candidate_group_jobs = group_jobs;
     profile.candidate_workers_used = workers_used;
-    append_bookmarks(export, &source_demo, &context, &mut candidates)?;
+    let mut standalone_import = DemoImport::default();
+    let bookmark_source = if let Some((path, import)) = selected {
+        (path, import)
+    } else {
+        let path = Path::new(&source_demo);
+        if path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("dem")) && path.is_file() {
+            standalone_import = events_txt::collect(&[path.to_owned()]).pop().unwrap_or_default();
+        }
+        (path, &standalone_import)
+    };
+    let text_import = append_bookmarks(
+        export, &source_demo, bookmark_source, header["ticks"].as_i64(), &context, &mut candidates,
+    );
     // Keep low-scoring single kills available long enough for a nearby
     // bookmark to inherit their player/class/weapon/state identifiers. Normal
     // low-scoring singles are removed only after bookmark candidates exist.
@@ -321,7 +337,7 @@ fn analyze_export_internal(
     profile.stage_seconds.insert("sticky_trap_tags".into(), started.elapsed().as_secs_f64());
 
     let started = Instant::now();
-    write_candidates(export, &candidates, &context, &source_demo, &map_name, item_schema)?;
+    write_candidates(export, &candidates, &context, &source_demo, &map_name, item_schema, text_import)?;
     profile.stage_seconds.insert("write_outputs".into(), started.elapsed().as_secs_f64());
     profile.total_seconds = total_started.elapsed().as_secs_f64();
     fs::write(export.join("analysis_profile.json"), serde_json::to_vec_pretty(&profile)?)?;
@@ -1835,10 +1851,16 @@ fn bookmark_entries(value: &Value) -> Vec<(i64, String)> {
     entries
 }
 
-fn append_bookmarks(export: &Path, source_demo: &str, context: &DemoContext, candidates: &mut Vec<Candidate>) -> Result<()> {
+fn append_bookmarks(
+    export: &Path,
+    source_demo: &str,
+    (demo, text_import): (&Path, &DemoImport),
+    demo_ticks: Option<i64>,
+    context: &DemoContext,
+    candidates: &mut Vec<Candidate>,
+) -> Option<Value> {
     let mut paths = BTreeSet::from([export.join("bookmarks.json")]);
-    if !source_demo.is_empty() {
-        let demo = PathBuf::from(source_demo);
+    if !demo.as_os_str().is_empty() {
         paths.insert(demo.with_extension("json"));
         paths.insert(PathBuf::from(format!("{}.json", demo.display())));
     }
@@ -1857,7 +1879,31 @@ fn append_bookmarks(export: &Path, source_demo: &str, context: &DemoContext, can
     }
     bookmarks.sort_by_key(|(tick, _)| *tick);
 
-    for (index, (tick, comment)) in bookmarks.into_iter().enumerate() {
+    // Allocate existing bookmark IDs before merging text rows so an earlier
+    // imported mark cannot renumber a previously recorded standalone clip.
+    let mut bookmarks: Vec<_> = bookmarks.into_iter().enumerate()
+        .map(|(index, (tick, comment))| (tick, comment, format!("bookmark-{tick}-{index}")))
+        .collect();
+    let mut imported = 0;
+    let mut duplicates = 0;
+    let mut outside_demo = 0;
+    for (tick, comment) in &text_import.bookmarks {
+        if demo_ticks.is_some_and(|end| end > 0 && *tick > end) {
+            outside_demo += 1;
+            continue;
+        }
+        let key = comment.trim().to_ascii_lowercase();
+        if !seen.insert((*tick, key.clone())) {
+            duplicates += 1;
+            continue;
+        }
+        let digest = Sha256::digest(key.as_bytes());
+        bookmarks.push((*tick, comment.clone(), format!("bookmark-text-{tick}-{digest:x}")));
+        imported += 1;
+    }
+    bookmarks.sort_by_key(|(tick, _, _)| *tick);
+
+    for (tick, comment, candidate_id) in bookmarks {
         let linked_index = candidates
             .iter()
             .enumerate()
@@ -1887,7 +1933,7 @@ fn append_bookmarks(export: &Path, source_demo: &str, context: &DemoContext, can
         }
 
         let mut candidate = Candidate {
-            candidate_id: format!("bookmark-{tick}-{index}"),
+            candidate_id,
             source_demo: source_demo.into(),
             attacker_class: "bookmark".into(),
             clip_start_tick: (tick - PRE_ROLL).max(0),
@@ -1900,7 +1946,14 @@ fn append_bookmarks(export: &Path, source_demo: &str, context: &DemoContext, can
         add_bookmark_to_candidate(&mut candidate, tick, comment);
         candidates.push(candidate);
     }
-    Ok(())
+    (!text_import.sources.is_empty()).then(|| json!({
+        "format_version":1,
+        "selected_demo":demo.to_string_lossy(),
+        "imported":imported,
+        "duplicates":duplicates,
+        "out_of_range":outside_demo,
+        "sources":text_import.sources,
+    }))
 }
 
 fn add_bookmark_to_candidate(candidate: &mut Candidate, tick: i64, comment: String) {
@@ -1935,7 +1988,7 @@ fn add_bookmark_to_candidate(candidate: &mut Candidate, tick: i64, comment: Stri
     candidate.primary_tag = candidate.inferred_primary_tag();
 }
 
-fn write_candidates(export: &Path, candidates: &[Candidate], context: &DemoContext, source_demo: &str, map_name: &str, item_schema: Option<&Path>) -> Result<()> {
+fn write_candidates(export: &Path, candidates: &[Candidate], context: &DemoContext, source_demo: &str, map_name: &str, item_schema: Option<&Path>, events_txt_import: Option<Value>) -> Result<()> {
     let output = File::create(export.join("frag_candidates.ndjson"))?;
     let mut output = BufWriter::new(output);
     for candidate in candidates {
@@ -1943,7 +1996,7 @@ fn write_candidates(export: &Path, candidates: &[Candidate], context: &DemoConte
         output.write_all(b"\n")?;
     }
     output.flush()?;
-    let summary = json!({
+    let mut summary = json!({
         "format":"tf2-frag-candidates-rust",
         "format_version":3,
         "source_demo":source_demo,
@@ -1952,6 +2005,9 @@ fn write_candidates(export: &Path, candidates: &[Candidate], context: &DemoConte
         "demo_context":context,
         "item_schema":item_schema.map(|path| path.display().to_string()),
     });
+    if let Some(report) = events_txt_import {
+        summary["events_txt_import"] = report;
+    }
     fs::write(export.join("frag_summary.json"), serde_json::to_vec_pretty(&summary)?)?;
     Ok(())
 }
@@ -2405,10 +2461,11 @@ mod tests {
         append_bookmarks(
             &export,
             demo.to_str().unwrap(),
+            (&demo, &DemoImport::default()),
+            None,
             &DemoContext::default(),
             &mut candidates,
-        )
-        .unwrap();
+        );
 
         assert_eq!(candidates.len(), 1);
         assert_eq!(candidates[0].bookmark_tick, Some(1_234));
@@ -2445,10 +2502,11 @@ mod tests {
         append_bookmarks(
             &export,
             demo.to_str().unwrap(),
+            (&demo, &DemoImport::default()),
+            None,
             &DemoContext::default(),
             &mut candidates,
-        )
-        .unwrap();
+        );
 
         assert_eq!(candidates.len(), 1);
         let bookmarked = &candidates[0];
@@ -2477,14 +2535,41 @@ mod tests {
         append_bookmarks(
             &export,
             demo.to_str().unwrap(),
+            (&demo, &DemoImport::default()),
+            None,
             &DemoContext::default(),
             &mut candidates,
-        )
-        .unwrap();
+        );
 
         assert_eq!(candidates.len(), 2);
         assert_eq!(candidates[0].candidate_id, "bookmark-1000-0");
         assert_eq!(candidates[1].candidate_id, "bookmark-1100-1");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn text_import_deduplicates_json_and_preserves_legacy_bookmark_ids() {
+        let root = bookmark_test_directory("text-import");
+        fs::create_dir_all(&root).unwrap();
+        let demo = root.join("match.dem");
+        fs::write(root.join("bookmarks.json"), br#"{"bookmarks":[{"tick":1700,"comment":"Saved Play"}]}"#).unwrap();
+        fs::write(root.join("_events.txt"), r#"
+[2018/08/26 22:43] Bookmark saved play ("match" at 1700)
+[2018/08/26 22:44] Bookmark early ("match" at 1000)
+[2018/08/26 22:44] Bookmark after end ("match" at 2500)
+"#).unwrap();
+        let imports = events_txt::collect(std::slice::from_ref(&demo));
+        let mut candidates = Vec::new();
+        let report = append_bookmarks(
+            &root, demo.to_str().unwrap(), (&demo, &imports[0]),
+            Some(2000), &DemoContext::default(), &mut candidates,
+        ).unwrap();
+        assert_eq!((report["imported"].as_u64(), report["duplicates"].as_u64(), report["out_of_range"].as_u64()), (Some(1), Some(1), Some(1)));
+        assert_eq!(candidates.len(), 2);
+        assert!(candidates[0].candidate_id.starts_with("bookmark-text-1000-"));
+        assert_eq!(candidates[1].candidate_id, "bookmark-1700-0");
+        assert_eq!(candidates[1].bookmark_comment, "Saved Play");
+        assert_eq!(candidates[1].overall_score, BOOKMARK_SCORE);
         fs::remove_dir_all(root).unwrap();
     }
 }

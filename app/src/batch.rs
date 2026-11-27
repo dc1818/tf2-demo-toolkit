@@ -1,5 +1,6 @@
 use crate::{
     analyzer::analyze_export_in_current_pool,
+    events_txt,
     models::{Candidate, DemoJob},
     preflight::{disk_space_for, format_bytes, format_duration, require_disk_space},
     scheduler::{largest_first, PerformanceProfile, ResourcePlan, RuntimeGovernor, RuntimeGovernorStats},
@@ -464,6 +465,8 @@ pub fn run_batch(
     let analysis_started = Instant::now();
     let analysis_gate = Arc::new(analysis_plan.analyzer_gate(controller.cancellation_token(), governor.clone()));
     let analysis_jobs = largest_first(jobs.clone(), true);
+    let import_paths: Vec<_> = jobs.iter().map(|job| job.demo_path.clone()).collect();
+    let bookmark_imports = events_txt::collect(&import_paths);
     let analysis_next = AtomicUsize::new(0);
     let analysis_error = Mutex::new(None::<String>);
     // Dispatcher threads wait on the live-memory gate outside Rayon. Blocking
@@ -485,6 +488,7 @@ pub fn run_batch(
             let controller = &controller;
             let sink = &sink;
             let emit = &emit;
+            let bookmark_imports = &bookmark_imports;
             let item_schema = item_schema.as_deref();
             scope.spawn(move || loop {
                 if controller.is_cancelled() { break; }
@@ -498,6 +502,7 @@ pub fn run_batch(
                     let candidates = analysis_pool.install(|| analyze_export_in_current_pool(
                         &job.export_directory,
                         item_schema,
+                        (&job.demo_path, &bookmark_imports[job.order - 1]),
                         cancellation.as_ref(),
                         governor.as_ref(),
                     ))?;
@@ -607,10 +612,18 @@ fn locate_exporter() -> Result<PathBuf> {
 
 fn combine_candidates(root: &Path, jobs: &[DemoJob]) -> Result<Vec<Candidate>> {
     let mut combined = Vec::new();
+    let mut bookmark_reports = Vec::new();
     for job in jobs {
         let path = job.export_directory.join("frag_candidates.ndjson");
         if !path.is_file() {
             continue;
+        }
+        if let Ok(bytes) = fs::read(job.export_directory.join("frag_summary.json")) {
+            if let Ok(mut summary) = serde_json::from_slice::<serde_json::Value>(&bytes) {
+                if let Some(report) = summary.as_object_mut().and_then(|summary| summary.remove("events_txt_import")) {
+                    bookmark_reports.push(report);
+                }
+            }
         }
         for line in BufReader::new(File::open(path)?).lines() {
             let line = line?;
@@ -636,7 +649,15 @@ fn combine_candidates(root: &Path, jobs: &[DemoJob]) -> Result<Vec<Candidate>> {
         serde_json::to_writer(&mut output, candidate)?;
         output.write_all(b"\n")?;
     }
-    fs::write(root.join("frag_summary.json"), serde_json::to_vec_pretty(&json!({"candidate_count":combined.len(),"demo_count":jobs.len(),"backend":"rust"}))?)?;
+    let mut summary = json!({"candidate_count":combined.len(),"demo_count":jobs.len(),"backend":"rust"});
+    if !bookmark_reports.is_empty() {
+        if jobs.len() == 1 {
+            summary["events_txt_import"] = bookmark_reports.pop().unwrap();
+        } else {
+            summary["events_txt_imports"] = json!(bookmark_reports);
+        }
+    }
+    fs::write(root.join("frag_summary.json"), serde_json::to_vec_pretty(&summary)?)?;
     Ok(combined)
 }
 
@@ -835,6 +856,27 @@ mod preflight_tests {
         sizes.iter().enumerate().map(|(order, &source_bytes)| DemoJob {
             order, demo_path: PathBuf::new(), export_directory: PathBuf::new(), source_bytes, parsed_bytes: 0,
         }).collect()
+    }
+
+    #[test]
+    fn combined_output_keeps_bookmark_diagnostics_for_each_demo() {
+        let nonce = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let root = std::env::temp_dir().join(format!("a16-combine-{}-{nonce}", std::process::id()));
+        fs::create_dir_all(&root).unwrap();
+        let mut jobs = demo_jobs(&[1, 1]);
+        for (index, job) in jobs.iter_mut().enumerate() {
+            job.export_directory = if index == 0 { root.clone() } else { root.join("second") };
+            fs::create_dir_all(&job.export_directory).unwrap();
+            fs::write(job.export_directory.join("frag_candidates.ndjson"), "").unwrap();
+            fs::write(job.export_directory.join("frag_summary.json"),
+                json!({"events_txt_import":{"imported":index + 1}}).to_string()).unwrap();
+        }
+        let summary = || serde_json::from_slice::<serde_json::Value>(&fs::read(root.join("frag_summary.json")).unwrap()).unwrap();
+        combine_candidates(&root, &jobs[..1]).unwrap();
+        assert_eq!(summary()["events_txt_import"]["imported"], 1);
+        combine_candidates(&root, &jobs).unwrap();
+        assert_eq!(summary()["events_txt_imports"], json!([{"imported":1},{"imported":2}]));
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

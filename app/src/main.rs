@@ -7,6 +7,7 @@ mod guide;
 mod guide_ui;
 mod director_guide_ui;
 mod item_schema;
+mod events_txt;
 mod batch;
 mod demo_playback;
 mod models;
