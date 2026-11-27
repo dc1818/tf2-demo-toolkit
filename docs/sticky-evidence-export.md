@@ -98,7 +98,8 @@ positive planted bound and agreeing launcher and thrower evidence.
 | Planted sticky with two victims | At demo tick 105576, packet 245151, message indices 1 and 3 credit user 80 for deaths of users 70 and 74. Both name inflictor 633, which was visible in mode 1 with serial 83. Both full-handle checks agree. The last observed untouched tick was 155998, the first touched tick was 156071, and the deaths were at server tick 156666. The position and observed ownership persisted for a planted lower bound of 595 ticks (8.925 s). |
 | Two victims with unknown planted dwell | At demo tick 154193, packet 350532, message indices 1 and 3 credit user 80 for deaths of users 70 and 73. Both name inflictor 1190, serial 366, with matching ownership. The observed interval leaves planted dwell unknown. |
 
-These labels describe one projectile and two casualties in each case.
-Separate bombs in the same activation still require labeled examples and
-an attribution rule. The source measurements support planted evidence
-as input to a future detector proposal.
+These labels describe the casualties accepted by the raw-mode check.
+The [follow-up grouping audit](sticky-multi-bomb-validation.md) joins a
+third casualty in the planted packet to a second projectile whose raw
+mode was unobserved. It also checks unrelated same-tick SourceTV
+effects and records the limits of common-activation attribution.
