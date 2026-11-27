@@ -2,6 +2,8 @@
 mod arrow_saves;
 #[path = "analyzer/uber_saves.rs"]
 mod uber_saves;
+#[path = "analyzer/sticky_traps.rs"]
+mod sticky_traps;
 #[path = "analyzer/weapon_registry.rs"]
 mod weapon_registry;
 
@@ -313,6 +315,10 @@ fn analyze_export_internal(
     )?;
     candidates.sort_by(|left, right| right.overall_score.total_cmp(&left.overall_score).then(left.clip_start_tick.cmp(&right.clip_start_tick)));
     profile.stage_seconds.insert("candidate_grouping_and_scoring".into(), started.elapsed().as_secs_f64());
+
+    let started = Instant::now();
+    sticky_traps::annotate(export, &manifest, &events, &mut candidates, cancelled, governor)?;
+    profile.stage_seconds.insert("sticky_trap_tags".into(), started.elapsed().as_secs_f64());
 
     let started = Instant::now();
     write_candidates(export, &candidates, &context, &source_demo, &map_name, item_schema)?;

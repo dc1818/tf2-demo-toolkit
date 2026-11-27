@@ -2,6 +2,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{collections::BTreeSet, path::PathBuf};
 
+pub const PLANTED_STICKY_KILL: &str = "planted_sticky_kill";
+
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 pub struct DemoContext {
     #[serde(default)]
@@ -112,13 +114,16 @@ impl Candidate {
         if let Some(tag) = self
             .tick_tags
             .iter()
-            .filter(|group| !group.tags.is_empty())
+            .filter(|group| group.tags.iter().any(|tag| tag != PLANTED_STICKY_KILL))
             .min_by_key(|group| group.demo_tick)
-            .and_then(|group| group.tags.iter().find(|tag| !tag.trim().is_empty()))
+            .and_then(|group| group.tags.iter().find(|tag| {
+                !tag.trim().is_empty() && tag.as_str() != PLANTED_STICKY_KILL
+            }))
         {
             return tag.clone();
         }
         if !self.primary_tag.trim().is_empty()
+            && self.primary_tag != PLANTED_STICKY_KILL
             && self.tags.iter().any(|tag| tag == &self.primary_tag)
         {
             return self.primary_tag.clone();
@@ -134,7 +139,9 @@ fn infer_primary_tag(
     sequence_tags: &[String],
     score_breakdown: &[Value],
 ) -> Option<String> {
-    let unique = tags.iter().filter(|tag| !tag.trim().is_empty()).collect::<BTreeSet<_>>();
+    let unique = tags.iter().filter(|tag| {
+        !tag.trim().is_empty() && tag.as_str() != PLANTED_STICKY_KILL
+    }).collect::<BTreeSet<_>>();
     unique
         .into_iter()
         .map(|tag| {

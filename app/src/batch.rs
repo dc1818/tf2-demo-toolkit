@@ -413,7 +413,7 @@ pub fn run_batch(
                 emit(format!("[PARSE {:03}] {} (active {}/{})", job.order, job.demo_path.display(), parse_gate.active(), parse_gate.limit()));
                 let started = Instant::now();
                 let mut command = Command::new(&parser);
-                command.arg(&job.demo_path).arg(&job.export_directory);
+                command.arg(&job.demo_path).arg(&job.export_directory).arg("--sticky-evidence");
                 let output = run_command(command, &controller)?;
                 if !output.status.success() {
                     bail!("parser failed for {}: {}", job.demo_path.display(), String::from_utf8_lossy(&output.stderr));

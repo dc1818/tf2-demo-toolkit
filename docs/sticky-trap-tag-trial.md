@@ -77,9 +77,31 @@ the proposed tag across all five thresholds.
 Use **2 seconds of observed planted dwell** as a provisional starting
 point for a tag-only proposal. It excludes the 0.66 s and 1.365 s
 Habib observations while retaining the reviewed planted double and
-the same four trial clips. This corpus cannot establish that 2 seconds
-is optimal because the clip list never changed across the sweep.
+the same four trial clips. The clip list was the same at each threshold,
+so the corpus leaves the optimum dwell threshold open.
 Use a labeled held-trap and short-placement corpus to calibrate the
 threshold before assigning points. Multiple eligible casualties add
 the tag once to a clip. Keep shared activation and per-projectile
-qualification as distinct evidence. The current checkpoint is offline.
+qualification as distinct evidence.
+
+## Approved native tag
+
+The owner approved the 2-second tag-only integration. The Toolkit
+requests the version 1 evidence sidecar during normal demo parsing.
+The analyzer attaches `planted_sticky_kill` to the existing candidate
+and qualifying kill tick after candidate selection and ranking. The
+tag participates in filtering and kill-tick details. Recording folders
+continue to follow the previous primary-category rules. Existing
+exports without a supported sidecar remain valid analysis inputs.
+
+All 240 Windows Rust workspace tests passed. The native regression
+exercises 133 versus 134 ticks at 66.67 ticks per second, movement
+interruptions, unknown pipe mode, an ownership mismatch, legacy
+exports, and malformed optional input. It checks score, clip bounds,
+and primary-category preservation alongside candidate and kill-tick tags.
+
+Native analyzer replays on all four Windows fixtures retained all 207
+candidate records in the same order. The only candidate differences
+were the expected tag on four clips and its matching kill-tick groups.
+All clip bounds, scores, score breakdowns, and primary categories
+matched the baseline.

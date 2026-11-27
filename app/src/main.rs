@@ -223,6 +223,7 @@ fn friendly_tag(value: &str) -> String {
         "double_donk" => "double donk".into(),
         "market_garden" => "Market Garden".into(),
         "medic_pick" => "Medic pick".into(),
+        "planted_sticky_kill" => "planted sticky kill".into(),
         "uber_drop" => "Über drop".into(),
         "medic_force" => "forced enemy Über".into(),
         "demoman_pick" => "Demoman pick".into(),
