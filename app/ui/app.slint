@@ -221,79 +221,62 @@ component CandidateTableRow inherits Rectangle {
     in property <CandidateRow> entry;
     in property <int> index;
     in property <bool> compact;
-    in property <bool> main-columns;
-    in property <bool> extra-columns;
     in property <length> tag-column-width;
-    in property <bool> show-team;
-    callback drag(int, float, bool, bool);
-    callback selection-done();
 
-                height: 30px; clip: true;
-                background: root.entry.selected ? Tf2Colors.gold : (Math.mod(root.index, 2) == 0 ? Tf2Colors.table : Tf2Colors.table-alt);
-                row-focus := FocusScope { }
-                HorizontalLayout {
-                    x: 0px; width: root.width;
-                    padding-left: 8px; padding-right: 8px; spacing: 8px;
-                    if root.main-columns && root.compact : Tf2Body { text: root.entry.score; width: 75px; }
-                    if root.main-columns && root.compact : Tf2Body { text: root.entry.recorded; width: 90px; color: root.entry.recorded == "Recorded" ? Tf2Colors.green : Tf2Colors.cream; horizontal-alignment: center; vertical-alignment: center; }
-                    if root.main-columns && !root.compact : Tf2Body { text: root.entry.recorded; width: 90px; color: root.entry.recorded == "Recorded" ? Tf2Colors.green : Tf2Colors.cream; horizontal-alignment: center; vertical-alignment: center; }
-                    if root.main-columns && !root.compact : Tf2Body { text: root.entry.score; width: 75px; }
-                    if root.main-columns : Tf2Body { text: root.entry.map-name; width: 200px; overflow: elide; }
-                    if root.main-columns : Tf2Body { text: root.entry.class-name; width: 110px; overflow: elide; }
-                    if root.main-columns : Tf2Body { text: root.entry.ticks; width: 160px; overflow: elide; }
-                    if root.extra-columns : Tf2Body { text: root.entry.mode; width: 220px; overflow: elide; }
-                    if root.extra-columns && root.show-team : Tf2Body { text: root.entry.team; width: 90px; overflow: elide; }
-                    if root.extra-columns : Rectangle {
-                        width: root.tag-column-width; height: parent.height; clip: true;
+    clip: true;
+    background: root.entry.selected ? Tf2Colors.gold : (Math.mod(root.index, 2) == 0 ? Tf2Colors.table : Tf2Colors.table-alt);
+    HorizontalLayout {
+        x: 0px; width: root.width;
+        padding-left: 8px; padding-right: 8px; spacing: 8px;
+        Rectangle {
+            width: 173px;
+            Tf2Body { x: root.compact ? 0px : 98px; width: 75px; text: root.entry.score; }
+            Tf2Body { x: root.compact ? 83px : 0px; width: 90px; text: root.entry.recorded; color: root.entry.recorded == "Recorded" ? Tf2Colors.green : Tf2Colors.cream; horizontal-alignment: center; }
+        }
+        Tf2Body { text: root.entry.map-name; width: 200px; overflow: elide; }
+        Tf2Body { text: root.entry.class-name; width: 110px; overflow: elide; }
+        Tf2Body { text: root.entry.ticks; width: 160px; overflow: elide; }
+        Tf2Body { text: root.entry.mode; width: 220px; overflow: elide; }
+        Tf2Body { text: root.entry.team; width: 90px; overflow: elide; }
+        Rectangle {
+            width: root.tag-column-width; height: parent.height; clip: true;
+            HorizontalLayout {
+                padding-top: 4px; padding-bottom: 4px; spacing: 4px;
+                for group in root.entry.tag-groups : HorizontalLayout {
+                    width: (group.width + (group.has-separator ? 18 : 0)) * 1px;
+                    spacing: 4px;
+                    Rectangle {
+                        width: group.width * 1px;
+                        background: group.highlighted ? #202a31 : #1b1c1b;
+                        border-width: 1px;
+                        border-color: group.highlighted ? #385061 : #343633;
+                        clip: true;
                         HorizontalLayout {
-                            padding-top: 4px; padding-bottom: 4px; spacing: 4px;
-                            for group in root.entry.tag-groups : HorizontalLayout {
-                                width: (group.width + (group.has-separator ? 18 : 0)) * 1px;
-                                spacing: 4px;
-                                Rectangle {
-                                    width: group.width * 1px;
-                                    background: group.highlighted ? #202a31 : #1b1c1b;
-                                    border-width: 1px;
-                                    border-color: group.highlighted ? #385061 : #343633;
-                                    clip: true;
-                                    HorizontalLayout {
-                                        padding-left: 5px; padding-right: 5px; spacing: 3px;
-                                        Text { text: group.label; color: #8ab3cd; font-family: "Roboto Condensed"; font-size: 12px; vertical-alignment: center; overflow: elide; }
-                                        Text { text: group.tags; color: Tf2Colors.cream; font-family: "Roboto Condensed"; font-size: 12px; vertical-alignment: center; overflow: elide; }
-                                    }
-                                }
-                                if group.has-separator : Rectangle {
-                                    width: 14px; height: parent.height;
-                                    background: #191a19;
-                                    border-width: 1px; border-color: #3c4140;
-                                    Text { width: parent.width; height: parent.height; text: "|"; color: Tf2Colors.muted; font-family: "Roboto Condensed"; font-size: 12px; horizontal-alignment: center; vertical-alignment: center; }
-                                }
-                            }
+                            padding-left: 5px; padding-right: 5px; spacing: 3px;
+                            Text { text: group.label; color: #8ab3cd; font-family: "Roboto Condensed"; font-size: 12px; vertical-alignment: center; overflow: elide; }
+                            Text { text: group.tags; color: Tf2Colors.cream; font-family: "Roboto Condensed"; font-size: 12px; vertical-alignment: center; overflow: elide; }
                         }
                     }
-                }
-                drag-area := TouchArea {
-                    property <bool> drag-selecting; property <bool> dragging; property <bool> drag-additive;
-                    pointer-event(event) => {
-                        if (event.button == PointerEventButton.left && event.kind == PointerEventKind.down) {
-                            row-focus.focus();
-                            self.drag-additive = event.modifiers.control;
-                            self.drag-selecting = self.drag-additive ? !root.entry.selected : true;
-                            self.dragging = true;
-                            root.drag(root.index, 0, self.drag-selecting, self.drag-additive);
-                        }
-                        if (event.button == PointerEventButton.left && (event.kind == PointerEventKind.up || event.kind == PointerEventKind.cancel)) {
-                            self.dragging = false; root.selection-done();
-                        }
+                    if group.has-separator : Rectangle {
+                        width: 14px; height: parent.height;
+                        background: #191a19;
+                        border-width: 1px; border-color: #3c4140;
+                        Text { width: parent.width; height: parent.height; text: "|"; color: Tf2Colors.muted; font-family: "Roboto Condensed"; font-size: 12px; horizontal-alignment: center; vertical-alignment: center; }
                     }
-                    moved => { if (self.dragging) { root.drag(root.index, (self.mouse-y - self.pressed-y) / 1px, self.drag-selecting, self.drag-additive); } }
                 }
+            }
+        }
+    }
+}
 
+component CandidateColumnHeading inherits Text {
+    color: Tf2Colors.cream;
+    font-family: "TF2 Build";
+    font-size: 12px;
+    vertical-alignment: center;
 }
 
 component CandidateTable inherits Rectangle {
-    GuideAnchor { target-id: GuideFocus.target == 16 ? 16 : 13; width: Math.min(600px, parent.width * 0.55); height: Math.min(120px, parent.height); }
-    min-width: 0px; min-height: 0px; preferred-width: 0px; preferred-height: 0px;
     in property <[CandidateRow]> rows;
     in property <bool> compact;
     in property <int> tags-width-px: 160;
@@ -301,59 +284,140 @@ component CandidateTable inherits Rectangle {
     callback drag(int, float, bool, bool);
     callback selection-done();
 
+    min-width: 0px; min-height: 0px; preferred-width: 0px; preferred-height: 0px;
     background: Tf2Colors.panel-dark;
     border-width: 1px;
     border-color: Tf2Colors.border;
     clip: true;
-    private property <length> content-width: root.width;
-    private property <int> page: 0;
-    private property <int> capacity: Math.max(1, Math.floor((root.height - 66px) / 30px));
-    private property <int> pages: Math.max(1, Math.ceil(root.rows.length / root.capacity));
-    private property <int> current: Math.min(root.page, root.pages - 1);
-    private property <bool> more-columns: false;
-    private property <bool> guiding-columns: GuideFocus.active && GuideFocus.target >= 40 && GuideFocus.target <= 47;
-    private property <bool> show-extra: root.guiding-columns ? GuideFocus.target >= 45 : root.more-columns;
-    private property <bool> show-team: !root.compact || (root.guiding-columns && GuideFocus.target == 46);
-    private property <bool> main-columns: root.width >= 1250px || !root.show-extra;
-    private property <bool> extra-columns: root.width >= 1250px || root.show-extra;
-    private property <length> tag-column-width: Math.max(80px, root.width - (root.width >= 1250px ? (root.show-team ? 1017px : 919px) : (root.show-team ? 350px : 252px)));
 
+    private property <length> row-height: 30px;
+    // Allow room for overlay scrollbars without covering the last column or row.
+    private property <length> scrollbar-gutter: 16px;
+    private property <length> fixed-columns-width: 1017px;
+    private property <length> usable-width: Math.max(0px, candidate-list.visible-width - root.scrollbar-gutter);
+    private property <length> tag-column-width: Math.max(root.tags-width-px * 1px, root.usable-width - root.fixed-columns-width);
+    private property <length> row-width: root.fixed-columns-width + root.tag-column-width;
+    private property <length> rows-height: root.rows.length * root.row-height;
+    private property <length> max-horizontal-scroll: Math.max(0px, root.row-width - root.usable-width);
+    private property <length> max-vertical-scroll: Math.max(0px, candidate-list.viewport-height - candidate-list.visible-height);
+    private property <int> first-row: Math.max(0, Math.floor(-candidate-list.viewport-y / root.row-height));
+    private property <int> visible-rows: Math.max(0, Math.min(root.rows.length - root.first-row, Math.ceil(candidate-list.visible-height / root.row-height) + 1));
+
+    private property <int> guided-column: GuideFocus.active && GuideFocus.target >= 40 && GuideFocus.target <= 47 ? GuideFocus.target : 0;
+    private property <length> guided-left:
+        root.guided-column == 40 ? first-columns.x + recorded-heading.x :
+        root.guided-column == 41 ? first-columns.x + score-heading.x :
+        root.guided-column == 42 ? map-heading.x :
+        root.guided-column == 43 ? class-heading.x :
+        root.guided-column == 44 ? tick-heading.x :
+        root.guided-column == 45 ? server-heading.x :
+        root.guided-column == 46 ? team-heading.x : tags-heading.x;
+    private property <length> guided-width:
+        root.guided-column == 40 ? recorded-heading.width :
+        root.guided-column == 41 ? score-heading.width :
+        root.guided-column == 42 ? map-heading.width :
+        root.guided-column == 43 ? class-heading.width :
+        root.guided-column == 44 ? tick-heading.width :
+        root.guided-column == 45 ? server-heading.width :
+        root.guided-column == 46 ? team-heading.width : Math.min(220px, tags-heading.width);
+
+    function reveal-guided-column() {
+        if root.guided-column != 0 {
+            root.horizontal-offset = Math.clamp(root.horizontal-offset,
+                -Math.min(root.max-horizontal-scroll, root.guided-left),
+                Math.min(0px, root.usable-width - root.guided-left - root.guided-width));
+        }
+    }
+
+    changed guided-column => { root.reveal-guided-column(); }
+    changed guided-left => { root.reveal-guided-column(); }
+    changed guided-width => { root.reveal-guided-column(); }
+    changed usable-width => { root.reveal-guided-column(); }
+    changed max-horizontal-scroll => {
+        root.horizontal-offset = Math.clamp(root.horizontal-offset, -root.max-horizontal-scroll, 0px);
+        root.reveal-guided-column();
+    }
+    changed max-vertical-scroll => {
+        candidate-list.viewport-y = Math.clamp(candidate-list.viewport-y, -root.max-vertical-scroll, 0px);
+    }
+
+    GuideAnchor { target-id: GuideFocus.target == 16 ? 16 : 13; width: Math.min(600px, parent.width * 0.55); height: Math.min(120px, parent.height); }
     Rectangle {
-            x: 0px; y: 0px; width: root.width; height: 30px; background: Tf2Colors.neutral; clip: true;
-            HorizontalLayout {
-                x: 0px; width: root.content-width;
-                padding-left: 8px; padding-right: 8px; spacing: 8px;
-                if root.main-columns && root.compact : Text { text: "SCORE"; width: 75px; color: Tf2Colors.cream; font-family: "TF2 Build"; font-size: 12px; vertical-alignment: center; GuideAnchor { target-id: 41; width: parent.width; height: Math.min(120px, root.height - 34px); } }
-                if root.main-columns && root.compact : Text { text: "RECORDED"; width: 90px; color: Tf2Colors.cream; font-family: "TF2 Build"; font-size: 12px; vertical-alignment: center; horizontal-alignment: center; GuideAnchor { target-id: 40; width: parent.width; height: Math.min(120px, root.height - 34px); } }
-                if root.main-columns && !root.compact : Text { text: "RECORDED"; width: 90px; color: Tf2Colors.cream; font-family: "TF2 Build"; font-size: 12px; vertical-alignment: center; horizontal-alignment: center; GuideAnchor { target-id: 40; width: parent.width; height: Math.min(120px, root.height - 34px); } }
-                if root.main-columns && !root.compact : Text { text: "SCORE"; width: 75px; color: Tf2Colors.cream; font-family: "TF2 Build"; font-size: 12px; vertical-alignment: center; GuideAnchor { target-id: 41; width: parent.width; height: Math.min(120px, root.height - 34px); } }
-                if root.main-columns : Text { text: "MAP"; width: 200px; color: Tf2Colors.cream; font-family: "TF2 Build"; font-size: 12px; vertical-alignment: center; GuideAnchor { target-id: 42; width: parent.width; height: Math.min(120px, root.height - 34px); } }
-                if root.main-columns : Text { text: "CLASS"; width: 110px; color: Tf2Colors.cream; font-family: "TF2 Build"; font-size: 12px; vertical-alignment: center; GuideAnchor { target-id: 43; width: parent.width; height: Math.min(120px, root.height - 34px); } }
-                if root.main-columns : Text { text: "KILL TICK"; width: 160px; color: Tf2Colors.cream; font-family: "TF2 Build"; font-size: 12px; vertical-alignment: center; GuideAnchor { target-id: 44; width: parent.width; height: Math.min(120px, root.height - 34px); } }
-                if root.extra-columns : Text { text: "SERVER TYPE"; width: 220px; color: Tf2Colors.cream; font-family: "TF2 Build"; font-size: 12px; vertical-alignment: center; GuideAnchor { target-id: 45; width: parent.width; height: Math.min(120px, root.height - 34px); } }
-                if root.extra-columns && root.show-team : Text { text: "TEAM"; width: 90px; color: Tf2Colors.cream; font-family: "TF2 Build"; font-size: 12px; vertical-alignment: center; GuideAnchor { target-id: 46; width: parent.width; height: Math.min(120px, root.height - 34px); } }
-                if root.extra-columns : Text { text: "TAGS"; width: root.tag-column-width; color: Tf2Colors.cream; font-family: "TF2 Build"; font-size: 12px; vertical-alignment: center; GuideAnchor { target-id: 47; width: Math.min(220px, parent.width); height: Math.min(120px, root.height - 34px); } }
+        x: 0px; y: 0px; width: root.width; height: root.row-height;
+        background: Tf2Colors.neutral;
+        clip: true;
+
+        HorizontalLayout {
+            x: root.horizontal-offset; width: root.row-width; height: parent.height;
+            padding-left: 8px; padding-right: 8px; spacing: 8px;
+            first-columns := Rectangle {
+                width: 173px;
+                recorded-heading := CandidateColumnHeading { x: root.compact ? 83px : 0px; width: 90px; text: "RECORDED"; horizontal-alignment: center; }
+                score-heading := CandidateColumnHeading { x: root.compact ? 0px : 98px; width: 75px; text: "SCORE"; }
             }
+            map-heading := CandidateColumnHeading { text: "MAP"; width: 200px; }
+            class-heading := CandidateColumnHeading { text: "CLASS"; width: 110px; }
+            tick-heading := CandidateColumnHeading { text: "KILL TICK"; width: 160px; }
+            server-heading := CandidateColumnHeading { text: "SERVER TYPE"; width: 220px; }
+            team-heading := CandidateColumnHeading { text: "TEAM"; width: 90px; }
+            tags-heading := CandidateColumnHeading { text: "TAGS"; width: root.tag-column-width; }
         }
-        candidate-list := Rectangle {
-            x: 0px; y: 30px; width: root.width; height: Math.max(0px, root.height - 64px);
-            for slot in root.capacity : CandidateTableRow {
-                y: slot * 30px; width: parent.width; height: 30px;
-                index: root.current * root.capacity + slot;
-                entry: root.rows[self.index]; visible: self.index < root.rows.length;
-                compact: root.compact; main-columns: root.main-columns; extra-columns: root.extra-columns; show-team: root.show-team; tag-column-width: root.tag-column-width;
-                drag(index, delta, selecting, additive) => { root.drag(index, delta, selecting, additive); }
-                selection-done => { root.selection-done(); }
+
+        GuideAnchor {
+            target-id: root.guided-column;
+            x: Math.max(0px, root.guided-left + root.horizontal-offset);
+            width: Math.max(0px, Math.min(root.usable-width, root.guided-left + root.horizontal-offset + root.guided-width) - self.x);
+            height: Math.min(120px, root.height);
+        }
+    }
+
+    // Keep focus outside the scroll content so focusing a row cannot move the viewport.
+    row-focus := FocusScope { x: 0px; y: 0px; width: 0px; height: 0px; }
+
+    candidate-list := ScrollView {
+        x: 0px; y: root.row-height; width: root.width; height: Math.max(0px, root.height - root.row-height);
+        horizontal-scrollbar-policy: as-needed;
+        vertical-scrollbar-policy: as-needed;
+        mouse-drag-pan-enabled: false;
+        viewport-x <=> root.horizontal-offset;
+        viewport-width: root.row-width + root.scrollbar-gutter;
+        viewport-height: Math.max(self.visible-height, root.rows-height + (root.max-horizontal-scroll > 0px ? root.scrollbar-gutter : 0px));
+
+        for slot in root.visible-rows : CandidateTableRow {
+            x: 0px; y: self.index * root.row-height; width: root.row-width; height: root.row-height;
+            index: root.first-row + slot;
+            entry: root.rows[self.index];
+            compact: root.compact;
+            tag-column-width: root.tag-column-width;
+        }
+
+        // Use one hit area so a gesture keeps its starting row when the visible row pool shifts.
+        TouchArea {
+            x: 0px; y: 0px; width: root.row-width; height: root.rows-height;
+            property <int> start-row: 0;
+            property <bool> drag-selecting;
+            property <bool> dragging;
+            property <bool> drag-additive;
+
+            pointer-event(event) => {
+                if (event.button == PointerEventButton.left && event.kind == PointerEventKind.down) {
+                    row-focus.focus();
+                    self.start-row = Math.floor(self.pressed-y / root.row-height);
+                    self.drag-additive = event.modifiers.control;
+                    self.drag-selecting = !self.drag-additive || !root.rows[self.start-row].selected;
+                    self.dragging = true;
+                    root.drag(self.start-row, 0, self.drag-selecting, self.drag-additive);
+                }
+                if self.dragging && (event.kind == PointerEventKind.cancel || (event.button == PointerEventButton.left && event.kind == PointerEventKind.up)) {
+                    self.dragging = false;
+                    root.selection-done();
+                }
             }
-        }
-        Rectangle {
-            x: 0px; y: root.height - 34px; width: root.width; height: 34px;
-            HorizontalLayout { height: 34px; spacing: 6px;
-            if root.width < 1250px : Tf2Button { width: 150px; height: 30px; label-font-size: 12px; text: root.show-extra ? "Main columns" : "Server / tags"; clicked => { root.more-columns = !root.more-columns; } }
-            Rectangle { horizontal-stretch: 1; }
-            Tf2Button { width: 88px; height: 30px; label-font-size: 12px; text: "Previous"; enabled: root.current > 0; clicked => { root.page = root.current - 1; } }
-            Tf2Body { width: 110px; height: 30px; text: "Page " + (root.current + 1) + " / " + root.pages; horizontal-alignment: center; }
-            Tf2Button { width: 72px; height: 30px; label-font-size: 12px; text: "Next"; enabled: root.current + 1 < root.pages; clicked => { root.page = root.current + 1; } }
+            moved => {
+                if self.dragging {
+                    root.drag(self.start-row, (self.mouse-y - self.pressed-y) / 1px, self.drag-selecting, self.drag-additive);
+                }
+            }
         }
     }
 }
@@ -423,9 +487,8 @@ component MultiSelectDropdown inherits Rectangle {
     callback search-edited(string);
     callback toggled(string);
 
-    private property <int> page: 0;
-    private property <int> pages: Math.max(1, Math.ceil(root.options.length / 5));
-    private property <int> current: Math.min(root.page, root.pages - 1);
+    private property <length> option-height: 28px;
+
     height: 34px;
     background: area.pressed ? Tf2Colors.neutral-pressed : area.has-hover ? Tf2Colors.neutral-hover : Tf2Colors.panel-dark;
     border-width: 1px;
@@ -439,18 +502,25 @@ component MultiSelectDropdown inherits Rectangle {
         Tf2Panel {
             VerticalLayout {
                 padding: 8px; spacing: 6px;
-                Tf2LineEdit { height: 32px; text <=> root.search-text; placeholder: root.search-placeholder; centered: true; edited(value) => { root.page = 0; root.search-edited(value); } }
-                Rectangle { height: 140px;
-                    for slot in 5 : Tf2CheckBox {
-                        private property <int> index: root.current * 5 + slot;
-                        y: slot * 28px; width: parent.width; height: 28px; visible: index < root.options.length;
-                        text: root.options[index].value; checked: root.options[index].selected; toggled(checked) => { root.toggled(root.options[index].value); }
-                    }
+                Tf2LineEdit {
+                    height: 32px; text <=> root.search-text; placeholder: root.search-placeholder; centered: true;
+                    edited(value) => { options-list.viewport-y = 0px; root.search-edited(value); }
                 }
-                HorizontalLayout { height: 26px; spacing: 5px;
-                    Tf2Button { width: 80px; height: 26px; text: "Previous"; label-font-size: 11px; enabled: root.current > 0; clicked => { root.page = root.current - 1; } }
-                    Tf2Body { text: (root.current + 1) + " / " + root.pages; horizontal-alignment: center; }
-                    Tf2Button { width: 64px; height: 26px; text: "Next"; label-font-size: 11px; enabled: root.current + 1 < root.pages; clicked => { root.page = root.current + 1; } }
+                options-list := ScrollView {
+                    vertical-stretch: 1;
+                    horizontal-scrollbar-policy: always-off;
+                    vertical-scrollbar-policy: as-needed;
+                    mouse-drag-pan-enabled: false;
+                    viewport-width: self.visible-width;
+                    viewport-height: Math.max(self.visible-height, root.options.length * root.option-height);
+
+                    for option[index] in root.options : Tf2CheckBox {
+                        x: 0px; y: index * root.option-height;
+                        width: Math.max(0px, options-list.visible-width - 16px);
+                        height: root.option-height;
+                        text: option.value; checked: option.selected;
+                        toggled(checked) => { root.toggled(option.value); }
+                    }
                 }
                 Tf2Button { height: 30px; text: "CLOSE"; label-font-size: 12px; clicked => { filter-popup.close(); } }
             }
